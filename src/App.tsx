@@ -125,6 +125,7 @@ import { isComputerUseCardId } from "./lib/computer-use-card";
 import { ComputerUseStatusLine } from "./components/chat/ComputerUseStatusLine";
 import { useBrowserAgentTools } from "./hooks/useBrowserAgentTools";
 import { useBrowserOpening } from "./hooks/useBrowserOpening";
+import { useFileLinkOpening } from "./hooks/useFileLinkOpening";
 import { BrowserPanel } from "./components/browser/BrowserPanel";
 import { BrowserPermissionLayer } from "./components/browser/BrowserPermissionLayer";
 import { useOpenedSessions } from "./hooks/useOpenedSessions";
@@ -811,6 +812,14 @@ export default function App() {
   });
   const onArtifactShown = openArtifact;
   useBrowserOpening({ sessionId: activeSession?.id ?? null, show: () => inspector.show("browser"), onError: reportError, onArtifactShown });
+  useFileLinkOpening({
+    folder: filesFolder?.path,
+    viewFile: (relative) => {
+      inspector.viewFile(relative);
+      inspector.show("files");
+    },
+    onError: reportError,
+  });
   const gallery = useMemo(
     () =>
       galleryRows(sessions, artifacts.bySession, (profileId) => agentNameOr(agents.find((agent) => agent.id === profileId)), artifacts.canvasesBySession),

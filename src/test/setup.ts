@@ -144,6 +144,7 @@ function handleStoreCommand(cmd: string, args: StoreArgs | undefined): Promise<u
     case "end_orphaned_sessions":
     case "open_external_url":
     case "open_session_window":
+    case "reveal_file_in_finder":
     case "reveal_in_finder":
     case "terminate_session":
     case "send_input":

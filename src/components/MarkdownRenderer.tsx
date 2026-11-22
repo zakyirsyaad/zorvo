@@ -4,6 +4,8 @@ import remarkGfm from "remark-gfm";
 import { invoke } from "@tauri-apps/api/core";
 import { Copy, Check } from "lucide-react";
 import { OPENABLE_URL } from "../lib/link-menu";
+import { readWindowMode } from "../lib/window-mode";
+import { fileLinkPath, requestFileLinkOpen } from "../lib/file-links";
 
 const COPIED_FEEDBACK_MS = 2000;
 const LANGUAGE_CLASS = /language-([\w-]+)/;
@@ -61,6 +63,20 @@ function textOf(children: ReactNode): string {
  */
 function ExternalLink({ href, children }: { href?: string; children?: ReactNode }) {
   if (!href || !OPENABLE_URL.test(href)) {
+    const file = fileLinkPath(href);
+    // A popout has no Files tab and no folder to read a relative path against: there it stays text.
+    if (file !== null && readWindowMode(window.location.search).kind === "main") {
+      return (
+        <button
+          type="button"
+          title={file}
+          onClick={() => requestFileLinkOpen(file)}
+          className="focus-ring cursor-pointer rounded text-left text-fg underline decoration-fg-muted decoration-dotted underline-offset-2 hover:decoration-fg"
+        >
+          {children}
+        </button>
+      );
+    }
     return (
       <span title={href} className="text-fg-secondary underline decoration-dotted decoration-fg-subtle underline-offset-2">
         {children}

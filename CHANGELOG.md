@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+
+- **A link to a file in a reply can be opened.** A file in the session's folder opens in the Files tab. Any other file is shown in Finder.
+
 ## [0.16.0] - 2026-11-22
 
 ### Added

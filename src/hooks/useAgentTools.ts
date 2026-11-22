@@ -272,6 +272,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
         { cardId: entry.cardId, sessionId: session.id, callerName: entry.callerName, folder: entry.folder, now: Date.now() },
         entry.calls,
       );
+      // A new card goes after the reply's text, which was sent before this call and may still wait for its frame.
+      if (isNew) latest.current.flushUpdates?.();
       latest.current.updateMessages(session.id, (prev) =>
         isNew
           ? withToolCard(prev, card, { sessionId: session.id, now: Date.now(), createId })
@@ -437,6 +439,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
         now: Date.now(),
       });
       folderCards.current.set(cardId, { sessionId: session.id, call: { ...waitingCall, folderPath: place.path } });
+      // As for the session's card: the reply's text lands first.
+      current.flushUpdates?.();
       current.updateMessages(session.id, (prev) =>
         withToolCard(prev, card, { sessionId: session.id, now: Date.now(), createId }),
       );

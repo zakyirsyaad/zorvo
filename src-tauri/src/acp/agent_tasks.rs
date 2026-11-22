@@ -364,4 +364,19 @@ mod tests {
         let none = parse(&json!({ "tasks": [{ "kind": "agent", "id": "a" }] })).unwrap();
         assert_eq!(none.tasks[0].last_activity_at, None);
     }
+
+    #[test]
+    fn last_activity_falls_back_to_the_start_when_no_activity_has_a_usable_time() {
+        let answer = json!({ "tasks": [{
+            "kind": "agent", "id": "a", "startTime": 40,
+            "recentActivities": [
+                { "name": "x", "description": "" },
+                { "name": "y", "description": "", "at": -3 },
+                { "name": "z", "description": "", "at": "9" },
+            ],
+        }] });
+        let task = &parse(&answer).unwrap().tasks[0];
+        assert_eq!(task.activities.len(), 3);
+        assert_eq!(task.last_activity_at, Some(40));
+    }
 }

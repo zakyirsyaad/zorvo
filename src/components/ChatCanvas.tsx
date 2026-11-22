@@ -5,6 +5,7 @@ import { MessageRow } from "./chat/MessageRow";
 import { WorkingIndicator } from "./chat/ReplyExtras";
 import { BackgroundAgentsNotice } from "./chat/BackgroundAgentsNotice";
 import type { AgentTasks } from "../lib/agent-tasks";
+import { visibleAgentTasks } from "../lib/session-overview";
 import { AgentStallNotice } from "./chat/AgentStallNotice";
 import { SelectionToolbar } from "./chat/SelectionToolbar";
 import type { AgentFailures } from "../lib/agent-stall";
@@ -322,7 +323,13 @@ export function ChatCanvas({
           onEndAgent={onEndAgent}
         />
       )}
-      {!isWorking && agentTasks && <BackgroundAgentsNotice agentName={shownAgentName} tasks={agentTasks.tasks} asOf={agentTasks.asOf} />}
+      {!isTurnOpen && agentTasks && (
+        <BackgroundAgentsNotice
+          agentName={agentName === DEFAULT_AGENT_NAME ? undefined : agentName}
+          tasks={visibleAgentTasks(agentTasks.tasks, messages)}
+          asOf={agentTasks.asOf}
+        />
+      )}
       {footer && <div className="mx-auto w-full max-w-chat">{footer}</div>}
       {chatSelection.selected && (
         <SelectionToolbar selection={chatSelection.selected} blockedReason={replyBlockedReason} onReply={replyToSelection} />

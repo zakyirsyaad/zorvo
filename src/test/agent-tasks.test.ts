@@ -8,6 +8,7 @@ import {
   quietMinutes,
   quietMs,
   quietNoticeParts,
+  quietShortText,
   quietSpanText,
   QUIET_AFTER_MS,
   REPORTS_TASKS,
@@ -167,18 +168,25 @@ describe("quiet agents", () => {
     expect(quietSpanText(5)).toBe("5 minutes");
     expect(quietSpanText(55)).toBe("55 minutes");
     expect(quietSpanText(90)).toBe("90 minutes");
-    expect(quietSpanText(95)).toBe("1 h 35 min");
-    expect(quietSpanText(120)).toBe("2 h");
+    expect(quietSpanText(95)).toBe("1 hour 35 minutes");
+    expect(quietSpanText(120)).toBe("2 hours");
+    expect(quietSpanText(121)).toBe("2 hours 1 minute");
+    expect(quietSpanText(61 + 60)).toBe("2 hours 1 minute");
+    expect(quietSpanText(91)).toBe("1 hour 31 minutes");
+    expect(quietShortText(95)).toBe("1 h 35 min");
   });
 
   it("words the notice for one agent and for several, with the longest time", () => {
     const one = quietNoticeParts("Qwen Code", [working(), working({ id: "b", status: "done" })], 55 * MIN);
     expect(one).toEqual({
       title: "A background agent of Qwen Code has not reported anything for 55 minutes.",
-      body: "They may be waiting on the model. Send a message to check, or stop them from Qwen Code.",
+      body: "It may be waiting on the model or running a long tool. Send a message to check.",
     });
     const many = quietNoticeParts("Qwen Code", [working({ lastActivityAt: 10 * MIN }), working({ id: "b", lastActivityAt: 0 }), working({ id: "c", lastActivityAt: 59 * MIN })], 100 * MIN);
-    expect(many?.title).toBe("3 of Qwen Code's background agents have not reported anything for 1 h 40 min.");
+    expect(many?.title).toBe("3 of Qwen Code's background agents have not reported anything for 1 hour 40 minutes.");
+    expect(many?.body).toBe("They may be waiting on the model or running a long tool. Send a message to check.");
+    expect(quietNoticeParts(undefined, [working()], 55 * MIN)?.title).toBe("A background agent has not reported anything for 55 minutes.");
+    expect(quietNoticeParts(undefined, [working(), working({ id: "b" })], 55 * MIN)?.title).toBe("2 background agents have not reported anything for 55 minutes.");
     expect(quietNoticeParts("Qwen Code", [working({ lastActivityAt: 58 * MIN })], 60 * MIN)).toBeNull();
     expect(quietNoticeParts("Qwen Code", [], 60 * MIN)).toBeNull();
     expect(quietNoticeParts("Qwen Code", [working()], undefined)).toBeNull();

@@ -158,8 +158,40 @@ describe("useAgentTasks", () => {
     await tick(10_000);
     await tick(10_000);
     expect(asks()).toHaveLength(4);
-    expect(result.current?.tasks[0].status).toBe("working");
+    // Once the status cannot be read, Zorvo stops claiming one.
+    expect(result.current).toBeNull();
     await tick(60_000);
+    expect(asks()).toHaveLength(4);
+  });
+
+  it("keeps the last answer through the first two failed reads", async () => {
+    invokeMock.mockResolvedValueOnce(answer(task("working"))).mockRejectedValue("no");
+    const { result } = renderHook(() => useAgentTasks(input()));
+    await flush();
+    await tick(10_000);
+    await tick(10_000);
+    expect(result.current?.tasks[0].status).toBe("working");
+  });
+
+  it("asks again after 60 seconds while every working task is quiet, and after 10 again once one reports", async () => {
+    const MIN = 60_000;
+    const quiet = (id: string, lastActivityAt: number) => ({ ...task("working", id), startedAt: 0, lastActivityAt });
+    invokeMock
+      .mockResolvedValueOnce({ asOf: 30 * MIN, tasks: [quiet("a", 0), task("done", "d")], more: 0 })
+      .mockResolvedValueOnce({ asOf: 31 * MIN, tasks: [quiet("a", 0), quiet("b", 31 * MIN)], more: 0 })
+      .mockResolvedValue({ asOf: 32 * MIN, tasks: [quiet("a", 31 * MIN)], more: 0 });
+    renderHook(() => useAgentTasks(input()));
+    await flush();
+    expect(asks()).toHaveLength(1);
+    await tick(10_000);
+    await tick(49_999);
+    expect(asks()).toHaveLength(1);
+    await tick(1);
+    expect(asks()).toHaveLength(2);
+    // One working task is not quiet: back to 10 seconds.
+    await tick(10_000);
+    expect(asks()).toHaveLength(3);
+    await tick(10_000);
     expect(asks()).toHaveLength(4);
   });
 

@@ -144,9 +144,13 @@ export function quietShortText(minutes: number): string {
   return rest === 0 ? `${Math.floor(minutes / 60)} h` : `${Math.floor(minutes / 60)} h ${rest} min`;
 }
 
-/** "55 minutes", or "1 h 35 min" past 90 minutes. */
+const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? '' : 's'}`;
+
+/** "55 minutes", or "1 hour 35 minutes" past 90 minutes. */
 export function quietSpanText(minutes: number): string {
-  return minutes <= HOURS_FROM_MINUTES ? `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}` : quietShortText(minutes);
+  if (minutes <= HOURS_FROM_MINUTES) return plural(minutes, 'minute');
+  const hours = plural(Math.floor(minutes / 60), 'hour');
+  return minutes % 60 === 0 ? hours : `${hours} ${plural(minutes % 60, 'minute')}`;
 }
 
 export interface QuietNoticeParts {
@@ -154,14 +158,23 @@ export interface QuietNoticeParts {
   body: string;
 }
 
-/** The notice under the chat while background agents have gone quiet; null while none has. */
-export function quietNoticeParts(agentName: string, tasks: readonly AgentTask[], asOf: number | undefined): QuietNoticeParts | null {
+/** The notice under the chat while background agents have gone quiet; null while none has. An unknown agent name is left out, not replaced. */
+export function quietNoticeParts(agentName: string | undefined, tasks: readonly AgentTask[], asOf: number | undefined): QuietNoticeParts | null {
   const quiet = tasks.filter((task) => isQuiet(task, asOf));
   if (quiet.length === 0) return null;
   const span = quietSpanText(quietMinutes(Math.max(...quiet.map((task) => quietMs(task, asOf)))));
-  const title =
-    quiet.length === 1
-      ? `A background agent of ${agentName} has not reported anything for ${span}.`
-      : `${quiet.length} of ${agentName}'s background agents have not reported anything for ${span}.`;
-  return { title, body: `They may be waiting on the model. Send a message to check, or stop them from ${agentName}.` };
+  const one = quiet.length === 1;
+  const subject = one
+    ? agentName ? `A background agent of ${agentName} has` : 'A background agent has'
+    : agentName ? `${quiet.length} of ${agentName}'s background agents have` : `${quiet.length} background agents have`;
+  return {
+    title: `${subject} not reported anything for ${span}.`,
+    body: `${one ? 'It' : 'They'} may be waiting on the model or running a long tool. Send a message to check.`,
+  };
+}
+
+/** Every task at work is quiet, so asking often only repeats the same silence. */
+export function areAllWorkingQuiet(tasks: readonly AgentTask[], asOf: number | undefined): boolean {
+  const working = tasks.filter(isWorkingTask);
+  return working.length > 0 && working.every((task) => isQuiet(task, asOf));
 }

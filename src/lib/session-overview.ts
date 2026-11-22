@@ -140,10 +140,14 @@ function agentTaskRow(task: AgentTask, asOf: number | undefined): OverviewTask {
   };
 }
 
-/** Background agents, less those a foreground subagent with steps already shows under the tool call that launched them. */
-function agentTaskRows(tasks: readonly AgentTask[], messages: readonly ChatMessage[], asOf: number | undefined): OverviewTask[] {
+/** Background agents, less those a foreground subagent with steps already shows under the tool call that launched them. The card's rows and the chat's notice both count these. */
+export function visibleAgentTasks(tasks: readonly AgentTask[], messages: readonly ChatMessage[]): AgentTask[] {
   const shown = new Set(messages.flatMap((message) => shownTools(message.tools ?? []).filter((tool) => tool.steps !== undefined).map((tool) => tool.id)));
-  return tasks.filter((task) => task.toolUseId === undefined || !shown.has(task.toolUseId)).map((task) => agentTaskRow(task, asOf));
+  return tasks.filter((task) => task.toolUseId === undefined || !shown.has(task.toolUseId));
+}
+
+function agentTaskRows(tasks: readonly AgentTask[], messages: readonly ChatMessage[], asOf: number | undefined): OverviewTask[] {
+  return visibleAgentTasks(tasks, messages).map((task) => agentTaskRow(task, asOf));
 }
 
 const newestFirst = (a: OverviewTask, b: OverviewTask) => (b.startedAt ?? 0) - (a.startedAt ?? 0);

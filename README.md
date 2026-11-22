@@ -159,7 +159,7 @@ Private mode is off until you turn it on, and works with Qwen Code.
 - **See what the agent made, as a page.** An agent can show you a report, a
   diagram or a small dashboard as a web page beside the chat. Ask for a change
   and you get a new version; older versions stay, **Export** saves the page as
-  one HTML file, and **Output** in the sidebar lists the pages of every
+  one HTML file, and **Artifacts** in the sidebar lists the pages of every
   session. Press **Comment** above a page to mark text or a part of it, write
   what should change, and add your comments to your next message.
 - **A picture inside the reply.** For something small, such as a flow, a
@@ -181,7 +181,7 @@ Private mode is off until you turn it on, and works with Qwen Code.
   running, the files you attached, and the pages and files the agent made. A
   click opens the matching tab, and the card folds to a pill.
 - **One inspector beside the chat.** The top bar's **Inspector** button opens a
-  panel with five tabs: Changes, Activity, Files, Output and Terminal. Drag its
+  panel with five tabs: Changes, Activity, Files, Artifacts and Terminal. Drag its
   edge to resize it; Zorvo remembers the width.
 - **See what an agent did.** The Activity tab lists, turn by turn, the files it
   reported, the commands it ran and the permissions you answered, and shows
@@ -420,7 +420,7 @@ before it edits files or runs commands. Pick another mode in the composer.
   allowed once, never in advance. You can turn all of this off in
   **Settings → Agents**.
 - **A page an agent shows you is kept apart.** An agent can make a web page
-  and show it in the **Output** tab. The page runs in a part of the window
+  and show it in the **Artifacts** tab. The page runs in a part of the window
   of its own: it cannot call Zorvo, read your files, keep data, or open any
   address but its own. It may load scripts from `cdnjs.cloudflare.com`,
   `cdn.jsdelivr.net`, `unpkg.com`, `cdn.tailwindcss.com` and `code.jquery.com`

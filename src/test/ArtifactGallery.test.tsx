@@ -25,9 +25,9 @@ describe("the gallery", () => {
   it("lists every artifact with its session, version and agent, in the order given", () => {
     render(<ArtifactGallery rows={ROWS} onOpen={vi.fn()} />);
 
-    expect(screen.getByRole("heading", { name: "Output" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Artifacts" })).toBeTruthy();
     expect(screen.getByText("3 pages in 3 sessions")).toBeTruthy();
-    const items = within(screen.getByRole("list", { name: "Output" })).getAllByRole("listitem");
+    const items = within(screen.getByRole("list", { name: "Artifacts" })).getAllByRole("listitem");
     expect(items.map((item) => within(item).getByRole("button").getAttribute("aria-label"))).toEqual([
       "Session list performance, in Session list performance",
       "Transcript save timeline, in Fix transcript save interval",
@@ -49,11 +49,11 @@ describe("the gallery", () => {
   it("searches by title", () => {
     render(<ArtifactGallery rows={ROWS} onOpen={vi.fn()} />);
     fireEvent.change(screen.getByRole("searchbox", { name: "Search artifacts" }), { target: { value: "diagram" } });
-    expect(within(screen.getByRole("list", { name: "Output" })).getAllByRole("listitem")).toHaveLength(1);
+    expect(within(screen.getByRole("list", { name: "Artifacts" })).getAllByRole("listitem")).toHaveLength(1);
 
     fireEvent.change(screen.getByRole("searchbox", { name: "Search artifacts" }), { target: { value: "zzz" } });
     expect(screen.getByText("No artifacts match.")).toBeTruthy();
-    expect(screen.queryByRole("list", { name: "Output" })).toBeNull();
+    expect(screen.queryByRole("list", { name: "Artifacts" })).toBeNull();
   });
 
   it("offers Show sidebar while the sidebar is hidden, since the top bar is not there", () => {

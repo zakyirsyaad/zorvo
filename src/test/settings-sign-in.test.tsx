@@ -46,6 +46,9 @@ function fakeSignIn(overrides: Partial<SettingsSignIn> = {}): SettingsSignIn {
     check: vi.fn(),
     signInWith: vi.fn(),
     sweep: vi.fn(),
+    againOf: () => "closed" as const,
+    openAgain: vi.fn(),
+    closeAgain: vi.fn(),
     terminal: { dialog: null } as unknown as SettingsSignIn["terminal"],
     cancelSignIn: vi.fn(),
     retrySignIn: vi.fn(),
@@ -140,12 +143,13 @@ describe("the sign-in of an agent row", () => {
     expect(signIn.signInWith).not.toHaveBeenCalled();
   });
 
-  it("shows an agent's own setup as text only: Settings does not run it", () => {
+  it("shows an agent's own setup as text while no folder is open", () => {
     const setup: AuthMethod = { id: "openai", name: "Use OpenAI API key", kind: "setup" };
-    renderRow(fakeSignIn({ stateOf: () => "needed", methodsOf: () => [setup] }), "Qwen Code");
+    renderRow(fakeSignIn({ cwd: undefined, stateOf: () => "needed", methodsOf: () => [setup] }), "Qwen Code");
 
     expect(screen.getByText("Use OpenAI API key")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Use OpenAI API key|Open setup/ })).toBeNull();
+    expect(screen.getByText("From a new session")).toBeInTheDocument();
   });
 
   it("disables Check sign-in and the sign-in buttons while it works", () => {

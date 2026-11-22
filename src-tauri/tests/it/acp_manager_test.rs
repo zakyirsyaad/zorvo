@@ -491,6 +491,42 @@ fn an_agent_without_the_breakdown_is_an_error() {
 }
 
 #[test]
+fn reads_the_background_agents_an_agent_reports_and_follows_the_file() {
+    let dir = std::env::temp_dir().join(format!("zorvo-tasks-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("tasks.json");
+    let recorded: serde_json::Value =
+        serde_json::from_str(include_str!("../fixtures/qwen-session-tasks.json")).unwrap();
+    std::fs::write(&file, recorded["answer"].to_string()).unwrap();
+    let (manager, _rx) = manager();
+    let launch = with_env(fake_agent(), "FAKE_ACP_TASKS", file.to_str().unwrap());
+    manager.start("s-1", &cwd(), &launch, json!([])).unwrap();
+
+    let tasks = manager.agent_tasks("s-1").expect("tasks");
+    assert_eq!(tasks.tasks.len(), 3);
+    assert_eq!(tasks.tasks[0].status, "working");
+
+    // The fake agent reads the file at each call.
+    std::fs::write(&file, recorded["empty"].to_string()).unwrap();
+    assert!(manager.agent_tasks("s-1").expect("tasks").tasks.is_empty());
+
+    manager.stop("s-1");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn an_agent_without_the_task_list_is_an_error() {
+    let (manager, _rx) = manager();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
+
+    assert!(manager.agent_tasks("s-1").is_err());
+    assert!(manager.agent_tasks("nope").is_err());
+    manager.stop("s-1");
+}
+
+#[test]
 fn probe_reports_the_models_an_agent_offers() {
     let (manager, _rx) = manager();
     let launch = with_env(fake_agent(), "FAKE_ACP_MODELS", "1");
@@ -2291,6 +2327,37 @@ fn sign_in_probe_of_an_agent_that_cannot_report_it_opens_no_session_either() {
     assert_eq!(methods_in(&log), vec!["initialize".to_string()]);
     assert!(!probed.reports_status);
     assert!(!probed.sign_in_checked);
+}
+
+#[test]
+fn sign_in_probe_carries_the_methods_of_an_agent_that_reports_its_sign_in() {
+    let (manager, _rx) = manager();
+    let launch = with_env(fake_agent(), "FAKE_ACP_AUTH_STATUS", "account");
+
+    let probed = manager.probe_sign_in(&cwd(), &launch).expect("probe");
+
+    assert_eq!(probed.auth_methods[0]["id"], "browser");
+    assert_eq!(probed.auth_methods[1]["id"], "api-key");
+}
+
+#[test]
+fn sign_in_probe_carries_the_methods_of_an_agent_that_cannot_report_it_too() {
+    let (manager, _rx) = manager();
+
+    let probed = manager.probe_sign_in(&cwd(), &fake_agent()).expect("probe");
+
+    assert!(!probed.reports_status);
+    assert_eq!(probed.auth_methods[0]["id"], "browser");
+}
+
+#[test]
+fn sign_in_probe_carries_an_empty_list_for_an_agent_that_offers_no_method() {
+    let (manager, _rx) = manager();
+    let launch = with_env(fake_agent(), "FAKE_ACP_NO_AUTH_METHODS", "1");
+
+    let probed = manager.probe_sign_in(&cwd(), &launch).expect("probe");
+
+    assert_eq!(probed.auth_methods, serde_json::json!([]));
 }
 
 #[test]

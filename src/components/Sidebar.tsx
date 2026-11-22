@@ -60,7 +60,7 @@ export interface SidebarProps {
   isHidden?: boolean;
   /** Hides the sidebar; the button is absent without it. */
   onHide?: () => void;
-  /** How many pages the sessions' agents have shown; the Output entry shows while there is one. */
+  /** How many pages the sessions' agents have shown; the Artifacts entry shows while there is one. */
   artifactCount?: number;
   /** The gallery is what the main sheet shows. */
   isGalleryOpen?: boolean;
@@ -236,13 +236,13 @@ export function Sidebar({
         <div className="px-2 pb-1.5">
           <button
             type="button"
-            aria-label={`Output, ${artifactCount}`}
+            aria-label={`Artifacts, ${artifactCount}`}
             aria-current={isGalleryOpen ? "page" : undefined}
             onClick={onOpenGallery}
             className={`focus-ring flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-surface-hover ${isGalleryOpen ? "bg-surface-hover text-fg" : ""}`}
           >
             <PanelsTopLeft size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
-            <span className="flex-1">Output</span>
+            <span className="flex-1">Artifacts</span>
             <span className="text-caption text-fg-subtle">{artifactCount}</span>
           </button>
         </div>

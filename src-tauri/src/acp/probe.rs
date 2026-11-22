@@ -64,7 +64,7 @@ pub struct ProbedAgent {
 }
 
 /// What a sign-in-only probe saw. It never opens a session in the agent.
-#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SignInProbe {
     /// Whether the agent can say who is signed in (`_meta.authStatus`). When it
@@ -72,6 +72,9 @@ pub struct SignInProbe {
     pub reports_status: bool,
     /// Whether the agent reported an account.
     pub sign_in_checked: bool,
+    /// The sign-in methods `initialize` listed, always an array. The UI validates them as it does
+    /// the ones a sign-in refusal carries, so a signed-in agent can be signed in to again without a session.
+    pub auth_methods: Value,
 }
 
 /// What the agent pushes on its own while a probe waits.
@@ -214,11 +217,13 @@ impl AcpManager {
                     return Ok(SignInProbe {
                         reports_status: false,
                         sign_in_checked: false,
+                        auth_methods: auth_methods_of(&init),
                     });
                 }
                 read_reported_sign_in(&rx, &init, started).map(|checked| SignInProbe {
                     reports_status: true,
                     sign_in_checked: checked,
+                    auth_methods: auth_methods_of(&init),
                 })
             });
         match result {

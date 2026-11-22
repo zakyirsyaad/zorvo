@@ -57,6 +57,9 @@ function agentSignIn(overrides: Partial<SettingsSignIn> = {}): SettingsSignIn {
     check: vi.fn(),
     signInWith: vi.fn(),
     sweep: vi.fn(),
+    againOf: () => "closed" as const,
+    openAgain: vi.fn(),
+    closeAgain: vi.fn(),
     terminal,
     cancelSignIn: vi.fn(),
     retrySignIn: vi.fn(),
@@ -85,6 +88,17 @@ function renderSettings(signIn: SettingsSignIn, isOpen = true) {
     />,
   );
 }
+
+describe("the Agents section's order", () => {
+  it("puts what every agent may do above the catalog, where a long list cannot hide it", () => {
+    renderSettings(agentSignIn({ terminal: { ...terminal, dialog: null } as unknown as SettingsSignIn["terminal"] }));
+
+    const toggle = screen.getByRole("switch", { name: "Let agents delegate and open sessions" });
+    const search = screen.getByRole("searchbox");
+    // DOCUMENT_POSITION_FOLLOWING: the search field of the catalog comes after the switch.
+    expect(toggle.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
 
 describe("an agent's login started in Settings", () => {
   it("is drawn by Settings, and Close stops it", () => {

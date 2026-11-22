@@ -4,6 +4,7 @@
 //! their official adapters) are driven over stdin/stdout with structured
 //! JSON-RPC instead of scraping a terminal UI.
 
+pub mod agent_tasks;
 pub mod commands;
 pub mod connection;
 pub mod context_usage;

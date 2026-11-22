@@ -26,6 +26,7 @@ import { parseAuthRequired, type AuthMethod } from '../../lib/acp-auth';
 import { isSessionGoneError, isUnknownSessionError } from '../../lib/acp-load-error';
 import { toolsRoleOf } from '../../lib/workers';
 import { isToolsContextTitle, withToolsContext, type ToolsNote } from '../../lib/agent-tools-context';
+import { isSlashCommand } from '../../lib/slash-commands';
 import { writeConversationHandoff } from '../../lib/session-handoff';
 import { applyElicitation, completeElicitation, dismissPendingElicitations } from '../../lib/acp-elicitation';
 import { elicitationActions, type InFlightAnswer } from './elicitation-actions';
@@ -409,18 +410,33 @@ export function useAcpEngine({
 
   const reportFailure = (what: string) => (error: unknown) => reportError(`${what}: ${String(error)}`);
 
+  /**
+   * Whether the message must go out with nothing before it: an agent knows a command only at the start
+   * of the prompt. A worker's task is left out, since the worker may get no later message to carry its
+   * handoff and its note.
+   */
+  const goesAsTyped = (sessionId: string, message: ChatMessage): boolean => {
+    if (!isSlashCommand(message.content) || message.delegationTask) return false;
+    const link = sessionsRef.current.find((session) => session.id === sessionId)?.delegatedFrom;
+    return link?.task !== message.content;
+  };
+
   /** Prompts the agent with a message already shown in the chat; removes it if the prompt is refused. */
   const prompt = async (sessionId: string, message: ChatMessage, context?: string): Promise<boolean> => {
-    // An agent with Zorvo's tools hears of them with the first message it takes.
-    const toolsDue = toolsContextDueRef.current.get(sessionId);
+    const asTyped = goesAsTyped(sessionId, message);
+    // An agent with Zorvo's tools hears of them with the first message it takes that is not a command.
+    const toolsDue = asTyped ? undefined : toolsContextDueRef.current.get(sessionId);
+    const carried = asTyped ? undefined : context;
+    // What a command cannot carry waits for the next message.
+    if (asTyped && context) unsentContextRef.current.set(sessionId, context);
     onPromptStarted?.(sessionId);
     unsettledTurn.current.add(sessionId);
     settledByExit.current.delete(sessionId);
-    lastPromptRef.current.set(sessionId, { message, context, ...(toolsDue ? { toolsContext: toolsDue } : {}) });
+    lastPromptRef.current.set(sessionId, { message, context: carried, ...(toolsDue ? { toolsContext: toolsDue } : {}) });
     // A new turn starts: the failure of the last one no longer applies.
     failedPromptRef.current.delete(sessionId);
     onTurnFailed?.(sessionId, null);
-    const hidden = toolsDue ? withToolsContext(context, toolsDue) : context;
+    const hidden = toolsDue ? withToolsContext(carried, toolsDue) : carried;
     try {
       await acp.prompt(sessionId, hidden ? `${hidden}\n\n${message.content}` : message.content, message.attachments);
       // Only now: a refused prompt leaves it due for the next message. A turn that fails

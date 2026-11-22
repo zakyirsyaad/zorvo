@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+
+- **Slash commands work as a session's first message.** A command such as `/logout` or `/compact` now reaches the agent exactly as you typed it. Before, Zorvo put a hidden note in front of it, so the agent could read it as ordinary text.
+
 ## [0.17.0] - 2026-11-22
 
 ### Added

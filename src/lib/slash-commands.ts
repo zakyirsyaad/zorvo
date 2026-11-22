@@ -23,6 +23,15 @@ export function matchingCommands(commands: readonly SlashCommand[], query: strin
     .map(({ command }) => command);
 }
 
+/**
+ * Whether a message is a command for the agent: a slash and a name, then white space or the end. The
+ * agent's list is not asked, since it can arrive after a session's first message and need not name
+ * every command. A path has a second slash, so it is text.
+ */
+export function isSlashCommand(text: string): boolean {
+  return /^\/[^\s/]+(?:\s|$)/.test(text);
+}
+
 /** The hint of the command the prompt starts with, while its input is still empty. */
 export function pendingHint(commands: readonly SlashCommand[], text: string): string | undefined {
   const match = /^\/(\S+) $/.exec(text);

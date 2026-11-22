@@ -24,6 +24,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 ### Fixed
 
 - **Codex no longer shows two running tasks that are its own.** The overview card listed Zorvo's tool bridge and Codex's helper process as shell commands the agent had started.
+- The inspector's tab strip no longer draws a scrollbar over the tab names when the tabs do not fit.
 
 ## [0.16.0] - 2026-11-22
 

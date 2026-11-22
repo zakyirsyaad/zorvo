@@ -142,7 +142,8 @@ export function Inspector({ tab, tabs, width, counts, isViewingFile = false, max
             label="Inspector"
             idPrefix={ID_PREFIX}
             itemPadding="shrink-0 whitespace-nowrap px-2"
-            className="min-w-0 self-center overflow-x-auto"
+            // The strip scrolls when the tabs do not fit, without a bar drawn over their names.
+            className="min-w-0 self-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           />
           <div className="flex items-center">
             <IconButton label="Close inspector" size="sm" onClick={onClose}>

@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+
+- **Codex no longer shows two running tasks that are its own.** The overview card listed Zorvo's tool bridge and Codex's helper process as shell commands the agent had started.
+
 ## [0.16.0] - 2026-11-22
 
 ### Added

@@ -4,6 +4,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-22
+
 ### Added
 
 - **An agent can show a diagram or a mockup inside its reply.** The picture sits between the paragraphs of the answer and follows the light and dark theme. Nothing in it runs and it has no links. From its menu you can copy it as an image or save it as SVG, HTML or PNG, and Expand shows it larger.
@@ -473,7 +475,8 @@ Tagged but never published; its fix shipped in 0.11.2.
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.14.1...v0.15.0
 [0.14.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.13.1...v0.14.0

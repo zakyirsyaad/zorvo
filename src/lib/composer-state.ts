@@ -4,6 +4,7 @@ import type { AcpConfigOption } from '../hooks/useAcpSessions';
 import type { AcpEngine } from '../hooks/session-engine/useAcpEngine';
 import type { AgentProfile, Session, SlashCommand } from '../types';
 import { signInPlaceholder } from './agent-sign-in';
+import { QUEUE_FULL_NOTE } from './queued-messages';
 
 export interface ComposerState {
   controls: ComposerControls;
@@ -152,6 +153,10 @@ function reviewOwnerNote({ title, isArchived, cannotContinue }: ReviewOwner): st
 export function composerNote(state: {
   /** Whom the comments in the composer are for, while that keeps them from going out here; outranks every other note. */
   reviewOwner?: ReviewOwner;
+  /** Held review comments wait for this agent's turn to end: Send does not queue them. */
+  commentsWaitFor?: string;
+  /** The session's queue of messages sent while the agent works is full. */
+  queueFull?: boolean;
   /** Agents ticked for a compare run; two or more replace every note but the review one. */
   compareCount?: number;
   /** The draft agent's name while it must be installed before a message can be sent. */
@@ -166,7 +171,9 @@ export function composerNote(state: {
   continuesSession: boolean;
 }): string | undefined {
   if (state.reviewOwner) return reviewOwnerNote(state.reviewOwner);
+  if (state.commentsWaitFor) return `Comments are sent when ${state.commentsWaitFor} finishes.`;
   if (state.compareCount !== undefined && state.compareCount >= 2) return COMPARE_NOTE;
+  if (state.queueFull) return QUEUE_FULL_NOTE;
   if (state.agentToInstall) return installPlaceholder(state.agentToInstall, state.continuesSession);
   if (state.agentToSignIn) return signInPlaceholder(state.agentToSignIn, state.continuesSession);
   if (state.privateNote) return state.privateNote;

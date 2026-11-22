@@ -131,6 +131,11 @@ export interface ComposerDockProps {
   isThinking?: boolean;
   /** Interrupts the agent's current turn; shown in place of Send while it works. */
   onStop?: () => void;
+  /**
+   * While the agent works, Send stays beside Stop and hands the message to `onSendMessage` to queue (the
+   * parent holds it until the turn ends). Off: Stop alone, as in a popout or while review comments are held.
+   */
+  queueing?: boolean;
   placeholder?: string;
   disabled?: boolean;
   /** True when only sending must wait (e.g. for the agent's install): the prompt can still be written. */
@@ -229,6 +234,7 @@ export function ComposerDock({
   controls = {},
   isThinking = false,
   onStop,
+  queueing = false,
   placeholder,
   disabled = false,
   sendDisabled = false,
@@ -320,8 +326,9 @@ export function ComposerDock({
     },
   });
 
-  // While the agent works, Stop takes Send's place; the draft waits for the turn to end.
-  const canSend = !disabled && !sendDisabled && !(isThinking && onStop);
+  // While the agent works, Stop takes Send's place, unless the parent queues what is sent meanwhile.
+  const isQueueing = isThinking && Boolean(onStop) && queueing;
+  const canSend = !disabled && !sendDisabled && (isQueueing || !(isThinking && onStop));
 
   // Counts the messages this composer has let go of (Send, clear, restore), so a pasted image still being
   // saved is not added to the next one.
@@ -800,7 +807,7 @@ export function ComposerDock({
               <span className="text-caption text-fg-subtle">{privateSessionLine}</span>
             )}
 
-            {isThinking && onStop ? (
+            {isThinking && onStop && (
               <IconButton
                 variant="outline"
                 label="Stop agent"
@@ -809,7 +816,19 @@ export function ComposerDock({
               >
                 <Square size={11} />
               </IconButton>
-            ) : sendLabel ? (
+            )}
+            {isQueueing ? (
+              <IconButton
+                variant="primary"
+                label="Queue message"
+                title={agentName ? `Sent when ${agentName} finishes.` : "Sent when the turn ends."}
+                aria-describedby={sendBlockedNoteId}
+                onClick={handleSend}
+                disabled={isSendEmpty || !canSend}
+              >
+                <ArrowUp size={14} />
+              </IconButton>
+            ) : isThinking && onStop ? null : sendLabel ? (
               <Button
                 variant="primary"
                 aria-describedby={sendBlockedNoteId}

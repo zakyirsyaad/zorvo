@@ -349,3 +349,12 @@ describe("composerNote", () => {
     );
   });
 });
+
+describe("composerNote while queueing", () => {
+  it("says a full queue is full and held comments wait for the agent", async () => {
+    const { composerNote } = await import("../lib/composer-state");
+    expect(composerNote({ continuesSession: true, queueFull: true })).toBe("Five messages are waiting. Remove one to add another.");
+    expect(composerNote({ continuesSession: true, commentsWaitFor: "Qwen Code" })).toBe("Comments are sent when Qwen Code finishes.");
+    expect(composerNote({ continuesSession: true, reviewOwner: { title: null, isArchived: false }, commentsWaitFor: "Qwen Code" })).toContain("another session");
+  });
+});

@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+
+- **Sign in again from Settings.** An agent that reads Ready has Sign in again in its menu, to switch account or set it up again.
+
 ### Changed
 
 - **Settings, Agents: the switches come first.** "Working together" and "Computer use" are above the list of agents, where the long list no longer hides them.

@@ -1003,6 +1003,7 @@ export default function App() {
     openSession: openedSessions.open,
     openedOf: openedSessions.openedOf,
     updateMessages,
+    flushUpdates: () => acp.flushQueued(),
     onAttention: (sessionId, reason) => notifyAttention(sessionId, reason),
     onNotice: (message) => setNotice(message),
     onArtifactShown,

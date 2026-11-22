@@ -75,6 +75,8 @@ export interface AgentToolsDeps {
   /** The sessions this session opened, for `list_agents`. */
   openedOf: (sessionId: string) => ListedOpened[];
   updateMessages: (sessionId: string, update: (prev: ChatMessage[]) => ChatMessage[]) => void;
+  /** Lands the agent's streamed text that still waits for a frame, so what is added next goes after it. */
+  flushUpdates?: () => void;
   onAttention: (sessionId: string, reason: 'needs-answer') => void;
   /** A session's messages, loaded from disk when it was not opened in this run. Rejects when unreadable. */
   messagesOf: (sessionId: string) => Promise<readonly ChatMessage[]>;
@@ -536,6 +538,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
           respond(call.callId, false, FAILED);
           return;
         }
+        // The reply's own text may still wait for its frame: it was sent before this call, so it lands first.
+        latest.current.flushUpdates?.();
         latest.current.updateMessages(session.id, (prev) => withVisualPart(prev, entry, { sessionId: session.id, now: Date.now(), createId }));
         respond(call.callId, true, VISUAL_SHOWN_TEXT);
       } catch (error) {

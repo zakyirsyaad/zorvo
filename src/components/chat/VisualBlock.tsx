@@ -36,8 +36,20 @@ export function VisualBlock({ sessionId, part, agentName, isArriving = false }: 
   const expandRef = useRef<HTMLButtonElement>(null);
   const frameBoxRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState("");
+  // The width the frame box last had: a folded or off-screen visual has no box to measure, and its
+  // height was measured at this width.
+  const boxWidthRef = useRef(0);
+  const measureWidth = () => {
+    const width = frameBoxRef.current?.clientWidth ?? 0;
+    if (width > 0) boxWidthRef.current = width;
+    return boxWidthRef.current;
+  };
+  const handleHeight = (measured: number) => {
+    measureWidth();
+    setHeight(measured);
+  };
   // The frame box has 20px of padding on each side; the picture is drawn at the document's own width.
-  const sizeOf = () => ({ width: (frameBoxRef.current?.clientWidth ?? 0) - 40, height });
+  const sizeOf = () => ({ width: measureWidth() - 40, height });
   const closeDialog = () => {
     setIsExpanded(false);
     expandRef.current?.focus();
@@ -86,7 +98,7 @@ export function VisualBlock({ sessionId, part, agentName, isArriving = false }: 
           {visual.status === "ready" &&
             (isNear ? (
               <div ref={frameBoxRef} className={`${FRAME} overflow-hidden p-5`}>
-                <VisualFrame document={visual.document} title={title} initialHeight={height} onHeight={setHeight} />
+                <VisualFrame document={visual.document} title={title} initialHeight={height} onHeight={handleHeight} />
               </div>
             ) : (
               // Off screen the frame is unmounted; its place keeps the height so the chat does not jump.

@@ -126,7 +126,7 @@ fn css_reading(written: &str) -> (String, Vec<usize>) {
 /// an outside `url()` or any `image-set()` becomes `none`. A reference is looked for in the
 /// markup as a style sheet reads it, so an escaped spelling (`u\\72l(`) is found too, and only
 /// the reference's own span changes: the rest is written back exactly as it was stored.
-fn without_external_css(markup: &str) -> String {
+fn css_without_references(markup: &str) -> String {
     let (reading, starts) = css_reading(markup);
     let lower = reading.to_ascii_lowercase();
     let mut out = String::with_capacity(markup.len());
@@ -159,6 +159,104 @@ fn without_external_css(markup: &str) -> String {
         at = next;
     }
     out.push_str(&markup[starts[at]..]);
+    out
+}
+
+/// The attributes a browser reads as CSS: `style`, and the presentation attributes that take a
+/// `url()`.
+const CSS_ATTRIBUTES: [&str; 10] = [
+    "style",
+    "fill",
+    "stroke",
+    "filter",
+    "clip-path",
+    "mask",
+    "marker",
+    "marker-start",
+    "marker-mid",
+    "marker-end",
+];
+
+/// One tag of the stored markup, from its `<`: the tag with its CSS attributes filtered, how
+/// many bytes it took, and whether it opens a `style` element. `None` for anything that is not
+/// the plain `<name attr="value">` the sanitizer writes.
+fn filtered_tag(from: &str) -> Option<(String, usize, bool)> {
+    let is_name_end = |c: char| c.is_ascii_whitespace() || matches!(c, '=' | '>' | '/');
+    let closing = from[1..].starts_with('/');
+    let name_at = if closing { 2 } else { 1 };
+    let name_len = from[name_at..].find(is_name_end)?;
+    let name = &from[name_at..name_at + name_len];
+    if !name.starts_with(|c: char| c.is_ascii_alphabetic()) {
+        return None;
+    }
+    let mut out = String::from(&from[..name_at + name_len]);
+    let mut at = name_at + name_len;
+    loop {
+        let rest = &from[at..];
+        let space = rest.len() - rest.trim_start().len();
+        out.push_str(&rest[..space]);
+        at += space;
+        let rest = &from[at..];
+        if let Some(end) = [">", "/>"].iter().find(|end| rest.starts_with(**end)) {
+            out.push_str(end);
+            let opens_style = !closing && *end == ">" && name.eq_ignore_ascii_case("style");
+            return Some((out, at + end.len(), opens_style));
+        }
+        let attribute_len = rest.find(is_name_end).filter(|len| *len > 0)?;
+        let attribute = &rest[..attribute_len];
+        out.push_str(attribute);
+        at += attribute_len;
+        if !from[at..].starts_with('=') {
+            continue;
+        }
+        let quote = from[at + 1..]
+            .chars()
+            .next()
+            .filter(|c| matches!(c, '"' | '\''))?;
+        let value_at = at + 2;
+        let value_len = from[value_at..].find(quote)?;
+        let value = &from[value_at..value_at + value_len];
+        let is_css = CSS_ATTRIBUTES
+            .iter()
+            .any(|css| attribute.eq_ignore_ascii_case(css));
+        out.push('=');
+        out.push(quote);
+        if is_css {
+            out.push_str(&css_without_references(value));
+        } else {
+            out.push_str(value);
+        }
+        out.push(quote);
+        at = value_at + value_len + 1;
+    }
+}
+
+/// The stored markup with outside CSS references taken out of the places a browser reads CSS:
+/// the text of `style` elements and the CSS attributes. Labels and other attributes are written
+/// back untouched, so a visual that shows `url(...)` as text still does. Markup this reader
+/// cannot follow is filtered whole from that point on, never passed through.
+fn without_external_css(markup: &str) -> String {
+    let mut out = String::with_capacity(markup.len());
+    let mut rest = markup;
+    while let Some(tag_at) = rest.find('<') {
+        out.push_str(&rest[..tag_at]);
+        rest = &rest[tag_at..];
+        let Some((tag, taken, opens_style)) = filtered_tag(rest) else {
+            out.push_str(&css_without_references(rest));
+            return out;
+        };
+        out.push_str(&tag);
+        rest = &rest[taken..];
+        if opens_style {
+            let end = rest
+                .to_ascii_lowercase()
+                .find("</style")
+                .unwrap_or(rest.len());
+            out.push_str(&css_without_references(&rest[..end]));
+            rest = &rest[end..];
+        }
+    }
+    out.push_str(rest);
     out
 }
 
@@ -325,5 +423,22 @@ mod tests {
         assert!(!out.contains("e.com"), "{out}");
         // The text is written back as stored, escapes and all.
         assert!(out.contains("<text>\\3c script\\3e alert(1)"), "{out}");
+    }
+
+    #[test]
+    fn css_is_filtered_only_where_css_is_read() {
+        for kept in [
+            "<svg xmlns=\"http://www.w3.org/2000/svg\"><text>url(https://example.com)</text></svg>",
+            "<svg xmlns=\"http://www.w3.org/2000/svg\"><text title=\"@import\">Dependency graph</text></svg>",
+            "<svg xmlns=\"http://www.w3.org/2000/svg\"><text>@import 'a'; image-set(x)</text><rect class=\"url(https://e.com)\"></rect></svg>",
+        ] {
+            assert_eq!(standalone_svg(kept, Theme::Dark), kept);
+        }
+        // A tag this reader does not understand is filtered whole, never passed through.
+        let odd = standalone_svg(
+            "<svg><rect style=url(https://e.com/a)></rect></svg>",
+            Theme::Dark,
+        );
+        assert!(!odd.contains("e.com"), "{odd}");
     }
 }

@@ -152,4 +152,26 @@ describe("VisualBlock", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog")).toBeNull();
   });
+  it("draws a folded visual's picture at the width it had when shown", async () => {
+    const width = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(640);
+    try {
+      const spy = vi.spyOn(internals(), "invoke");
+      spy.mockClear();
+      spy.mockImplementation((cmd, args) =>
+        cmd === "visual_read" ? Promise.resolve(READ) : cmd === "visual_export" ? Promise.resolve(true) : fakeTauriInvoke(cmd, args),
+      );
+      render(<VisualBlock sessionId="s-1" part={PART} agentName="Claude Code" />);
+      comeNear();
+      const frame = (await screen.findByTitle("Path of a visual")) as HTMLIFrameElement;
+      Object.defineProperty(frame.contentDocument!.body, "scrollHeight", { configurable: true, value: 300 });
+      fireEvent.load(frame);
+      fireEvent.click(screen.getByRole("button", { name: "Fold visual" }));
+      fireEvent.click(screen.getByRole("button", { name: "Visual actions" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Download as PNG" }));
+      await waitFor(() => expect(spy.mock.calls.some(([cmd]) => cmd === "visual_export")).toBe(true));
+      expect(spy.mock.calls.find(([cmd]) => cmd === "visual_export")?.[1]).toMatchObject({ width: 600, height: 300 });
+    } finally {
+      width.mockRestore();
+    }
+  });
 });

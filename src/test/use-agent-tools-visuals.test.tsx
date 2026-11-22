@@ -27,7 +27,7 @@ const OTHER: Session = { ...SESSION, id: "s-2", name: "Other" };
 const ENTRY = { id: "v-0123456789abcdef", title: "Flow", kind: "svg", bytes: 18, shownAt: 5 };
 const PART = { kind: "visual", id: ENTRY.id, title: "Flow", visualKind: "svg" };
 
-function setup(show: (args: Record<string, unknown>) => unknown | Promise<unknown>, sessions: Session[] = [SESSION, OTHER]) {
+function setup(show: (args: Record<string, unknown>) => unknown | Promise<unknown>, sessions: Session[] = [SESSION, OTHER], queued?: (messages: Record<string, ChatMessage[]>) => void) {
   const messages: Record<string, ChatMessage[]> = {
     "s-1": [{ id: "m-1", role: "user", content: "draw it", timestamp: 1 }],
     "s-2": [{ id: "m-2", role: "agent", content: "First.", timestamp: 1, parts: [{ kind: "text", text: "First." }] }],
@@ -53,6 +53,7 @@ function setup(show: (args: Record<string, unknown>) => unknown | Promise<unknow
     updateMessages: (sessionId, update) => {
       messages[sessionId] = update(messages[sessionId] ?? []);
     },
+    flushUpdates: () => queued?.(messages),
     onAttention: () => undefined,
     onNotice: (message) => {
       notices.push(message);
@@ -83,6 +84,14 @@ describe("show_visual", () => {
     expect(env.shows()).toEqual([{ sessionId: "s-1", cwd: SESSION.cwd, title: "Flow", code: "<svg><rect/></svg>" }]);
     expect(env.answers()).toEqual([{ callId: "c-1", ok: true, text: VISUAL_SHOWN_TEXT }]);
     expect(env.messages["s-1"].at(-1)).toMatchObject({ role: "agent", parts: [PART] });
+  });
+
+  it("lands the text the agent already sent before it adds the visual", async () => {
+    const env = setup(() => ENTRY, [SESSION, OTHER], (messages) => {
+      messages["s-2"] = messages["s-2"].map((message) => ({ ...message, parts: [...(message.parts ?? []), { kind: "text" as const, text: " Here it is:" }] }));
+    });
+    await env.call("c-1", "show_visual", { title: "Flow", code: "<p>a</p>" }, "s-2");
+    expect(env.messages["s-2"][0].parts).toEqual([{ kind: "text", text: "First." }, { kind: "text", text: " Here it is:" }, PART]);
   });
 
   it("passes a path instead of code, never both", async () => {

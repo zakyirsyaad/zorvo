@@ -139,7 +139,7 @@ function TaskRowOf({ task, onOpen }: { task: OverviewTask; onOpen: (tab: TaskTab
   // A background agent has no tab to open, so its row is plain text, not a control that does nothing.
   if (tab === undefined) {
     return (
-      <div className={STILL_ROW}>
+      <div className={STILL_ROW} title={task.detail ? `${task.title}: ${task.detail}` : task.title}>
         {label}
         <span className="sr-only">{`Subagent, ${task.status.toLowerCase()}.`}</span>
       </div>

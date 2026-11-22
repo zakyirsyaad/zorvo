@@ -97,6 +97,8 @@ describe("OverviewCard", () => {
 
     expect(within(running).getByText("Quiet")).toHaveClass("text-status-attention");
     expect(within(running).getByText("No activity for 55 min. Last: run_shell_command")).toBeTruthy();
+    // The row cuts both lines to fit: hovering it gives them whole.
+    expect(within(running).getByTitle("Explore auth: No activity for 55 min. Last: run_shell_command")).toBeTruthy();
     expect(within(running).getByText("Subagent, quiet.")).toHaveClass("sr-only");
     expect(within(running).queryByRole("button")).toBeNull();
   });

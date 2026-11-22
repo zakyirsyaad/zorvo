@@ -20,7 +20,7 @@ pub const MAX_ACTIVITIES: usize = 5;
 pub struct AgentTasks {
     /// The agent's clock when it answered, ms; the quiet times are measured against it.
     pub as_of: Option<u64>,
-    /// The newest first, at most [`MAX_TASKS`].
+    /// The newest first, at most [`MAX_TASKS`]; past that, those at work are kept before those that ended.
     pub tasks: Vec<AgentTask>,
     /// How many were left out.
     pub more: usize,
@@ -71,7 +71,12 @@ pub fn parse(answer: &Value) -> Result<AgentTasks, String> {
     // Stable, so tasks that started together keep the agent's order.
     tasks.sort_by_key(|task| std::cmp::Reverse(task.started_at));
     let more = tasks.len().saturating_sub(MAX_TASKS);
-    tasks.truncate(MAX_TASKS);
+    if more > 0 {
+        // An agent still at work is never the one left out: the oldest that ended give way first.
+        tasks.sort_by_key(|task| task.status != "working");
+        tasks.truncate(MAX_TASKS);
+        tasks.sort_by_key(|task| std::cmp::Reverse(task.started_at));
+    }
     let as_of = answer.get("now").and_then(millis);
     Ok(AgentTasks { as_of, tasks, more })
 }
@@ -283,6 +288,23 @@ mod tests {
         assert_eq!(parsed.more, 10);
         assert_eq!(parsed.tasks[0].id, "a59");
         assert_eq!(parsed.tasks[49].id, "a10");
+    }
+
+    #[test]
+    fn keeps_an_old_agent_that_still_works_past_fifty_newer_ones() {
+        let mut tasks: Vec<Value> = (1..=60).map(|n| agent(&format!("a{n}"), n)).collect();
+        for task in &mut tasks {
+            task["status"] = json!("completed");
+        }
+        tasks.insert(0, agent("old", 0));
+        let parsed = parse(&json!({ "tasks": tasks })).unwrap();
+        assert_eq!(parsed.tasks.len(), 50);
+        assert_eq!(parsed.more, 11);
+        // Still newest first, with the one at work in its place at the end.
+        assert_eq!(parsed.tasks[0].id, "a60");
+        assert_eq!(parsed.tasks[49].id, "old");
+        assert_eq!(parsed.tasks[49].status, "working");
+        assert_eq!(parsed.tasks[48].id, "a12");
     }
 
     #[test]

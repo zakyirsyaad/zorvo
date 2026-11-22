@@ -259,12 +259,13 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
       // Another agent's sign-in, or this one's own check, is not cut off.
       const isRunning = request !== null && (request.status === 'signing-in' || request.status === 'checking');
       if (isRunning || inFlightRef.current.has(profileId) || againRef.current[profileId] !== undefined) return;
-      if (methodsRef.current(profileId).length > 0) {
-        setAgainPhase(profileId, 'open');
-        return;
-      }
+      // Every sign-in runs in a folder: without one the list's buttons could do nothing.
       if (!folder) {
         setCheck(profileId, { phase: 'done', message: `Open a folder first, then check ${name}.`, isFailure: true });
+        return;
+      }
+      if (methodsRef.current(profileId).length > 0) {
+        setAgainPhase(profileId, 'open');
         return;
       }
       inFlightRef.current.add(profileId);
@@ -362,6 +363,14 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
     const id = authRequest.profileId;
     if (startedFromListRef.current.has(id) && stateOf(id) === 'ready') closeAgain(id);
   }, [authRequest, stateOf, closeAgain]);
+
+  // Once the agent asks for a sign-in the row's own list takes over, so the Sign in again list is put away:
+  // left open, it would come back by itself when the agent is Ready again.
+  useEffect(() => {
+    for (const [id, phase] of Object.entries(again)) {
+      if (phase === 'open' && stateOf(id) === 'needed') closeAgain(id);
+    }
+  }, [again, stateOf, closeAgain]);
 
   /** The login dialog's Cancel. A request left idle by a cancel would make a new session of that agent wait on its panel. */
   const { cancel, auth } = signIn;

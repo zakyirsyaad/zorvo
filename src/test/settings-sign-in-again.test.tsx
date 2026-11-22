@@ -190,7 +190,7 @@ const KNOWN_METHODS = [
   { id: "api-key", name: "API Key", type: "env_var" },
 ];
 
-function setupHook(authRequest?: AuthRequest, initialSigned: string[] = ["codex-acp"]) {
+function setupHook(authRequest?: AuthRequest, initialSigned: string[] = ["codex-acp"], cwd: string | null = CWD) {
   let state = { settings: { signedInAgents: initialSigned } as Settings } as PersistedState;
   const updateState = vi.fn((updater: (prev: PersistedState) => PersistedState) => {
     state = updater(state);
@@ -208,7 +208,7 @@ function setupHook(authRequest?: AuthRequest, initialSigned: string[] = ["codex-
     ({ settings, request }: { settings: Settings; request: AuthRequest | null }) => {
       const status = useAgentSignInStatus({ settings, updateState });
       const live = { ...signIn, auth: { ...signIn.auth, authRequest: request } } as typeof signIn;
-      return useSettingsSignIn({ cwd: CWD, agents: fakeProfiles, agentOptions: undefined, rememberProbed: vi.fn(), status, signIn: live });
+      return useSettingsSignIn({ cwd: cwd ?? undefined, agents: fakeProfiles, agentOptions: undefined, rememberProbed: vi.fn(), status, signIn: live });
     },
     { initialProps: { settings: state.settings, request: authRequest ?? null } },
   );
@@ -304,6 +304,33 @@ describe("useSettingsSignIn's Sign in again", () => {
     await act(async () => {});
 
     expect(hook.result.current.againOf("codex-acp")).toBe("open");
+  });
+
+  it("puts the list away once the agent asks for a sign-in, so it does not come back by itself", async () => {
+    const spy = vi
+      .spyOn(internals(), "invoke")
+      .mockResolvedValue({ reportsStatus: true, signInChecked: false, authMethods: KNOWN_METHODS });
+    const { hook } = setupHook();
+    act(() => hook.result.current.openAgain("codex-acp"));
+    await waitFor(() => expect(hook.result.current.againOf("codex-acp")).toBe("open"));
+
+    spy.mockRejectedValue(`ACP_AUTH_REQUIRED:${JSON.stringify(KNOWN_METHODS)}`);
+    act(() => hook.result.current.check("codex-acp"));
+    await waitFor(() => expect(hook.result.current.stateOf("codex-acp")).toBe("needed"));
+
+    await waitFor(() => expect(hook.result.current.againOf("codex-acp")).toBe("closed"));
+  });
+
+  it("does not open without a folder, where no method could run, and says why", () => {
+    const spy = vi.spyOn(internals(), "invoke").mockResolvedValue({ authMethods: KNOWN_METHODS });
+    const request = { profileId: "codex-acp", cwd: CWD, methods: [claudeLogin], status: "idle" } as AuthRequest;
+    const { hook } = setupHook(request, ["codex-acp"], null);
+
+    act(() => hook.result.current.openAgain("codex-acp"));
+
+    expect(hook.result.current.againOf("codex-acp")).toBe("closed");
+    expect(hook.result.current.checkOf("codex-acp")).toMatchObject({ phase: "done", isFailure: true });
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it("does not close a list opened later because of an older sign-in that is still in the slot", async () => {

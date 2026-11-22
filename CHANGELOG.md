@@ -12,6 +12,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - An agent now starts workers by itself when you ask it to split work or run parts in parallel, where before it could run them as background tasks of its own that Zorvo cannot show.
 - **Output is called Artifacts again.** The tab, the sidebar entry, the gallery and the section of the overview card say Artifacts. They still list the pages an agent showed and the files it made.
+- **A link in a reply opens in Zorvo's browser.** A click shows the page in the Browser tab beside the chat. Right-click a link to open it in your own browser. Mail links, and links in a session's own window, still open outside.
 
 ### Fixed
 

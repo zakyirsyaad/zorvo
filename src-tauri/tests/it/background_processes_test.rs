@@ -193,14 +193,69 @@ fn keeps_similarly_named_user_servers_and_bridges() {
         let tasks = select_tasks(&[root, server], &[("session".to_owned(), 10)]);
         assert_eq!(tasks.iter().map(|t| t.pid).collect::<Vec<_>>(), [11]);
     }
+    // A bridge someone runs from a shell is a command like any other.
     let rows = parse_ps(
         "10 1 10 01:30 /tools/agent --acp\n\
-         11 10 11 00:10 /Applications/Zorvo.app/Contents/MacOS/zorvo mcp-bridge\n",
+         11 10 11 00:20 /bin/zsh -c zorvo mcp-bridge\n\
+         12 11 12 00:10 /Applications/Zorvo.app/Contents/MacOS/zorvo mcp-bridge\n",
     );
     assert_eq!(
         select_tasks(&rows, &[("session".to_owned(), 10)])[0].pid,
         11
     );
+}
+
+#[test]
+fn looks_through_codex_own_bridge_and_helper_and_still_lists_its_commands() {
+    // Codex 2.6.0 as it runs: a Node launcher, `codex app-server`, and under it Zorvo's
+    // bridge and `codex-code-mode-host`, each leading a group of its own.
+    let folder = "/Users/me/Library/Application Support/xyz.zorvo.desktop/tools/agents/codex-acp/2.6.0/vendor/bin";
+    let rows = parse_ps(&format!(
+        "10 1 10 04:07 node /Users/me/Library/Application Support/xyz.zorvo.desktop/tools/agents/codex-acp/2.6.0/bin/codex-acp\n\
+         11 10 10 04:07 {folder}/codex app-server\n\
+         12 11 12 04:06 /Applications/Zorvo.app/Contents/MacOS/zorvo mcp-bridge\n\
+         13 11 13 03:50 {folder}/codex-code-mode-host\n"
+    ));
+    let roots = [("session".to_owned(), 10)];
+    assert!(select_tasks(&rows, &roots).is_empty());
+
+    let with_work = parse_ps(&format!(
+        "10 1 10 04:07 node /tools/codex-acp\n\
+         11 10 10 04:07 {folder}/codex app-server\n\
+         13 11 13 03:50 {folder}/codex-code-mode-host\n\
+         14 13 14 00:20 /bin/zsh -lc pnpm dev\n\
+         15 11 15 00:10 node /project/node_modules/.bin/vitest\n"
+    ));
+    let pids: Vec<_> = select_tasks(&with_work, &roots)
+        .iter()
+        .map(|t| t.pid)
+        .collect();
+    assert_eq!(pids, [14, 15]);
+}
+
+#[test]
+fn keeps_a_program_that_only_shares_a_folder_or_a_name_start() {
+    for child in [
+        // Another program in the agent's folder.
+        "/tools/bin/git status",
+        // A name that starts the same but is not the agent's with a suffix.
+        "/tools/bin/codexa",
+        // The same name in another folder.
+        "/other/bin/codex-code-mode-host",
+        // The agent's own program, run as a command.
+        "/tools/bin/codex exec build",
+    ] {
+        let mut root = row(10, 1, "/tools/bin/codex app-server");
+        root.elapsed_secs = 600;
+        let mut task = row(11, 10, child);
+        task.pgid = 11;
+        let tasks = select_tasks(&[root, task], &[("session".to_owned(), 10)]);
+        assert_eq!(
+            tasks.iter().map(|t| t.pid).collect::<Vec<_>>(),
+            [11],
+            "{child}"
+        );
+    }
 }
 
 #[test]

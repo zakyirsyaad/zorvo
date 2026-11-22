@@ -42,7 +42,7 @@ export interface OverviewInputs {
   agentTasksAsOf?: number;
 }
 
-/** What the card shows; a section is left out while it has nothing to show, Output aside. */
+/** What the card shows; a section is left out while it has nothing to show, Artifacts aside. */
 export interface Overview {
   /** Running and waiting tasks, then failed ones, newest first. */
   tasks: OverviewTask[];

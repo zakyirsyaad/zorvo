@@ -111,7 +111,7 @@ export function versionLabel(version: number, artifact: Artifact): string {
 export function shownArtifactOf(
   artifacts: readonly Artifact[],
   viewed: ViewedArtifact | null,
-  /** Other rows the Output tab lists (the files the agent made): with any, a single page waits in the list. */
+  /** Other rows the Artifacts tab lists (the files the agent made): with any, a single page waits in the list. */
   otherRows = 0,
 ): Artifact | undefined {
   if (viewed) return artifacts.find((artifact) => artifact.id === viewed.artifactId);

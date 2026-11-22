@@ -29,6 +29,22 @@ describe("the MCP path's context", () => {
     }
   });
 
+  it("tells both paths to use a worker unasked, in place of the agent's own background task", () => {
+    for (const note of [MCP_PATH_CONTEXT, COMMAND_PATH_CONTEXT]) {
+      expect(note).toContain("use start_worker without being asked for it by name");
+      expect(note).toContain("in place of a subagent or background task of your own");
+      expect(note).toContain("A worker may be the same agent as you");
+    }
+    expect(COMMAND_PATH_CONTEXT).not.toContain("only when the user asks for another agent");
+  });
+
+  it("says the tools may carry the server's name, and to search for zorvo before falling back", () => {
+    expect(MCP_PATH_CONTEXT).toContain("mcp__zorvo__start_worker");
+    expect(MCP_PATH_CONTEXT).toContain("search for zorvo before you fall back to a tool of your own");
+    expect(MCP_PATH_CONTEXT).toContain("one reply may hold several, each beside the text it explains");
+    expect(MCP_PATH_CONTEXT).toContain("something they keep, reopen, scroll or click through, or that needs a script, is a page");
+  });
+
   it("names start_worker and send, and says to end the turn", () => {
     expect(MCP_PATH_CONTEXT).toContain("start_worker");
     expect(MCP_PATH_CONTEXT).toContain("send");

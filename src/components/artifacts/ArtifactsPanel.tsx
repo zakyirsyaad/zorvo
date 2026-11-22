@@ -131,7 +131,7 @@ function CanvasRow({ sessionId, canvas, onOpen, onError }: { sessionId: string; 
   );
 }
 
-/** The Output tab: the pages and canvases this session's agent showed, one of them open, and the files it created. */
+/** The Artifacts tab: the pages and canvases this session's agent showed, one of them open, and the files it created. */
 export function ArtifactsPanel({
   sessionId,
   artifacts,
@@ -210,7 +210,7 @@ export function ArtifactsPanel({
   }
 
   return (
-    <ul aria-label="Output" className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-2.5">
+    <ul aria-label="Artifacts" className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 py-2.5">
       {artifacts.map((artifact) => {
         const newest = newestVersion(artifact);
         const at = artifact.versions.find((version) => version.n === newest)?.at ?? 0;

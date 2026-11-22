@@ -43,17 +43,17 @@ async function renderApp() {
 const sidebar = () => within(screen.getByRole("complementary"));
 
 describe("the gallery in the app", () => {
-  it("offers Output in the sidebar only while a session has a page", async () => {
+  it("offers Artifacts in the sidebar only while a session has a page", async () => {
     seed(false);
     await renderApp();
     await waitFor(() => expect(sidebar().getByText("Refactor parser")).toBeTruthy());
-    expect(sidebar().queryByRole("button", { name: /^Output/ })).toBeNull();
+    expect(sidebar().queryByRole("button", { name: /^Artifacts/ })).toBeNull();
   });
 
-  it("opens the gallery, then an artifact in its session's Output tab", async () => {
+  it("opens the gallery, then an artifact in its session's Artifacts tab", async () => {
     seed(true);
     await renderApp();
-    const entry = await waitFor(() => sidebar().getByRole("button", { name: "Output, 1" }));
+    const entry = await waitFor(() => sidebar().getByRole("button", { name: "Artifacts, 1" }));
 
     await act(async () => {
       fireEvent.click(entry);
@@ -68,7 +68,7 @@ describe("the gallery in the app", () => {
     });
 
     expect(screen.queryByRole("region", { name: "Artifact gallery" })).toBeNull();
-    await waitFor(() => expect(screen.getByRole("tab", { name: /Output/ }).getAttribute("aria-selected")).toBe("true"));
+    await waitFor(() => expect(screen.getByRole("tab", { name: /Artifacts/ }).getAttribute("aria-selected")).toBe("true"));
     expect(screen.getByRole("heading", { name: "Session list performance", level: 3 })).toBeTruthy();
   });
 
@@ -91,7 +91,7 @@ describe("the gallery in the app", () => {
       fireEvent.click(await waitFor(() => sidebar().getByText("Write the docs")));
     });
     await act(async () => {
-      fireEvent.click(await waitFor(() => sidebar().getByRole("button", { name: "Output, 2" })));
+      fireEvent.click(await waitFor(() => sidebar().getByRole("button", { name: "Artifacts, 2" })));
     });
 
     await act(async () => {
@@ -113,7 +113,7 @@ describe("the gallery in the app", () => {
     });
     await renderApp();
     await act(async () => {
-      fireEvent.click(await waitFor(() => sidebar().getByRole("button", { name: "Output, 1" })));
+      fireEvent.click(await waitFor(() => sidebar().getByRole("button", { name: "Artifacts, 1" })));
     });
     await act(async () => {
       fireEvent.click(within(screen.getByRole("region", { name: "Artifact gallery" })).getByRole("button", { name: /Session list performance/ }));
@@ -137,7 +137,7 @@ describe("the gallery in the app", () => {
     seed(true);
     await renderApp();
     await act(async () => {
-      fireEvent.click(await waitFor(() => sidebar().getByRole("button", { name: "Output, 1" })));
+      fireEvent.click(await waitFor(() => sidebar().getByRole("button", { name: "Artifacts, 1" })));
     });
 
     await act(async () => {

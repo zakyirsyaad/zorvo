@@ -62,7 +62,7 @@ export interface ChatCanvasProps {
   onReopenElicitationUrl?: (key: string) => void;
   /** The ids of the session's artifacts, so a card of a deleted one reads Removed. */
   artifactIds?: ReadonlySet<string>;
-  /** Shows an artifact card's version in the Output tab; absent in a popout. */
+  /** Shows an artifact card's version in the Artifacts tab; absent in a popout. */
   onOpenArtifact?: (card: ArtifactCard) => void;
   /** Opens NEAR AI's Verification Center from a private reply's badge. */
   onOpenUrl?: (url: string) => void;

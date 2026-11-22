@@ -68,7 +68,7 @@ describe("the list", () => {
 
     expect(screen.getByRole("heading", { name: "Session list performance" })).toBeTruthy();
     await waitFor(() => expect(calls("artifact_view_show")).toHaveLength(1));
-    expect(screen.queryByRole("button", { name: "Back to output" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Back to artifacts" })).toBeNull();
   });
 });
 
@@ -121,7 +121,7 @@ describe("the viewer", () => {
 
   it("goes back to the list", () => {
     const { props } = show(viewingReport);
-    fireEvent.click(screen.getByRole("button", { name: "Back to output" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to artifacts" }));
     expect(props.onView).toHaveBeenCalledWith(null);
   });
 
@@ -213,7 +213,7 @@ describe("the viewer", () => {
     rerender(<ArtifactsPanel {...props} isExpanded />);
 
     expect(screen.getByRole("button", { name: "Shrink" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Back to output" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Back to artifacts" })).toBeNull();
   });
 
   it("tells the user when the page cannot be shown", async () => {
@@ -459,7 +459,7 @@ describe("comments", () => {
   });
 });
 
-describe("the Output tab's files and empty state", () => {
+describe("the Artifacts tab's files and empty state", () => {
   const MADE = [
     { path: "/w/zorvo/src/lib/pr-chip.ts", at: Date.now() - 6 * 60_000 },
     { path: "/elsewhere/notes.md", at: Date.now() - 7 * 60_000 },
@@ -468,14 +468,14 @@ describe("the Output tab's files and empty state", () => {
   it("says what will show there while the agent has made nothing", () => {
     show({ artifacts: [], files: [], agentName: "Claude Code" });
     expect(screen.getByText("Nothing yet. Pages and files Claude Code makes in this session show here.")).toBeTruthy();
-    expect(screen.queryByRole("list", { name: "Output" })).toBeNull();
+    expect(screen.queryByRole("list", { name: "Artifacts" })).toBeNull();
   });
 
   it("lists the files the agent made under its pages, and opens one inside the folder in the file viewer", () => {
     const onOpenFile = vi.fn();
     show({ artifacts: [REPORT], files: MADE, filesRoot: "/w/zorvo", onOpenFile });
 
-    const rows = within(screen.getByRole("list", { name: "Output" })).getAllByRole("listitem");
+    const rows = within(screen.getByRole("list", { name: "Artifacts" })).getAllByRole("listitem");
     expect(rows).toHaveLength(3);
     expect(rows[0].textContent).toContain(REPORT.title);
     expect(rows[1].textContent).toContain("pr-chip.ts");
@@ -490,14 +490,14 @@ describe("the Output tab's files and empty state", () => {
 
   it("says no time for a file whose time is not known", () => {
     show({ artifacts: [], files: [{ path: "/w/zorvo/src/replayed.ts", at: null }], filesRoot: "/w/zorvo" });
-    const row = within(screen.getByRole("list", { name: "Output" })).getByRole("listitem");
+    const row = within(screen.getByRole("list", { name: "Artifacts" })).getByRole("listitem");
     expect(row.textContent).toContain("New file · src");
     expect(row.textContent).not.toMatch(/ago|now/i);
   });
 
   it("opens a single page by itself only when no file is listed beside it", () => {
     show({ artifacts: [REPORT], files: MADE, filesRoot: "/w/zorvo" });
-    expect(screen.getByRole("list", { name: "Output" })).toBeTruthy();
+    expect(screen.getByRole("list", { name: "Artifacts" })).toBeTruthy();
   });
 });
 
@@ -512,7 +512,7 @@ describe("canvases", () => {
     boards: [{ id: "cart", sha256: "a".repeat(64) }],
   };
 
-  it("lists a canvas in the Output tab and opens it", async () => {
+  it("lists a canvas in the Artifacts tab and opens it", async () => {
     spy.mockImplementation((cmd: string, args?: Record<string, unknown>) => (cmd === "canvas_read" ? Promise.resolve(READ) : fakeTauriInvoke(cmd, args)));
     const { props, rerender } = show({ canvases: [ENTRY] });
 
@@ -532,7 +532,7 @@ describe("canvases", () => {
 
     // As in the artboard, a row whose folder is gone opens nothing: only its menu is left.
     expect(screen.queryByRole("button", { name: /^Checkout/ })).toBeNull();
-    const row = within(screen.getByRole("list", { name: "Output" }))
+    const row = within(screen.getByRole("list", { name: "Artifacts" }))
       .getAllByRole("listitem")
       .find((item) => item.textContent?.includes("Checkout"))!;
     expect(row.textContent).toContain("Canvas · design/checkout");
@@ -552,6 +552,6 @@ describe("canvases", () => {
 
   it("does not open a single page by itself while a canvas is listed", () => {
     show({ artifacts: [REPORT], canvases: [ENTRY] });
-    expect(screen.getByRole("list", { name: "Output" })).toBeTruthy();
+    expect(screen.getByRole("list", { name: "Artifacts" })).toBeTruthy();
   });
 });

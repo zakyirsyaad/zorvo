@@ -13,9 +13,9 @@ import { CanvasMenu } from "./CanvasMenu";
 export interface ArtifactGalleryProps {
   /** Every session's artifacts, the most recently changed first. */
   rows: readonly GalleryRow[];
-  /** Selects the session and shows the artifact in its Output tab. */
+  /** Selects the session and shows the artifact in its Artifacts tab. */
   onOpen: (sessionId: string, artifactId: string) => void;
-  /** Selects the session and shows the canvas in its Output tab. */
+  /** Selects the session and shows the canvas in its Artifacts tab. */
   onOpenCanvas?: (sessionId: string, key: string) => void;
   /**
    * Brings the sidebar back; given only while it is hidden. The top bar, which has this button for
@@ -56,7 +56,7 @@ export function ArtifactGallery({ rows, onOpen, onOpenCanvas, onShowSidebar, not
             <PanelLeft size={14} />
           </IconButton>
         )}
-        <h2 className="text-ui font-semibold text-fg">Output</h2>
+        <h2 className="text-ui font-semibold text-fg">Artifacts</h2>
         <span className="text-ui-sm text-fg-subtle">{countLine(rows)}</span>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto p-6">
@@ -81,7 +81,7 @@ export function ArtifactGallery({ rows, onOpen, onOpenCanvas, onShowSidebar, not
                 <span>Agent</span>
                 <span className="text-right">Updated</span>
               </div>
-              <ul aria-label="Output" className="-mt-2 flex flex-col gap-0.5">
+              <ul aria-label="Artifacts" className="-mt-2 flex flex-col gap-0.5">
                 {shown.map((row) => (
                   <li key={`${row.sessionId}/${row.kind === "canvas" ? row.canvas.key : row.artifact.id}`} className="flex items-center gap-1">
                     <button

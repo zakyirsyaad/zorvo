@@ -9,7 +9,7 @@ const LABELS: Record<InspectorTab, string> = {
   changes: "Changes",
   activity: "Activity",
   files: "Files",
-  artifacts: "Output",
+  artifacts: "Artifacts",
   browser: "Browser",
   context: "Context",
   tasks: "Tasks",

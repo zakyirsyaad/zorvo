@@ -395,7 +395,7 @@ export function OverviewCard({
             ))}
           </Section>
         )}
-        <Section id="overview-output" title="Output" count={outputRows.length}>
+        <Section id="overview-output" title="Artifacts" count={outputRows.length}>
           {outputRows.length > 0
             ? outputRows
             : [

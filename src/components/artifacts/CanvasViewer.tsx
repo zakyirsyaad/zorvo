@@ -18,7 +18,7 @@ export interface CanvasViewerProps {
   canvasKey: string;
   /** Moves when one of the session's turns ends, so the canvas is read again. */
   turnsEnded?: number;
-  /** Back to the Output list; absent when there is no list to go back to. */
+  /** Back to the Artifacts list; absent when there is no list to go back to. */
   onBack?: () => void;
   isExpanded: boolean;
   onToggleExpanded: () => void;

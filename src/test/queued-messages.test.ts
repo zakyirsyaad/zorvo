@@ -59,6 +59,7 @@ describe('queued messages', () => {
     expect(queueHoldNote('ended', 'Qwen Code')).toBe('Not sent: Qwen Code has ended.');
     expect(queueHoldNote('refused', 'Qwen Code')).toBe('Not sent: Qwen Code did not take the last message.');
     expect(queueHoldNote('waiting', 'Qwen Code')).toBe('Waits for your answer in the chat.');
+    expect(queueHoldNote('stopped', 'Qwen Code')).toBe('Not sent: you stopped the turn.');
     expect(queueHoldNote(null, 'Qwen Code')).toBeNull();
   });
 });

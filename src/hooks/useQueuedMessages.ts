@@ -57,6 +57,8 @@ export function useQueuedMessages(deps: QueuedMessagesDeps) {
   const waitingSettle = useRef(new Set<string>());
   // The user ended the agent: its turn end must not send into a dying process.
   const agentEnded = useRef(new Set<string>());
+  // Send now asked for the stop: the cancelled turn that follows is the one to send after. A plain Stop is not.
+  const sendNowAsked = useRef(new Set<string>());
   const counter = useRef(0);
   const settleRef = useRef<(sessionId: string, end: { how: WorkerTurnEnd }) => void>(() => {});
   const [, setRevision] = useState(0);
@@ -72,6 +74,7 @@ export function useQueuedMessages(deps: QueuedMessagesDeps) {
     missed.current.delete(sessionId);
     waitingSettle.current.delete(sessionId);
     agentEnded.current.delete(sessionId);
+    sendNowAsked.current.delete(sessionId);
   }, []);
 
   const setQueue = useCallback(
@@ -141,6 +144,7 @@ export function useQueuedMessages(deps: QueuedMessagesDeps) {
   const settleNow = useCallback(
     (sessionId: string, end: { how: WorkerTurnEnd }) => {
       const wasEnded = agentEnded.current.delete(sessionId);
+      const wasSendNow = sendNowAsked.current.delete(sessionId);
       if (queueOf(sessionId).length === 0) return;
       if (wasEnded || end.how === 'exited') {
         holds.current.set(sessionId, 'ended');
@@ -149,6 +153,12 @@ export function useQueuedMessages(deps: QueuedMessagesDeps) {
       }
       if (end.how === 'failed') {
         holds.current.set(sessionId, 'failed');
+        bump();
+        return;
+      }
+      if (end.how === 'cancelled' && !wasSendNow) {
+        // Stop means stop: the next message would start the agent again at once.
+        holds.current.set(sessionId, 'stopped');
         bump();
         return;
       }
@@ -233,8 +243,10 @@ export function useQueuedMessages(deps: QueuedMessagesDeps) {
       setQueue(sessionId, moveToFront(queueOf(sessionId), id));
       // Stop would end a session that is still starting: the row only moves up, and goes when the first turn ends.
       if (isStarting(sessionId)) return;
-      if (isRunning) stop(sessionId);
-      else sendFirst(sessionId, ended ? 'resume' : 'send');
+      if (isRunning) {
+        sendNowAsked.current.add(sessionId);
+        stop(sessionId);
+      } else sendFirst(sessionId, ended ? 'resume' : 'send');
     },
     [latest, queueOf, sendFirst, setQueue],
   );

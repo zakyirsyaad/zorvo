@@ -6,7 +6,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Added
 
-- **Send while an agent works.** A message you send during a turn waits above the composer and goes out when the turn ends. Send now stops the turn first.
+- **Send while an agent works.** A message you send during a turn waits above the composer and goes out when the turn ends. Send now stops the turn first. When you press Stop yourself, the messages keep waiting until you send one.
 
 ## [0.16.0] - 2026-11-22
 

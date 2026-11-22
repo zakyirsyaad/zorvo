@@ -67,11 +67,39 @@ describe('useQueuedMessages', () => {
     expect(texts(result)).toEqual([]);
   });
 
-  it('sends after a cancelled turn', async () => {
+  it('holds the queue after a plain Stop and says so: Stop means stop', async () => {
     const { result, deps } = setup();
     act(() => void result.current.add('s1', 'one'));
     await act(async () => result.current.onTurnSettled('s1', { how: 'cancelled' }));
+    expect(deps.deliver).not.toHaveBeenCalled();
+    expect(result.current.holdOf('s1')).toBe('stopped');
+    expect(texts(result)).toEqual(['one']);
+  });
+
+  it('sends after the cancelled turn that Send now asked for, and only that one', async () => {
+    let running = true;
+    const { result, deps } = setup({ isTurnUnderWay: () => running });
+    act(() => {
+      result.current.add('s1', 'one');
+      result.current.add('s1', 'two');
+    });
+    act(() => result.current.sendNow('s1', result.current.queueOf('s1')[0]!.id));
+    running = false;
+    await act(async () => result.current.onTurnSettled('s1', { how: 'cancelled' }));
     expect(deps.deliver).toHaveBeenCalledTimes(1);
+    // The next Stop is the user's own.
+    await act(async () => result.current.onTurnSettled('s1', { how: 'cancelled' }));
+    expect(deps.deliver).toHaveBeenCalledTimes(1);
+    expect(result.current.holdOf('s1')).toBe('stopped');
+  });
+
+  it('sends a held message with Send now once the turn was stopped', async () => {
+    const { result, deps } = setup();
+    act(() => void result.current.add('s1', 'one'));
+    await act(async () => result.current.onTurnSettled('s1', { how: 'cancelled' }));
+    await act(async () => result.current.sendNow('s1', result.current.queueOf('s1')[0]!.id));
+    expect(deps.deliver).toHaveBeenCalledTimes(1);
+    expect(deps.stop).not.toHaveBeenCalled();
   });
 
   it('keeps the queue after a failed turn and says so, then sends after a good one', async () => {

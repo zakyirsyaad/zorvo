@@ -895,6 +895,16 @@ pub fn acp_context_usage(
     manager.context_usage(&session_id)
 }
 
+/// The agents Qwen Code runs in the background for the session. Only Qwen
+/// Code answers; the webview sends nothing but the session id.
+#[tauri::command(async)]
+pub fn acp_agent_tasks(
+    manager: State<'_, AcpManager>,
+    session_id: String,
+) -> Result<crate::acp::agent_tasks::AgentTasks, String> {
+    manager.agent_tasks(&session_id)
+}
+
 /// The newest API error Qwen Code logged for the session since `since` (Unix
 /// ms), read from Qwen's own log: it reports a failed request over ACP without
 /// the error. `None` when the session is not running or the log has nothing.

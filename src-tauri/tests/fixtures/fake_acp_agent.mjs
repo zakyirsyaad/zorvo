@@ -653,6 +653,14 @@ const handlers = {
     const recorded = JSON.parse(readFileSync(new URL("./qwen-context-usage.json", import.meta.url), "utf8")).answer;
     reply(id, { ...recorded, sessionId: params.sessionId });
   },
+  // FAKE_ACP_TASKS: path of a JSON file, read at each call, that answers Qwen Code's background agent list.
+  "qwen/status/session/tasks": (id) => {
+    if (!process.env.FAKE_ACP_TASKS) {
+      send({ id, error: { code: -32601, message: "Method not found" } });
+      return;
+    }
+    reply(id, JSON.parse(readFileSync(process.env.FAKE_ACP_TASKS, "utf8")));
+  },
   "session/set_model": (id, params) => {
     if (!process.env.FAKE_ACP_MODELS || !MODEL_IDS.includes(params.modelId)) {
       send({ id, error: { code: -32602, message: `Unknown model ${params.modelId}` } });

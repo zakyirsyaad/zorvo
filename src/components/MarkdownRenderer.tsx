@@ -4,6 +4,11 @@ import remarkGfm from "remark-gfm";
 import { invoke } from "@tauri-apps/api/core";
 import { Copy, Check } from "lucide-react";
 import { OPENABLE_URL } from "../lib/link-menu";
+import { requestBrowserOpen } from "../lib/browser";
+import { readWindowMode } from "../lib/window-mode";
+
+/** A link to a page, which Zorvo's browser can show. */
+const WEB_URL = /^https?:\/\//i;
 
 const COPIED_FEEDBACK_MS = 2000;
 const LANGUAGE_CLASS = /language-([\w-]+)/;
@@ -55,8 +60,9 @@ function textOf(children: ReactNode): string {
 }
 
 /**
- * Links open in the user's browser; a click must never navigate the app's
- * webview away. Anything else (a file path an agent mentions, say) is shown
+ * A link to a page opens in Zorvo's browser panel, and anything else it can open
+ * (a mail link, or any link in a popout) in the system; a click must never navigate
+ * the app's webview away. Anything else (a file path an agent mentions, say) is shown
  * as text with its target on hover instead of a link that does nothing.
  */
 function ExternalLink({ href, children }: { href?: string; children?: ReactNode }) {
@@ -73,6 +79,12 @@ function ExternalLink({ href, children }: { href?: string; children?: ReactNode 
       title={href}
       onClick={(event) => {
         event.preventDefault();
+        // A page opens in Zorvo's own browser, beside the chat. A popout has no browser panel and
+        // a mail link is not a page, so those go to the system, as the link menu's "Open in browser" does.
+        if (WEB_URL.test(href) && readWindowMode(window.location.search).kind === "main") {
+          requestBrowserOpen(href);
+          return;
+        }
         // The backend only refuses what OPENABLE_URL already excludes.
         invoke("open_external_url", { url: href }).catch(() => {});
       }}

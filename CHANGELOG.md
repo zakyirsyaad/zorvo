@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Changed
+
+- **A link in a reply opens in Zorvo's browser.** A click shows the page in the Browser tab beside the chat. Right-click a link to open it in your own browser. Mail links, and links in a session's own window, still open outside.
+
 ## [0.16.0] - 2026-11-22
 
 ### Added

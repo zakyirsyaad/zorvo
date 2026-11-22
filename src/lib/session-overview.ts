@@ -1,9 +1,11 @@
 import type { PullRequestStatus } from '../hooks/usePullRequest';
 import type { TaskTab } from '../hooks/useTaskTabs';
 import type { Artifact, ChatMessage } from '../types';
+import { isWorkingTask, type AgentTask } from './agent-tasks';
 import { isImagePath } from './attachments';
 import type { BackgroundTask } from './background-tasks';
 import type { CreatedFile } from './created-files';
+import { escapeVisible } from './visible-text';
 import { secondLine, shownTools, subagentTaskOf, waitingToolCallIds, type TaskStatus } from './task-view';
 
 /** Rows a section shows before "Show N more". */
@@ -21,7 +23,8 @@ export interface OverviewTask {
   /** The word a screen reader hears and a failed row shows. */
   status: TaskStatus | 'Running';
   startedAt?: number;
-  tab: TaskTab;
+  /** What a click opens; a task Zorvo has no tab for (a background agent) has none and shows as a plain row. */
+  tab?: TaskTab;
 }
 
 export interface OverviewInputs {
@@ -33,6 +36,8 @@ export interface OverviewInputs {
   pages: readonly Artifact[];
   files: readonly CreatedFile[];
   pullRequest: PullRequestStatus | null;
+  /** The background agents Qwen Code reports, when it does. */
+  agentTasks?: readonly AgentTask[];
 }
 
 /** What the card shows; a section is left out while it has nothing to show, Output aside. */
@@ -100,6 +105,37 @@ function shellTask(task: BackgroundTask): OverviewTask {
   };
 }
 
+const TASK_STATUS_WORDS: Record<Exclude<AgentTask['status'], 'unknown'>, TaskStatus> = {
+  working: 'Working',
+  done: 'Done',
+  failed: 'Failed',
+  stopped: 'Did not finish',
+};
+
+/** A background agent as a row. Everything the agent wrote is made visible text first. */
+function agentTaskRow(task: AgentTask): OverviewTask {
+  const status: TaskStatus = task.status === 'unknown' ? (isWorkingTask(task) ? 'Working' : 'Done') : TASK_STATUS_WORDS[task.status];
+  const activity = task.activities[task.activities.length - 1];
+  const detail = activity
+    ? activity.description ? `${activity.name}: ${activity.description}` : activity.name
+    : (task.agentType ?? 'Subagent');
+  return {
+    key: `agent-task:${task.id}`,
+    kind: 'subagent',
+    title: escapeVisible(task.label || task.description || 'Background agent'),
+    detail: escapeVisible(detail),
+    state: STATE_OF[status],
+    status,
+    ...(task.startedAt === undefined ? {} : { startedAt: task.startedAt }),
+  };
+}
+
+/** Background agents, less those a foreground subagent with steps already shows under the tool call that launched them. */
+function agentTaskRows(tasks: readonly AgentTask[], messages: readonly ChatMessage[]): OverviewTask[] {
+  const shown = new Set(messages.flatMap((message) => shownTools(message.tools ?? []).filter((tool) => tool.steps !== undefined).map((tool) => tool.id)));
+  return tasks.filter((task) => task.toolUseId === undefined || !shown.has(task.toolUseId)).map(agentTaskRow);
+}
+
 const newestFirst = (a: OverviewTask, b: OverviewTask) => (b.startedAt ?? 0) - (a.startedAt ?? 0);
 
 /** The files the user attached to their messages, newest first, each once. */
@@ -120,7 +156,11 @@ function sourcesOf(messages: readonly ChatMessage[]): Overview['sources'] {
 
 /** The overview card of one session, worked out from what Zorvo already has; nothing is stored. */
 export function overviewOf(inputs: OverviewInputs): Overview {
-  const all = [...subagentTasks(inputs.messages, inputs.isBusy), ...inputs.shellTasks.map(shellTask)].sort(newestFirst);
+  const all = [
+    ...subagentTasks(inputs.messages, inputs.isBusy),
+    ...agentTaskRows(inputs.agentTasks ?? [], inputs.messages),
+    ...inputs.shellTasks.map(shellTask),
+  ].sort(newestFirst);
   const tasks = all.filter((task) => task.state !== 'done');
   return {
     // Failed ones stay in sight, after what is still at work.

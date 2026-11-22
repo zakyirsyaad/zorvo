@@ -120,13 +120,8 @@ function TaskRowOf({ task, onOpen }: { task: OverviewTask; onOpen: (tab: TaskTab
   const elapsed = isLive && task.startedAt !== undefined ? formatElapsed(now - task.startedAt) : undefined;
   const Kind = TASK_ICON[task.kind];
   const statusWord = task.state === "failed" ? "Failed" : task.state === "needs-you" ? "Needs you" : undefined;
-  return (
-    <button
-      type="button"
-      aria-label={`Open ${task.title}. ${task.kind === "subagent" ? "Subagent" : "Shell command"}, ${task.status.toLowerCase()}.`}
-      onClick={() => onOpen(task.tab)}
-      className={ROW}
-    >
+  const label = (
+    <>
       <TaskState task={task} />
       <Label name={task.title} detail={task.detail} isMono={task.kind === "shell"} />
       {statusWord ? (
@@ -136,6 +131,26 @@ function TaskRowOf({ task, onOpen }: { task: OverviewTask; onOpen: (tab: TaskTab
       ) : (
         <Kind aria-hidden="true" className={ICON} />
       )}
+    </>
+  );
+  const { tab } = task;
+  // A background agent has no tab to open, so its row is plain text, not a control that does nothing.
+  if (tab === undefined) {
+    return (
+      <div className={STILL_ROW}>
+        {label}
+        <span className="sr-only">{`Subagent, ${task.status.toLowerCase()}.`}</span>
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      aria-label={`Open ${task.title}. ${task.kind === "subagent" ? "Subagent" : "Shell command"}, ${task.status.toLowerCase()}.`}
+      onClick={() => onOpen(tab)}
+      className={ROW}
+    >
+      {label}
     </button>
   );
 }

@@ -491,6 +491,42 @@ fn an_agent_without_the_breakdown_is_an_error() {
 }
 
 #[test]
+fn reads_the_background_agents_an_agent_reports_and_follows_the_file() {
+    let dir = std::env::temp_dir().join(format!("zorvo-tasks-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("tasks.json");
+    let recorded: serde_json::Value =
+        serde_json::from_str(include_str!("../fixtures/qwen-session-tasks.json")).unwrap();
+    std::fs::write(&file, recorded["answer"].to_string()).unwrap();
+    let (manager, _rx) = manager();
+    let launch = with_env(fake_agent(), "FAKE_ACP_TASKS", file.to_str().unwrap());
+    manager.start("s-1", &cwd(), &launch, json!([])).unwrap();
+
+    let tasks = manager.agent_tasks("s-1").expect("tasks");
+    assert_eq!(tasks.tasks.len(), 3);
+    assert_eq!(tasks.tasks[0].status, "working");
+
+    // The fake agent reads the file at each call.
+    std::fs::write(&file, recorded["empty"].to_string()).unwrap();
+    assert!(manager.agent_tasks("s-1").expect("tasks").tasks.is_empty());
+
+    manager.stop("s-1");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn an_agent_without_the_task_list_is_an_error() {
+    let (manager, _rx) = manager();
+    manager
+        .start("s-1", &cwd(), &fake_agent(), json!([]))
+        .unwrap();
+
+    assert!(manager.agent_tasks("s-1").is_err());
+    assert!(manager.agent_tasks("nope").is_err());
+    manager.stop("s-1");
+}
+
+#[test]
 fn probe_reports_the_models_an_agent_offers() {
     let (manager, _rx) = manager();
     let launch = with_env(fake_agent(), "FAKE_ACP_MODELS", "1");

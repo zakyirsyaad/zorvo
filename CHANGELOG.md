@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+
+- **Qwen Code's background agents show in the overview card.** While Qwen Code runs agents of its own in the background, the card lists each one with what it last did.
+
 ## [0.16.0] - 2026-11-22
 
 ### Added

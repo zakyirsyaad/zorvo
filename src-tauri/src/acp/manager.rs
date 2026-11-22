@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
+use super::agent_tasks;
 use super::connection::{error_message, AcpConnection, EventSink};
 use super::context_usage;
 use super::elicitation::{Pending, PendingElicitations};
@@ -49,6 +50,7 @@ const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(180);
 pub(super) const SESSION_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 /// Qwen Code answers the context breakdown in milliseconds; the panel waits no longer than this.
 const CONTEXT_USAGE_TIMEOUT: Duration = Duration::from_secs(5);
+const AGENT_TASKS_TIMEOUT: Duration = Duration::from_secs(5);
 /// JSON-RPC "method not found", returned for client methods we do not offer.
 const METHOD_NOT_FOUND: i64 = -32601;
 /// Signing in may wait for the user to finish in a browser.
@@ -582,6 +584,19 @@ impl AcpManager {
             CONTEXT_USAGE_TIMEOUT,
         )?;
         context_usage::parse(&answer)
+    }
+
+    /// The agents Qwen Code runs in the background for the session
+    /// (`qwen/status/session/tasks`). Another agent answers that it has no such
+    /// method, which is an error here.
+    pub fn agent_tasks(&self, app_session_id: &str) -> Result<agent_tasks::AgentTasks, String> {
+        let (connection, acp_id) = self.connection_for(app_session_id)?;
+        let answer = connection.request(
+            agent_tasks::TASKS_METHOD,
+            json!({ "sessionId": acp_id }),
+            AGENT_TASKS_TIMEOUT,
+        )?;
+        agent_tasks::parse(&answer)
     }
 
     /// Sets a session config option (e.g. the model); returns the agent's updated

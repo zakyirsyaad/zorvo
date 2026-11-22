@@ -234,19 +234,23 @@ describe("a card after text the agent already sent", () => {
     if (messages["s-1"].some((message) => message.id === "m-2")) return;
     messages["s-1"] = [...messages["s-1"], { id: "m-2", role: "agent", content: "Here it is:", timestamp: 2 }];
   };
-  const order = (messages: ChatMessage[]) => messages.map((message) => (message.artifactCard ? "card" : message.id));
+  // The card joins the open reply, so it sits on the queued text's own message or on a later one.
+  const expectCardAfterText = (messages: ChatMessage[]) => {
+    const text = messages.findIndex((message) => message.id === "m-2");
+    const card = messages.findIndex((message) => message.artifactCard !== undefined);
+    expect(text).toBeGreaterThan(-1);
+    expect(card).toBeGreaterThanOrEqual(text);
+  };
 
   it("puts an artifact's card after that text", async () => {
     const env = setup(() => SHOWN, [SESSION], queuedReply);
     await env.call("c-1", "show_artifact", { path: "r.html", title: "Report" });
-    expect(order(env.messages["s-1"]).indexOf("m-2")).toBeGreaterThan(-1);
-    expect(order(env.messages["s-1"]).indexOf("m-2")).toBeLessThan(order(env.messages["s-1"]).lastIndexOf("card"));
+    expectCardAfterText(env.messages["s-1"]);
   });
 
   it("puts a canvas's card after that text", async () => {
     const env = setup(() => SHOWN, [SESSION], queuedReply);
     await env.call("c-1", "show_artifact", { path: "d", kind: "canvas" });
-    expect(order(env.messages["s-1"]).indexOf("m-2")).toBeGreaterThan(-1);
-    expect(order(env.messages["s-1"]).indexOf("m-2")).toBeLessThan(order(env.messages["s-1"]).lastIndexOf("card"));
+    expectCardAfterText(env.messages["s-1"]);
   });
 });

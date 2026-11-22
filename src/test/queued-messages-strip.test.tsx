@@ -13,6 +13,8 @@ const base: QueuedMessagesProps = {
   hold: null,
   announcement: "",
   announcementKey: 0,
+  sessionId: "s1",
+  isStarting: false,
   onFocusComposer: vi.fn(),
   onSendNow: vi.fn(),
   onEdit: vi.fn(),
@@ -146,5 +148,47 @@ describe("QueuedMessages focus and long text", () => {
     const less = screen.getByRole("button", { name: /^Show less/ });
     expect(less).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("long text here").className).not.toContain("line-clamp-2");
+  });
+});
+
+describe("QueuedMessages while the agent starts, and across sessions", () => {
+  it("says Send now waits for the agent to start", () => {
+    render(<QueuedMessages {...base} isStarting />);
+    for (const button of screen.getAllByRole("button", { name: /^Send now/ })) {
+      expect(button).toBeEnabled();
+      expect(button).toHaveAccessibleDescription(/Sent after Qwen Code starts\./);
+    }
+  });
+
+  it("renders the status empty at once when another session comes on screen", () => {
+    const { rerender } = render(<QueuedMessages {...base} sessionId="s1" announcement="Message queued." announcementKey={3} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Message queued.");
+    rerender(<QueuedMessages {...base} sessionId="s2" announcement="" announcementKey={3} />);
+    expect(screen.getByRole("status")).toHaveTextContent("");
+    rerender(<QueuedMessages {...base} sessionId="s1" announcement="Message queued." announcementKey={3} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Message queued.");
+  });
+
+  it("names a refused send", () => {
+    render(<QueuedMessages {...base} hold="refused" />);
+    expect(screen.getByText("Not sent: Qwen Code did not take the last message.")).toBeInTheDocument();
+  });
+
+  it("keeps focus on the same row's Send now button after the row moves to the front", () => {
+    function Reorder() {
+      const [messages, setMessages] = useState([
+        { id: "a", text: "alpha", attachments: [] as string[] },
+        { id: "b", text: "bravo", attachments: [] as string[] },
+      ]);
+      const toFront = (id: string) => setMessages((list) => [...list.filter((m) => m.id === id), ...list.filter((m) => m.id !== id)]);
+      return <QueuedMessages {...base} messages={messages} onSendNow={toFront} />;
+    }
+    render(<Reorder />);
+    const send = screen.getByRole("button", { name: /^Send now: bravo/ });
+    send.focus();
+    fireEvent.click(send);
+    expect(screen.getByRole("button", { name: /^Send now: bravo/ })).toHaveFocus();
+    const rows = within(screen.getByRole("list", { name: "Queued messages" })).getAllByRole("listitem");
+    expect(within(rows[0]!).getByRole("button", { name: /^Send now: bravo/ })).toHaveFocus();
   });
 });

@@ -11,7 +11,8 @@ function setup(overrides: Partial<QueuedMessagesDeps> = {}, strict = false) {
     giveBack: vi.fn(),
     focusComposer: vi.fn(),
     isWaiting: () => false,
-    isTurnUnderWay: () => true,
+    isTurnUnderWay: () => false,
+    isStarting: () => false,
     isEnded: () => false,
     canResume: () => true,
     agentNameOf: () => 'Qwen Code',
@@ -113,7 +114,13 @@ describe('useQueuedMessages', () => {
   });
 
   it('sends once when two turn ends arrive in one tick', async () => {
-    const { result, deps } = setup();
+    // The engine marks the new turn under way as soon as the send starts.
+    let running = false;
+    const deliver = vi.fn(async () => {
+      running = true;
+      return true;
+    });
+    const { result } = setup({ deliver, isTurnUnderWay: () => running });
     act(() => {
       result.current.add('s1', 'one');
       result.current.add('s1', 'two');
@@ -122,8 +129,28 @@ describe('useQueuedMessages', () => {
       result.current.onTurnSettled('s1', { how: 'finished' });
       result.current.onTurnSettled('s1', { how: 'finished' });
     });
-    expect(deps.deliver).toHaveBeenCalledTimes(1);
+    expect(deliver).toHaveBeenCalledTimes(1);
     expect(texts(result)).toEqual(['two']);
+  });
+
+  it('a repeat of a turn end after a send sends nothing more', async () => {
+    let running = false;
+    const deliver = vi.fn(async () => {
+      running = true;
+      return true;
+    });
+    const { result } = setup({ deliver, isTurnUnderWay: () => running });
+    act(() => {
+      result.current.add('s1', 'one');
+      result.current.add('s1', 'two');
+    });
+    await act(async () => result.current.onTurnSettled('s1', { how: 'finished' }));
+    await act(async () => result.current.onTurnSettled('s1', { how: 'finished' }));
+    expect(deliver).toHaveBeenCalledTimes(1);
+    // The sent turn's own end is a real one, and sends the next.
+    running = false;
+    await act(async () => result.current.onTurnSettled('s1', { how: 'finished' }));
+    expect(deliver).toHaveBeenCalledTimes(2);
   });
 
   it('sends once under StrictMode', async () => {
@@ -145,7 +172,7 @@ describe('useQueuedMessages', () => {
   });
 
   it('Send now moves to the front and stops the turn without sending', () => {
-    const { result, deps } = setup();
+    const { result, deps } = setup({ isTurnUnderWay: () => true });
     act(() => {
       result.current.add('s1', 'one');
       result.current.add('s1', 'two');
@@ -239,6 +266,7 @@ describe('useQueuedMessages', () => {
     await act(async () => resolveFirst(true));
     expect(deliver).toHaveBeenCalledTimes(2);
     expect(deliver).toHaveBeenLastCalledWith('s1', expect.objectContaining({ text: 'two' }), 'send');
+    expect(texts(result)).toEqual([]);
   });
 
   it('remembers a turn end that came while the session waits, and sends when it no longer waits', async () => {
@@ -309,5 +337,62 @@ describe('useQueuedMessages', () => {
     expect(result.current.holdOf('s1')).toBe('failed');
     await act(async () => result.current.sendNow('s1', result.current.queueOf('s1')[1]!.id));
     expect(result.current.holdOf('s1')).toBeNull();
+  });
+
+  it('Send now while the session is starting reorders and stops nothing', () => {
+    const { result, deps } = setup({ isTurnUnderWay: () => true, isStarting: () => true });
+    act(() => {
+      result.current.add('s1', 'one');
+      result.current.add('s1', 'two');
+    });
+    act(() => result.current.sendNow('s1', result.current.queueOf('s1')[1]!.id));
+    expect(texts(result)).toEqual(['two', 'one']);
+    expect(deps.stop).not.toHaveBeenCalled();
+    expect(deps.deliver).not.toHaveBeenCalled();
+  });
+
+  it('a send the agent did not take leaves a hold on the rest, and the rows stay usable', async () => {
+    const { result, deps } = setup({ deliver: vi.fn(async () => false) });
+    act(() => {
+      result.current.add('s1', 'one');
+      result.current.add('s1', 'two');
+    });
+    await act(async () => result.current.onTurnSettled('s1', { how: 'finished' }));
+    expect(deps.giveBack).toHaveBeenCalledWith('s1', 'one', []);
+    expect(result.current.holdOf('s1')).toBe('refused');
+    act(() => result.current.remove('s1', result.current.queueOf('s1')[0]!.id));
+    expect(texts(result)).toEqual([]);
+    expect(result.current.holdOf('s1')).toBeNull();
+  });
+
+  it('a prompt started by any route clears the hold', async () => {
+    const { result } = setup();
+    act(() => void result.current.add('s1', 'one'));
+    await act(async () => result.current.onTurnSettled('s1', { how: 'failed' }));
+    expect(result.current.holdOf('s1')).toBe('failed');
+    act(() => result.current.onPromptStarted('s1'));
+    expect(result.current.holdOf('s1')).toBeNull();
+    expect(texts(result)).toEqual(['one']);
+  });
+
+  it('announces nothing when the outcome of a send is not known', async () => {
+    const { result } = setup({ deliver: vi.fn(async () => null), isTurnUnderWay: () => false });
+    act(() => void result.current.add('s1', 'one'));
+    act(() => result.current.clearAnnouncement());
+    await act(async () => result.current.sendNow('s1', result.current.queueOf('s1')[0]!.id));
+    expect(result.current.announcementFor('s1').text).toBe('');
+    expect(result.current.holdOf('s1')).toBeNull();
+  });
+
+  it('a deleted session leaves nothing behind, even when its id comes back', async () => {
+    const { result, rerender, deps } = setup({ sessionIds: ['s1'] });
+    act(() => void result.current.add('s1', 'one'));
+    deps.sessionIds = [];
+    rerender();
+    deps.sessionIds = ['s1'];
+    rerender();
+    expect(texts(result)).toEqual([]);
+    await act(async () => result.current.onTurnSettled('s1', { how: 'finished' }));
+    expect(deps.deliver).not.toHaveBeenCalled();
   });
 });

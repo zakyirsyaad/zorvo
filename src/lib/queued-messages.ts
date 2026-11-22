@@ -12,7 +12,7 @@ export interface QueuedMessage {
 }
 
 /** Why a session's queue is not sending by itself: the last turn failed, the agent is gone, or it waits for the user's answer. */
-export type QueueHold = 'failed' | 'ended' | 'waiting';
+export type QueueHold = 'failed' | 'ended' | 'waiting' | 'refused';
 
 export const isFull = (list: readonly QueuedMessage[]): boolean => list.length >= MAX_QUEUED_MESSAGES;
 
@@ -42,6 +42,7 @@ export const previewOf = (text: string): string => escapeVisible(text.replace(/\
 export function queueHoldNote(hold: QueueHold | null, agentName: string): string | null {
   if (hold === 'failed') return 'Not sent: the last turn failed.';
   if (hold === 'ended') return `Not sent: ${agentName} has ended.`;
+  if (hold === 'refused') return `Not sent: ${agentName} did not take the last message.`;
   if (hold === 'waiting') return 'Waits for your answer in the chat.';
   return null;
 }

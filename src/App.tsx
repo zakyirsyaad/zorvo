@@ -247,6 +247,8 @@ export default function App() {
   const [delegationMention, setDelegationMention] = useState<{ agentId: string; task: string } | null>(null);
   // Set once useDelegation is built: the engine's turns reach it through this, as it is built before the hook.
   const delegationTurnEndedRef = useRef<(sessionId: string, reason: AttentionReason) => void>(() => {});
+  const queueRewoundRef = useRef<(sessionId: string) => void>(() => {});
+  const queuePromptStartedRef = useRef<(sessionId: string) => void>(() => {});
   const queueAgentEndedRef = useRef<(sessionId: string) => void>(() => {});
   const queueTurnSettledRef = useRef<(sessionId: string, end: { how: WorkerTurnEnd }) => void>(() => {});
   const delegationTurnSettledRef = useRef<(sessionId: string, end: { how: WorkerTurnEnd; reason?: string }) => void>(() => {});
@@ -707,6 +709,7 @@ export default function App() {
       compareRun.keepSignIn(session.id, { methods, unsent });
     },
     onAgentEnded: (id) => queueAgentEndedRef.current(id),
+    onPromptStarted: (id) => queuePromptStartedRef.current(id),
     onTurnFailed: (sessionId, error) =>
       error ? setFailedTurns((prev) => ({ ...prev, [sessionId]: error })) : clearFailedTurn(sessionId),
     // Read when a retry runs, long after the render that built the engine: the latest hook decides.
@@ -733,6 +736,7 @@ export default function App() {
 
   const sessionById = (sessionId: string) => sessions.find((s) => s.id === sessionId);
   const { rewind, restart, isRestarting, cancelRestart, rewoundOptionsOf } = useSessionRewind({
+    onRewound: (sessionId) => queueRewoundRef.current(sessionId),
     agents,
     transcripts,
     acp,
@@ -1452,13 +1456,14 @@ export default function App() {
    * Continues an ended ACP session: a fresh agent process loads it, then gets
    * the message. A rewound one has no agent session left to load.
    */
-  const resumeSession = (session: Session, message: FirstMessage, options?: { keepUnsent?: boolean }): Promise<boolean> => {
+  const resumeSession = (session: Session, message: FirstMessage, options?: { keepUnsent?: boolean }): Promise<boolean | null> => {
     compareRun.dropSignIn(session.id);
     if (!session.acpSessionId) {
       // A rewound session: `restart` gives the message back itself.
       void restart(session, message, startChoices);
       setAcpChoices(NO_CHOICES);
-      return Promise.resolve(true);
+      // The outcome is not known here, so the queue announces nothing for it.
+      return Promise.resolve(null);
     }
     // Continuing an archived session brings it back into the list.
     patchSession(session.id, { status: "running", endedAt: null, exitCode: null, archivedAt: null });
@@ -1495,6 +1500,7 @@ export default function App() {
     focusComposer: () => composerRef.current?.focus(),
     isWaiting: isSessionWaiting,
     isTurnUnderWay: acp.isTurnUnderWay,
+    isStarting: acp.isStarting,
     isEnded: (sessionId) => sessionById(sessionId)?.status !== "running",
     canResume: canResumeSession,
     agentNameOf: (sessionId) => agents.find((a) => a.id === sessionById(sessionId)?.profileId)?.name ?? "The agent",
@@ -1502,6 +1508,8 @@ export default function App() {
   });
   queueTurnSettledRef.current = queue.onTurnSettled;
   queueAgentEndedRef.current = queue.onAgentEnded;
+  queuePromptStartedRef.current = queue.onPromptStarted;
+  queueRewoundRef.current = queue.clearForRewind;
   // What was announced belongs to the session on screen: another session starts quiet.
   const { clearAnnouncement } = queue;
   useEffect(() => clearAnnouncement(), [activeSessionId, clearAnnouncement]);
@@ -1900,7 +1908,9 @@ export default function App() {
     !isRestarting(activeSessionId);
   const isQueueingActive = canQueueActive && review.slot === null;
   const isQueueFull = isQueueingActive && queue.isFull(activeSessionId);
-  const isSendBlocked = isSendWaiting || isCheckingDraftSecrets || review.blocksSend || delegationBlock !== undefined || isQueueFull;
+  // The composer's own rule for a blocked Send; a queued row's Send now follows it, with the note the composer shows.
+  const isComposerSendBlocked = isSendWaiting || isCheckingDraftSecrets || review.blocksSend || delegationBlock !== undefined;
+  const isSendBlocked = isComposerSendBlocked || isQueueFull;
   const privateModelId = activeSession?.privateMode?.modelId ?? privateDraft.privateMode?.modelId;
   const privateModel = privateCredits.models?.find((model) => model.id === privateModelId);
   const privateSessionCap = activeSession?.privateMode?.sessionCap;
@@ -2141,7 +2151,7 @@ export default function App() {
                         isComposerDisabled,
                         isHeldElsewhere: review.isHeldFor(activeSessionId),
                       })}
-                      onRewind={(messageId) => { compareRun.dropSignIn(activeSessionId); queue.clearForRewind(activeSessionId); void rewind(activeSession, messageId); }}
+                      onRewind={(messageId) => { compareRun.dropSignIn(activeSessionId); void rewind(activeSession, messageId); }}
                       // The sidebar and the top bar say where a session runs; only an imported
                       // session's note sits above its first message.
                       header={
@@ -2338,8 +2348,10 @@ export default function App() {
                         hold={isActiveRunning ? queue.holdOf(activeSessionId) : queue.queueOf(activeSessionId).length > 0 ? "ended" : null}
                         announcement={queue.announcementFor(activeSessionId).text}
                         announcementKey={queue.announcementFor(activeSessionId).key}
+                        sessionId={activeSessionId}
+                        isStarting={acp.isStarting(activeSessionId)}
                         sendNowBlockedReason={
-                          !isActiveRunning && !isResumable && queue.queueOf(activeSessionId).length > 0
+                          (isComposerSendBlocked || (!isActiveRunning && !isResumable)) && queue.queueOf(activeSessionId).length > 0
                             ? (composerNoteText ?? `${activeAgent?.name ?? "The agent"} cannot continue right now.`)
                             : undefined
                         }

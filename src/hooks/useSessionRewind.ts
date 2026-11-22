@@ -15,6 +15,8 @@ export interface SessionRewindDeps {
   /** Gives a message that did not reach the agent back to the composer of the session it was written for. */
   onGiveBack: (sessionId: string, text: string, attachments?: readonly string[]) => void;
   onNotice: (message: string) => void;
+  /** Called once a rewind is done, never when it failed part way. */
+  onRewound?: (sessionId: string) => void;
 }
 
 export interface SessionRewind {
@@ -46,7 +48,7 @@ const before = (messages: readonly ChatMessage[], messageId: string): ChatMessag
  * conversation in a file. Files the agent changed stay as they are.
  */
 export function useSessionRewind(deps: SessionRewindDeps): SessionRewind {
-  const { agents, transcripts, acp, patchSession, updateMessages, onRestore, onGiveBack, onNotice } = deps;
+  const { agents, transcripts, acp, patchSession, updateMessages, onRestore, onGiveBack, onNotice, onRewound } = deps;
   // A fresh agent for a session waits until its old one is gone: a late stop would end the new one.
   const stopsRef = useRef(new Map<string, Promise<boolean>>());
   // Read and written at once, so a second send cannot start a second agent.
@@ -91,6 +93,7 @@ export function useSessionRewind(deps: SessionRewindDeps): SessionRewind {
     patchSession(session.id, { status: 'terminated', endedAt: Date.now(), acpSessionId: null });
     updateMessages(session.id, (prev) => before(prev, messageId));
     onRestore(session.id, message.content, message.attachments);
+    onRewound?.(session.id);
   };
 
   /** The handoff a fresh agent reads first; undefined when nothing is left of the conversation. */

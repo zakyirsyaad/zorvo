@@ -12,6 +12,10 @@ export interface QueuedMessagesProps {
   announcement: string;
   /** Changes with every announcement, so the same words are spoken again. */
   announcementKey: number;
+  /** The session on screen: the status is keyed by it, so a switch renders it empty at once. */
+  sessionId: string;
+  /** The agent is still starting: Send now only moves a row up. */
+  isStarting: boolean;
   /** Set when an ended session cannot be continued: Send now is off and this is why. */
   sendNowBlockedReason?: string;
   onSendNow: (id: string) => void;
@@ -34,6 +38,7 @@ const attachmentLabel = (count: number) => (count === 1 ? "1 attachment" : `${co
 interface RowProps {
   message: QueuedMessage;
   blockedReasonId?: string;
+  startingReasonId?: string;
   isSendNowOff: boolean;
   register: (control: Control, element: HTMLButtonElement | null) => void;
   onSendNow: () => void;
@@ -41,7 +46,7 @@ interface RowProps {
   onRemove: () => void;
 }
 
-function QueuedRow({ message, blockedReasonId, isSendNowOff, register, onSendNow, onEdit, onRemove }: RowProps) {
+function QueuedRow({ message, blockedReasonId, startingReasonId, isSendNowOff, register, onSendNow, onEdit, onRemove }: RowProps) {
   const textId = `queued-text-${message.id}`;
   const textRef = useRef<HTMLSpanElement>(null);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -60,7 +65,7 @@ function QueuedRow({ message, blockedReasonId, isSendNowOff, register, onSendNow
     return () => observer.disconnect();
   }, [message.text, isExpanded]);
 
-  const describedBy = blockedReasonId ? `${textId} ${blockedReasonId}` : textId;
+  const describedBy = [textId, blockedReasonId, startingReasonId].filter(Boolean).join(" ");
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-border bg-surface-2 py-2 pr-2 pl-3 motion-safe:animate-appear">
       <span className="flex min-w-40 flex-1 flex-col items-start">
@@ -128,6 +133,8 @@ export function QueuedMessages({
   hold,
   announcement,
   announcementKey,
+  sessionId,
+  isStarting,
   sendNowBlockedReason,
   onSendNow,
   onEdit,
@@ -138,6 +145,7 @@ export function QueuedMessages({
   const buttons = useRef(new Map<string, HTMLButtonElement>());
   const request = useRef<{ control: Control; id: string; index: number } | null>(null);
   const reasonId = "queued-send-now-reason";
+  const startingId = "queued-starting-reason";
 
   /** A row that leaves takes the focused button with it: the row in its place gets the focus, else the one before it. */
   useLayoutEffect(() => {
@@ -161,11 +169,16 @@ export function QueuedMessages({
   return (
     <div className={`flex w-full max-w-chat flex-col gap-1.5 select-none ${messages.length > 0 ? "pb-2" : ""}`}>
       <p role="status" className="sr-only">
-        <span key={announcementKey}>{announcement}</span>
+        <span key={`${sessionId}:${announcementKey}`}>{announcement}</span>
       </p>
       {sendNowBlockedReason && messages.length > 0 && (
         <span id={reasonId} className="sr-only">
           {sendNowBlockedReason}
+        </span>
+      )}
+      {isStarting && messages.length > 0 && (
+        <span id={startingId} className="sr-only">
+          Sent after {agentName} starts.
         </span>
       )}
       {messages.length > 0 && (
@@ -175,6 +188,7 @@ export function QueuedMessages({
               key={message.id}
               message={message}
               blockedReasonId={sendNowBlockedReason ? reasonId : undefined}
+              startingReasonId={isStarting ? startingId : undefined}
               isSendNowOff={Boolean(sendNowBlockedReason)}
               register={(control, element) => {
                 const key = `${message.id}:${control}`;

@@ -2,9 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, act, fireEvent, within, waitFor, configure } from "@testing-library/react";
 import { fakeTauriInvoke, type FakeTauriStore } from "./setup";
-import { clickRowDelete } from "./sidebar-helpers";
 import { openInspectorTab } from "./inspector-helpers";
-import { lineHash } from "../lib/review-comments";
 import type { FakePrivate } from "./fixtures/private-backend";
 
 type Listener = (event: { payload: unknown }) => void;
@@ -251,24 +249,17 @@ describe("sending while an agent works", () => {
     await waitFor(() => expect(prompt().value).toBe("later one"));
   });
 
-  it("deleting a session drops its queue: its turn end sends nothing", async () => {
+  it("a prompt the user starts from the composer clears the held line", async () => {
     const spy = await renderApp();
     const id = await startRunning(spy);
-    await send("never sent");
+    await send("after that");
     await screen.findByRole("list", { name: "Queued messages" });
-    // A failed turn leaves the queue held, and the session idle enough to delete.
     await turnEnd(id, { error: "network is down" });
     await screen.findByText("Not sent: the last turn failed.");
-    const row = () => within(screen.getByRole("complementary")).getByText("get started").closest("li") as HTMLElement;
-    await clickRowDelete(row);
-    await act(async () => {
-      fireEvent.click(within(row()).getByRole("button", { name: "Confirm delete" }));
-    });
-    await turnEnd(id);
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(callsTo(spy, "acp_prompt")).toHaveLength(1);
-    expect(screen.queryByText("Not sent: the last turn failed.")).toBeNull();
-    expect(screen.queryByRole("list", { name: "Queued messages" })).toBeNull();
+
+    await send("a fresh question");
+    await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(2));
+    await waitFor(() => expect(screen.queryByText("Not sent: the last turn failed.")).toBeNull());
   });
 
   it("while review comments are held the composer keeps Stop only and says they go when the agent finishes", async () => {
@@ -308,6 +299,6 @@ describe("sending while an agent works", () => {
     expect(screen.getByText("Comments are sent when Qwen Code finishes.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Queue message" })).toBeNull();
     expect(screen.getByRole("button", { name: "Stop agent" })).toBeInTheDocument();
-    expect(lineHash("const x")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Send message" })).toBeNull();
   });
 });

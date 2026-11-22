@@ -19,9 +19,10 @@ export interface QueuedMessagesDeps {
   sessionIds: readonly string[];
   /**
    * Sends one queued message the way the composer's Send does for that session ('resume' continues an ended one).
-   * Resolves to whether the agent took it; false sends it back to the composer.
+   * Resolves to whether the agent took it: false sends it back to the composer, null means the outcome is not known
+   * (nothing is announced and nothing is given back).
    */
-  deliver: (sessionId: string, message: QueuedMessage, mode: 'send' | 'resume') => Promise<boolean>;
+  deliver: (sessionId: string, message: QueuedMessage, mode: 'send' | 'resume') => Promise<boolean | null>;
   /** Asks the agent to end its turn (the Stop button's path). */
   stop: (sessionId: string) => void;
   giveBack: (sessionId: string, text: string, attachments: readonly string[]) => void;
@@ -30,6 +31,8 @@ export interface QueuedMessagesDeps {
   isWaiting: (sessionId: string) => boolean;
   /** From refs, true in the tick a prompt goes out; React's busy flag lags a render. */
   isTurnUnderWay: (sessionId: string) => boolean;
+  /** A launch or resume is under way and no prompt has gone out yet: Stop would end the session. */
+  isStarting: (sessionId: string) => boolean;
   isEnded: (sessionId: string) => boolean;
   /** An ended session can be continued (the composer's own rule: its agent is ready). */
   canResume: (sessionId: string) => boolean;
@@ -108,9 +111,18 @@ export function useQueuedMessages(deps: QueuedMessagesDeps) {
       forgetState(sessionId);
       setQueue(sessionId, taken.rest);
       const { first } = taken;
-      const finish = (isTaken: boolean) => {
-        if (isTaken) say(sessionId, SENT_ANNOUNCEMENT);
-        else latest.current.giveBack(sessionId, first.text, first.attachments);
+      const finish = (isTaken: boolean | null) => {
+        if (isTaken === null) return;
+        if (isTaken) {
+          say(sessionId, SENT_ANNOUNCEMENT);
+          return;
+        }
+        latest.current.giveBack(sessionId, first.text, first.attachments);
+        // A refused prompt ends no turn, so nothing would send the rest: say so, and leave the choice to the user.
+        if (queueOf(sessionId).length > 0) {
+          holds.current.set(sessionId, 'refused');
+          bump();
+        }
       };
       latest.current
         .deliver(sessionId, first, mode)
@@ -119,19 +131,15 @@ export function useQueuedMessages(deps: QueuedMessagesDeps) {
           inFlight.current.delete(sessionId);
           const end = missed.current.get(sessionId);
           missed.current.delete(sessionId);
-          // A turn that is still under way is the one just sent: the event was a repeat, not a new end.
-          if (end && !latest.current.isTurnUnderWay(sessionId)) settleRef.current(sessionId, end);
+          if (end) settleRef.current(sessionId, end);
         });
     },
-    [forgetState, latest, queueOf, say, setQueue],
+    [bump, forgetState, latest, queueOf, say, setQueue],
   );
 
-  const onTurnSettled = useCallback(
+  /** Applies a turn end that is known to be the end of the latest turn. */
+  const settleNow = useCallback(
     (sessionId: string, end: { how: WorkerTurnEnd }) => {
-      if (inFlight.current.has(sessionId)) {
-        missed.current.set(sessionId, end);
-        return;
-      }
       const wasEnded = agentEnded.current.delete(sessionId);
       if (queueOf(sessionId).length === 0) return;
       if (wasEnded || end.how === 'exited') {
@@ -156,7 +164,34 @@ export function useQueuedMessages(deps: QueuedMessagesDeps) {
     },
     [bump, latest, queueOf, sendFirst],
   );
-  settleRef.current = onTurnSettled;
+  settleRef.current = settleNow;
+
+  /**
+   * A turn end. The engine clears its mark for the turn that ended before it calls this, so a turn still
+   * under way means this end is a repeat or a stale one, and it sends nothing. One that arrives while a queued
+   * send is in flight waits for it to land.
+   */
+  const onTurnSettled = useCallback(
+    (sessionId: string, end: { how: WorkerTurnEnd }) => {
+      if (latest.current.isTurnUnderWay(sessionId)) return;
+      if (inFlight.current.has(sessionId)) {
+        missed.current.set(sessionId, end);
+        return;
+      }
+      settleNow(sessionId, end);
+    },
+    [latest, settleNow],
+  );
+
+  /** A prompt went out by any route (the composer, a resume, a retry): what held the queue back no longer applies. */
+  const onPromptStarted = useCallback(
+    (sessionId: string) => {
+      const hadHold = holds.current.has(sessionId);
+      forgetState(sessionId);
+      if (hadHold) bump();
+    },
+    [bump, forgetState],
+  );
 
   /** The user ended the agent (End agent): the turn end that follows is not a chance to send. */
   const onAgentEnded = useCallback(
@@ -190,12 +225,14 @@ export function useQueuedMessages(deps: QueuedMessagesDeps) {
 
   const sendNow = useCallback(
     (sessionId: string, id: string) => {
-      const { isTurnUnderWay, isEnded, canResume, stop } = latest.current;
+      const { isTurnUnderWay, isStarting, isEnded, canResume, stop } = latest.current;
       const isRunning = isTurnUnderWay(sessionId);
       const ended = isEnded(sessionId);
       // An ended session continues only when the composer's own Send could continue it.
       if (!isRunning && ended && !canResume(sessionId)) return;
       setQueue(sessionId, moveToFront(queueOf(sessionId), id));
+      // Stop would end a session that is still starting: the row only moves up, and goes when the first turn ends.
+      if (isStarting(sessionId)) return;
       if (isRunning) stop(sessionId);
       else sendFirst(sessionId, ended ? 'resume' : 'send');
     },
@@ -255,6 +292,7 @@ export function useQueuedMessages(deps: QueuedMessagesDeps) {
     edit,
     sendNow,
     onTurnSettled,
+    onPromptStarted,
     onAgentEnded,
     clearForRewind,
     announcementFor,

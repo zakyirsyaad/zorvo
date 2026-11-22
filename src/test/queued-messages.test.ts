@@ -57,6 +57,7 @@ describe('queued messages', () => {
   it('words why a held queue did not send', () => {
     expect(queueHoldNote('failed', 'Qwen Code')).toBe('Not sent: the last turn failed.');
     expect(queueHoldNote('ended', 'Qwen Code')).toBe('Not sent: Qwen Code has ended.');
+    expect(queueHoldNote('refused', 'Qwen Code')).toBe('Not sent: Qwen Code did not take the last message.');
     expect(queueHoldNote('waiting', 'Qwen Code')).toBe('Waits for your answer in the chat.');
     expect(queueHoldNote(null, 'Qwen Code')).toBeNull();
   });

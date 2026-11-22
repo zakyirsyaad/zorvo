@@ -86,6 +86,8 @@ export interface AcpEngineDeps extends EngineDeps {
   onTurnSettled?: (sessionId: string, end: { how: WorkerTurnEnd; reason?: string }) => void;
   /** The user's End agent took effect: called just before the turn end or exit it causes settles. */
   onAgentEnded?: (sessionId: string) => void;
+  /** A prompt is about to go out for the session, by any route: a send, a resume, a retry. */
+  onPromptStarted?: (sessionId: string) => void;
   /** The agent refused to start, or to answer, until the user signs in: the ways it offers and the unsent message. */
   onAuthRequired: (session: Pick<Session, 'id' | 'profileId' | 'cwd'>, methods: AuthMethod[], unsent?: FirstMessage) => void;
   /** Called with what an agent offers when one of its sessions opens or its commands change. */
@@ -131,6 +133,7 @@ export function useAcpEngine({
   onAttention,
   onTurnSettled,
   onAgentEnded,
+  onPromptStarted,
   transcripts,
   onTurnFailed,
   saveSoon,
@@ -410,6 +413,7 @@ export function useAcpEngine({
   const prompt = async (sessionId: string, message: ChatMessage, context?: string): Promise<boolean> => {
     // An agent with Zorvo's tools hears of them with the first message it takes.
     const toolsDue = toolsContextDueRef.current.get(sessionId);
+    onPromptStarted?.(sessionId);
     unsettledTurn.current.add(sessionId);
     settledByExit.current.delete(sessionId);
     lastPromptRef.current.set(sessionId, { message, context, ...(toolsDue ? { toolsContext: toolsDue } : {}) });

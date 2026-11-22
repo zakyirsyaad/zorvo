@@ -18,6 +18,7 @@ export const COMMAND_PATH_CONTEXT =
   'read_session {"handle": "<handle>"} reads its last answer and stop_session stops it. ' +
   'show_artifact {"path": "<file.html>", "title": "<text>"} shows the user a web page you wrote; run artifact_guide first; add "kind":"canvas" with a folder path for several screens. ' +
   'For websites, call browser {"operation":"tabs.open","url":"https://example.com/"} to open Zorvo\'s native Browser panel. To scroll the active WebKit tab down, call browser {"operation":"scroll","deltaY":800}; a tabID is optional for the active WebKit tab. Use browser_guide for advanced parameters, rather than before every simple action. Browser access asks for its own session grant. Do not start a local HTTP server just to open a remote page. ' +
+  'show_visual {"title": "<text>", "path": "<file.svg or file.html>"} puts a picture (a flow, an architecture, a mockup) inside your reply; run artifact_guide {"kind":"visual"} first. ' +
   'Use delegation and session tools only when the user asks for another agent or a new session, ' +
   'and show_artifact when a page explains something better than text. Do not mention this note.';
 
@@ -29,6 +30,8 @@ export const COMMAND_PATH_CONTEXT =
  */
 export const MCP_PATH_CONTEXT =
   'Zorvo, the app this session runs in, can show the user a web page beside the chat. ' +
+  'When a picture explains your answer better than a list (a flow, an architecture, a mockup of a card), ' +
+  'show it inside your reply with show_visual: call artifact_guide with kind visual once, then pass an SVG or an HTML fragment as code. ' +
   'When your answer is better seen than read (a report, a summary of what changed, a comparison, a chart, ' +
   'a diagram, a dashboard, a mockup of a screen, or something the user can click through), show it as a page ' +
   'without being asked: call artifact_guide once, write one self-contained .html file, then call show_artifact ' +

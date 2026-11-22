@@ -443,7 +443,9 @@ export type ToolDetail =
 export type ChatMessagePart =
   | { kind: 'text'; text: string }
   /** Consecutive tool calls share one part. */
-  | { kind: 'tools'; toolIds: string[] };
+  | { kind: 'tools'; toolIds: string[] }
+  /** An inline visual the agent showed; its markup is kept by the backend under `id`. */
+  | { kind: 'visual'; id: string; title: string; visualKind: 'svg' | 'html' };
 
 /** One step of an agent's plan, as reported over ACP. */
 export interface PlanEntry {

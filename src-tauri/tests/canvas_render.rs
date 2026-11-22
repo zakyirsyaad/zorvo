@@ -25,10 +25,11 @@ use zorvo_lib::artifacts::canvas_view::{ShownCanvas, CANVAS_PICK, CANVAS_VIEW};
 use zorvo_lib::artifacts::commands::{show_canvas, CanvasRead};
 use zorvo_lib::artifacts::protocol::{canvas_file_url, Served};
 use zorvo_lib::artifacts::render::{
-    join_pdfs, pdf_page_sizes, render_pdf, snapshot_png, RENDER_FAILED,
+    join_pdfs, pdf_page_sizes, render_pdf, snapshot_png, snapshot_visual_png, RENDER_FAILED,
 };
 use zorvo_lib::artifacts::store::ArtifactStore;
 use zorvo_lib::artifacts::view::{self, Bounds};
+use zorvo_lib::artifacts::visual_wrapper::Theme;
 
 const SESSION: &str = "session-1794800000000-k3x9a";
 /// The whole test, launch included; a hang fails it.
@@ -127,6 +128,46 @@ fn check(app: &tauri::AppHandle, folder: &Path) {
         "joined pdf: {} pages {joined_sizes:?}, {} bytes",
         joined_sizes.len(),
         joined.len()
+    );
+    // An inline visual: drawn through its own route, twice as many pixels wide as its block,
+    // and painted on the theme's sheet colour (a visual's own background is transparent).
+    let visual = served
+        .store
+        .put_visual(SESSION, "Flow", b"<svg viewBox=\"0 0 10 5\" width=\"600\"><rect width=\"10\" height=\"5\" fill=\"var(--chip)\"/></svg>", 1)
+        .expect("keep the visual");
+    let mut pictures = Vec::new();
+    for (theme, name) in [(Theme::Dark, "dark"), (Theme::Light, "light")] {
+        let png = snapshot_visual_png(
+            app,
+            Arc::clone(&served),
+            SESSION,
+            &visual.id,
+            theme,
+            600,
+            300,
+        )
+        .expect("draw the visual");
+        assert_eq!(png_size(&png), (1200, 600), "visual PNG, {name}");
+        println!("visual png {name}: {} bytes", png.len());
+        pictures.push(png);
+    }
+    assert_ne!(
+        pictures[0], pictures[1],
+        "the two themes draw different pictures"
+    );
+    let gone = snapshot_visual_png(
+        app,
+        Arc::clone(&served),
+        SESSION,
+        "v-0000000000000000",
+        Theme::Dark,
+        600,
+        300,
+    );
+    assert_eq!(
+        gone,
+        Err(RENDER_FAILED.to_string()),
+        "a visual that does not exist"
     );
     let refused = snapshot_png(app, served, "https://example.com/".into(), 1440, 900, 720);
     assert_eq!(

@@ -18,6 +18,7 @@ import { ArtifactGallery } from "./components/artifacts/ArtifactGallery";
 import { useArtifactComments, useArtifactCommentSweep } from "./hooks/useArtifactComments";
 import { canvasBoardsNow } from "./hooks/useCanvas";
 import { useArtifacts } from "./hooks/useArtifacts";
+import { useVisualSweep } from "./hooks/useVisualSweep";
 import { useArtifactOpening } from "./hooks/useArtifactOpening";
 import { galleryRows, hasVersion, newestVersion, shownArtifactOf, shownCanvasOf } from "./lib/artifacts";
 import { markersOf } from "./lib/file-markers";
@@ -887,6 +888,7 @@ export default function App() {
     onError: reportError,
   });
   useAgentWork(sessions, transcripts, patchSession);
+  useVisualSweep(activeSessionId, activeSessionId ? (transcripts[activeSessionId] ?? null) : null);
   useArtifactCommentSweep(sessions, artifacts.bySession, artifacts.canvasesBySession, artifacts.readSessions, updateArtifactComments, forgetInMessage);
   /** Shows a subagent's or a shell command's task in the inspector, beside its session's chat. */
   const openTask = (sessionId: string, tab: TaskTab) => {
@@ -1001,6 +1003,7 @@ export default function App() {
     openSession: openedSessions.open,
     openedOf: openedSessions.openedOf,
     updateMessages,
+    flushUpdates: () => acp.flushQueued(),
     onAttention: (sessionId, reason) => notifyAttention(sessionId, reason),
     onNotice: (message) => setNotice(message),
     onArtifactShown,
@@ -2037,6 +2040,7 @@ export default function App() {
                   ) : activeSession && (currentMessages.length > 0 || isSessionBusy(activeSessionId) || activeSession.historyElsewhere) ? (
                     <ChatCanvas
                       conversationId={activeSessionId}
+                      visualSessionId={activeSessionId ?? undefined}
                       messages={currentMessages}
                       jumpTo={chatJump}
                       onJumped={() => setChatJump(null)}

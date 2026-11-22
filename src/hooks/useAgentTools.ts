@@ -42,6 +42,8 @@ import { CANVAS_GUIDE, CANVAS_REFUSALS, canvasResultText, parseCanvasRead } from
 import { toolsRoleOf } from '../lib/workers';
 import { ARTIFACT_GUIDE, ARTIFACT_REFUSALS, parseShown, shownResultText, type ShownArtifact } from '../lib/artifacts';
 import { withArtifactCard, withCanvasCard } from '../lib/artifact-card';
+import { VISUAL_GUIDE, VISUAL_REFUSALS, VISUAL_SHOWN_TEXT, parseVisualEntry } from '../lib/visuals';
+import { withVisualPart } from '../lib/visual-part';
 import { escapeVisible } from '../lib/visible-text';
 import type { AgentProfile, ChatMessage, Session } from '../types';
 import type { GiveTaskResult } from './useDelegation';
@@ -73,6 +75,8 @@ export interface AgentToolsDeps {
   /** The sessions this session opened, for `list_agents`. */
   openedOf: (sessionId: string) => ListedOpened[];
   updateMessages: (sessionId: string, update: (prev: ChatMessage[]) => ChatMessage[]) => void;
+  /** Lands the agent's streamed text that still waits for a frame, so what is added next goes after it. */
+  flushUpdates?: () => void;
   onAttention: (sessionId: string, reason: 'needs-answer') => void;
   /** A session's messages, loaded from disk when it was not opened in this run. Rejects when unreadable. */
   messagesOf: (sessionId: string) => Promise<readonly ChatMessage[]>;
@@ -268,6 +272,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
         { cardId: entry.cardId, sessionId: session.id, callerName: entry.callerName, folder: entry.folder, now: Date.now() },
         entry.calls,
       );
+      // A new card goes after the reply's text, which was sent before this call and may still wait for its frame.
+      if (isNew) latest.current.flushUpdates?.();
       latest.current.updateMessages(session.id, (prev) =>
         isNew
           ? withToolCard(prev, card, { sessionId: session.id, now: Date.now(), createId })
@@ -433,6 +439,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
         now: Date.now(),
       });
       folderCards.current.set(cardId, { sessionId: session.id, call: { ...waitingCall, folderPath: place.path } });
+      // As for the session's card: the reply's text lands first.
+      current.flushUpdates?.();
       current.updateMessages(session.id, (prev) =>
         withToolCard(prev, card, { sessionId: session.id, now: Date.now(), createId }),
       );
@@ -451,6 +459,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
           respond(call.callId, false, FAILED);
           return;
         }
+        // As for a visual: the reply's text was sent before this call, so it lands before the card.
+        latest.current.flushUpdates?.();
         latest.current.updateMessages(session.id, (prev) => withCanvasCard(prev, read, { sessionId: session.id, now: Date.now(), createId }));
         latest.current.onArtifactShown(session.id, { kind: 'canvas', key: read.entry.key });
         respond(call.callId, true, canvasResultText(read));
@@ -497,6 +507,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
           return;
         }
         if (shown.isNewVersion) {
+          // As for a visual: the reply's text was sent before this call, so it lands before the card.
+          latest.current.flushUpdates?.();
           latest.current.updateMessages(session.id, (prev) =>
             withArtifactCard(prev, shown, { sessionId: session.id, now: Date.now(), createId }),
           );
@@ -515,6 +527,41 @@ export function useAgentTools(deps: AgentToolsDeps): {
       }
     },
     [latest, handleShowCanvas],
+  );
+
+  /**
+   * `show_visual`: the backend cleans and keeps the markup, and the reply gets a part that names
+   * it. No card and no grant, like a page: nothing in a visual runs, and it only reaches the user
+   * who is already here.
+   */
+  const handleShowVisual = useCallback(
+    async (session: Session, call: AgentToolCall) => {
+      const args = (typeof call.args === 'object' && call.args !== null ? call.args : {}) as Record<string, unknown>;
+      // A title is shown in Zorvo's own interface, so its control and bidi characters are spelled out.
+      const title = typeof args.title === 'string' ? escapeVisible(args.title).trim() : '';
+      const source = typeof args.code === 'string' ? { code: args.code } : typeof args.path === 'string' ? { path: args.path } : {};
+      try {
+        const entry = parseVisualEntry(await invoke('visual_show', { sessionId: session.id, cwd: session.cwd, title, ...source }));
+        if (entry === null) {
+          respond(call.callId, false, FAILED);
+          return;
+        }
+        // The reply's own text may still wait for its frame: it was sent before this call, so it lands first.
+        latest.current.flushUpdates?.();
+        latest.current.updateMessages(session.id, (prev) => withVisualPart(prev, entry, { sessionId: session.id, now: Date.now(), createId }));
+        respond(call.callId, true, VISUAL_SHOWN_TEXT);
+      } catch (error) {
+        const text = typeof error === 'string' ? error : '';
+        if (VISUAL_REFUSALS.has(text)) {
+          respond(call.callId, false, text);
+          return;
+        }
+        // Never the error itself: it can name a folder the agent was not told about.
+        respond(call.callId, false, FAILED);
+        latest.current.onNotice?.('Zorvo could not show the visual an agent made.');
+      }
+    },
+    [latest],
   );
 
   /** `read_session` and `stop_session`: only the caller's own sessions, by handle; no card and no grant. */
@@ -648,11 +695,15 @@ export function useAgentTools(deps: AgentToolsDeps): {
         }
         if (call.tool === 'artifact_guide') {
           const kind = (call.args as Record<string, unknown> | null)?.kind;
-          respond(call.callId, true, kind === 'canvas' ? CANVAS_GUIDE : ARTIFACT_GUIDE);
+          respond(call.callId, true, kind === 'canvas' ? CANVAS_GUIDE : kind === 'visual' ? VISUAL_GUIDE : ARTIFACT_GUIDE);
           return;
         }
         if (call.tool === 'show_artifact') {
           void handleShowArtifact(session, call);
+          return;
+        }
+        if (call.tool === 'show_visual') {
+          void handleShowVisual(session, call);
           return;
         }
         respond(call.callId, false, FAILED);
@@ -660,7 +711,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
         respond(call.callId, false, FAILED);
       }
     },
-    [latest, handleDone, handleStartWorker, handleSend, handleStartSession, handleOwned, handleShowArtifact],
+    [latest, handleDone, handleStartWorker, handleSend, handleStartSession, handleOwned, handleShowArtifact, handleShowVisual],
   );
 
   /** A call ended without our answer (timeout, cancel, session stop): it no longer waits. */

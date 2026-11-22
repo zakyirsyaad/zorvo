@@ -537,6 +537,22 @@ describe("loadTranscript", () => {
     expect(messages.map((m) => m.content)).toEqual(["a", "b", "c", "d", "e"]);
   });
 
+  it("keeps a well-formed visual part and drops a list that holds a malformed one", async () => {
+    const visual = { kind: "visual", id: "v-0123456789abcdef", title: "Flow", visualKind: "svg" };
+    store().transcripts["s-1"] = [
+      { id: "a", role: "agent", content: "a", timestamp: 1, parts: [{ kind: "text", text: "a" }, visual] },
+      { id: "b", role: "agent", content: "b", timestamp: 2, parts: [{ ...visual, id: "nope" }] },
+      { id: "c", role: "agent", content: "c", timestamp: 3, parts: [{ ...visual, visualKind: "png" }] },
+      { id: "d", role: "agent", content: "d", timestamp: 4, parts: [{ ...visual, title: 3 }] },
+    ];
+
+    const messages = await loadTranscript("s-1");
+
+    expect(messages[0].parts).toEqual([{ kind: "text", text: "a" }, visual]);
+    expect(messages.slice(1).map((m) => m.parts)).toEqual([undefined, undefined, undefined]);
+    expect(messages.map((m) => m.content)).toEqual(["a", "b", "c", "d"]);
+  });
+
   it("drops an entry that is not a message", async () => {
     store().transcripts["s-1"] = [
       null,

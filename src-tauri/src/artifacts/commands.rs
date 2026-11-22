@@ -356,7 +356,7 @@ fn draw_thumb(
     }
 }
 
-fn now_ms() -> u64 {
+pub(super) fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|elapsed| elapsed.as_millis() as u64)
@@ -461,7 +461,7 @@ pub fn delete_then_close(
     Ok(())
 }
 
-fn changed(app: &AppHandle, session_id: &str) {
+pub(super) fn changed(app: &AppHandle, session_id: &str) {
     let _ = app.emit(
         ARTIFACTS_CHANGED,
         serde_json::json!({ "sessionId": session_id }),

@@ -22,6 +22,8 @@ export interface ForkHandoffMeta {
   title?: string;
   /** A line under the heading, before the fields. */
   note?: string;
+  /** Where the new session's copy of each visual's markup is, by visual id. */
+  visualPaths?: Readonly<Record<string, string>>;
 }
 
 const DEFAULT_HANDOFF_TITLE = "# Session handoff";
@@ -40,7 +42,19 @@ function buildHeader(meta: ForkHandoffMeta): string {
   ].join("\n");
 }
 
-function buildActivityLines(message: ChatMessage): string[] {
+type VisualPart = Extract<NonNullable<ChatMessage["parts"]>[number], { kind: "visual" }>;
+
+/** A visual is in Zorvo's own store, so the new agent is told it was shown, and where a copy is. */
+function visualLine(part: VisualPart, paths: ForkHandoffMeta["visualPaths"]): string {
+  const path = paths?.[part.id];
+  const where =
+    path === undefined
+      ? "its markup is not in this file"
+      : `a copy of its markup is in "${path.replace(LINE_BREAK_PATTERN, " ")}"`;
+  return `- Visual shown: "${part.title.replace(LINE_BREAK_PATTERN, " ")}" (${part.visualKind.toUpperCase()}, ${where})`;
+}
+
+function buildActivityLines(message: ChatMessage, visualPaths: ForkHandoffMeta["visualPaths"]): string[] {
   const tools = message.tools ?? [];
   const byId = new Map(tools.map((tool) => [tool.id, tool]));
   // A subagent's work is listed under its own tool call: its tools, and what it said, which is
@@ -52,7 +66,9 @@ function buildActivityLines(message: ChatMessage): string[] {
       ...(tool.steps ?? []).flatMap((step) =>
         step.kind === "text"
           ? step.text.split("\n").map((line) => `  > ${line}`)
-          : step.toolIds.flatMap((id) => (byId.has(id) ? [`  - Tool: ${byId.get(id)?.name}`] : [])),
+          : step.kind === "tools"
+            ? step.toolIds.flatMap((id) => (byId.has(id) ? [`  - Tool: ${byId.get(id)?.name}`] : []))
+            : [],
       ),
     ]);
   const card = message.actionCard;
@@ -61,12 +77,15 @@ function buildActivityLines(message: ChatMessage): string[] {
     : [];
   // The files themselves are not copied: their paths let the new agent read them again.
   const attachmentLines = (message.attachments ?? []).map((path) => `- Attached: ${path}`);
-  return [...attachmentLines, ...toolLines, ...cardLines];
+  const visualLines = (message.parts ?? []).flatMap((part) =>
+    part.kind === "visual" ? [visualLine(part, visualPaths)] : [],
+  );
+  return [...attachmentLines, ...toolLines, ...visualLines, ...cardLines];
 }
 
-function buildSection(message: ChatMessage): string {
+function buildSection(message: ChatMessage, visualPaths: ForkHandoffMeta["visualPaths"]): string {
   const heading = message.role === "user" ? "### User" : "### Agent";
-  const activity = buildActivityLines(message);
+  const activity = buildActivityLines(message, visualPaths);
   const parts = [heading, activity.join("\n"), message.content].filter(
     (part) => part.length > 0,
   );
@@ -111,7 +130,7 @@ export function buildForkHandoff(
   }
 
   const header = buildHeader(meta);
-  const sections = messages.slice(0, uptoIndex + 1).map(buildSection);
+  const sections = messages.slice(0, uptoIndex + 1).map((message) => buildSection(message, meta.visualPaths));
   const dropped = countSectionsToDrop(header, sections);
   const note = dropped > 0 ? [omittedNote(dropped)] : [];
   const document = [header, ...note, ...sections.slice(dropped)].join(

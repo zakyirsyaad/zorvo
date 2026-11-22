@@ -997,6 +997,8 @@ export function useAcpEngine({
     stop,
     /** Drops a removed session's queued transcript changes before its transcript is deleted. */
     forgetQueued: queued.forget,
+    /** Lands what the agent already sent, so a change made outside the engine goes after it. */
+    flushQueued: queued.flush,
     isBusy,
     isTurnUnderWay,
     busySinceOf: acp.busySinceOf,

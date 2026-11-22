@@ -29,11 +29,12 @@ function turnStartedAt(messages: readonly ChatMessage[]): number | undefined {
 }
 const COPIED_FEEDBACK_MS = 2000;
 
-/** An agent reply with no text, reasoning, plan, tools or card is noise, not a message. */
+/** An agent reply with no text, reasoning, plan, tools, card or visual is noise, not a message. */
 function hasSomethingToShow(msg: ChatMessage): boolean {
   if (msg.role === "user") return true;
   return Boolean(
-    msg.content.trim() || msg.thinking || msg.plan?.length || msg.tools?.length || msg.actionCard || msg.elicitation || msg.artifactCard,
+    msg.content.trim() || msg.thinking || msg.plan?.length || msg.tools?.length || msg.actionCard || msg.elicitation || msg.artifactCard ||
+      msg.parts?.some((part) => part.kind === "visual"),
   );
 }
 
@@ -45,6 +46,8 @@ export interface ChatCanvasProps {
   onJumped?: () => void;
   /** Display name of the agent behind this conversation, e.g. "Claude Code". */
   agentName?: string;
+  /** The session on screen, so a reply can read its inline visuals. Absent in a popout. */
+  visualSessionId?: string;
   /** The agent's id, for its logo over each reply. */
   agentProfileId?: string;
   onForkBranch?: (messageId: string) => void;
@@ -113,6 +116,7 @@ export function ChatCanvas({
   jumpTo,
   onJumped,
   agentName = DEFAULT_AGENT_NAME,
+  visualSessionId,
   agentProfileId,
   onForkBranch,
   onChooseOption,
@@ -276,6 +280,7 @@ export function ChatCanvas({
           message={msg}
           agentName={agentName}
           agentProfileId={agentProfileId}
+          visualSessionId={visualSessionId}
           isLast={msg === lastMessage}
           isCurrentTurn={msg.role === "agent" && index >= currentTurnStartsAt}
           showActions={msg.role !== "user" && index < runningTurnStartsAt}

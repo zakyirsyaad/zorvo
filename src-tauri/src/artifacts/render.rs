@@ -19,9 +19,11 @@ use objc2_web_kit::{WKPDFConfiguration, WKSnapshotConfiguration};
 use tauri::{AppHandle, Manager};
 
 use super::protocol::{
-    is_allowed_canvas_navigation, is_sha256, parse_canvas_url, respond, CanvasUrl, Served, SCHEME,
+    is_allowed_canvas_navigation, is_sha256, parse_canvas_url, parse_visual_url, respond,
+    respond_visual, visual_url, CanvasUrl, Served, SCHEME,
 };
 use super::view::end;
+use super::visual_wrapper::Theme;
 
 /// The widest picture drawn for the canvas, in pixels.
 pub const MAX_THUMB_WIDTH: u32 = 720;
@@ -276,11 +278,12 @@ fn draw(
     output: Output,
 ) -> Result<Vec<u8>, String> {
     let failed = || RENDER_FAILED.to_string();
-    let Some(CanvasUrl::File {
-        session_id, key, ..
-    }) = parse_canvas_url(&url)
-    else {
-        return Err(failed());
+    let page = match parse_canvas_url(&url) {
+        Some(CanvasUrl::File {
+            session_id, key, ..
+        }) => Page::Canvas { session_id, key },
+        _ if parse_visual_url(&url).is_some() => Page::Visual,
+        _ => return Err(failed()),
     };
     let is_drawable = |side: u32| (1..=MAX_DRAWN_SIDE).contains(&side);
     if !is_drawable(width) || !is_drawable(height) {
@@ -304,7 +307,7 @@ fn draw(
             scale,
             sent: sent.clone(),
         };
-        if start(&handle, served, url, session_id, key, drawing).is_err() {
+        if start(&handle, served, url, page, drawing).is_err() {
             let _ = sent.send(Err(()));
         }
     })
@@ -316,6 +319,38 @@ fn draw(
         Ok(Ok(bytes)) if !bytes.is_empty() => Ok(bytes),
         _ => Err(failed()),
     }
+}
+
+/// What a hidden view draws, which decides what it may load and go to.
+#[derive(Clone)]
+enum Page {
+    /// One artboard of a canvas: the canvas's files, under its own rules.
+    Canvas { session_id: String, key: String },
+    /// One inline visual: its document and nothing else.
+    Visual,
+}
+
+/// A PNG of an inline visual in `theme`, drawn at `width × height` and twice as many pixels wide.
+pub fn snapshot_visual_png(
+    app: &AppHandle,
+    served: Arc<Served>,
+    session_id: &str,
+    id: &str,
+    theme: Theme,
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>, String> {
+    let url = visual_url(session_id, id, theme);
+    draw(
+        app,
+        served,
+        url,
+        width,
+        height,
+        Output::Png {
+            out_width: width * 2,
+        },
+    )
 }
 
 /// One drawing's settings, carried to the main thread.
@@ -335,11 +370,12 @@ fn start(
     app: &AppHandle,
     served: Arc<Served>,
     url: String,
-    session_id: String,
-    key: String,
+    page: Page,
     drawing: Drawing,
 ) -> Result<(), ()> {
     let window = app.get_webview_window(MAIN_WINDOW).ok_or(())?;
+    let allowed = page.clone();
+    let home = parse_visual_url(&url);
     let id = drawing.id;
     let loaded = app.clone();
     let has_loaded = Cell::new(false);
@@ -352,13 +388,17 @@ fn start(
         .with_incognito(true)
         .with_visible(false)
         .with_bounds(bounds)
-        .with_navigation_handler(move |url| is_allowed_canvas_navigation(&url, &session_id, &key))
+        .with_navigation_handler(move |to| match &allowed {
+            Page::Canvas { session_id, key } => is_allowed_canvas_navigation(&to, session_id, key),
+            // A visual's view goes to that visual and nowhere else.
+            Page::Visual => parse_visual_url(&to).is_some_and(|there| Some(there) == home),
+        })
         .with_custom_protocol(SCHEME.to_string(), move |_id, request| {
-            respond(
-                &served,
-                request.method().as_str(),
-                &request.uri().to_string(),
-            )
+            let (method, uri) = (request.method().as_str(), request.uri().to_string());
+            match &page {
+                Page::Canvas { .. } => respond(&served, method, &uri),
+                Page::Visual => respond_visual(&served.store, method, &uri),
+            }
             .map(Cow::from)
         })
         .with_on_page_load_handler(move |event, _url| {

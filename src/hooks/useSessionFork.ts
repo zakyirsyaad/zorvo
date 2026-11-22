@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import type { AcpEngine, FirstMessage } from './session-engine/useAcpEngine';
 import { buildForkHandoff, buildForkPrompt, FORK_FIRST_MESSAGE } from '../lib/fork-handoff';
 import { createId } from '../lib/ids';
+import { copyForkVisuals } from '../lib/visual-fork';
 import type { SessionSpec, StartSessionOptions } from '../lib/session-start';
 import type { AcpChoices } from '../lib/acp-draft';
 import type { AgentProfile, ChatMessage, Session } from '../types';
@@ -80,6 +81,8 @@ export function useSessionFork(deps: SessionForkDeps): (messageId: string, optio
           }
         : {}),
     };
+    // The fork starts with its source's messages, and visuals are kept per session.
+    const visualPaths = spec.id !== undefined ? await copyForkVisuals(source.id, spec.id, spec.initialMessages ?? []) : {};
     // A native fork needs the source agent alive; after it exited, fall back to a handoff. A new
     // uncapped or credits-paid session must be a fresh process: a native fork would keep the
     // source's capped token, or its own-key token when the source paid with the user's key.
@@ -102,6 +105,7 @@ export function useSessionFork(deps: SessionForkDeps): (messageId: string, optio
         agentName: sourceAgent?.name ?? source.profileId,
         cwd: source.cwd,
         createdAt: Date.now(),
+        visualPaths,
       });
       const handoffPath = await invoke<string>('write_fork_handoff', { handoffId: spec.id, content });
       // The path stays hidden: the chat shows only the short continue message.

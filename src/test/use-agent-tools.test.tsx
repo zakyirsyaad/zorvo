@@ -55,6 +55,8 @@ interface Env {
   openResult: (request: OpenRequest) => OpenResult;
   dones: Array<{ workerId: string; done: unknown }>;
   doneResult: () => boolean;
+  /** What the engine's flush lands: the agent's streamed text that still waits for a frame. */
+  queued?: (messages: Record<string, ChatMessage[]>) => void;
 }
 
 const WORKSPACES = [
@@ -126,6 +128,7 @@ function setup(overrides: Partial<Env> = {}) {
         updateMessages: (sessionId, update) => {
           env.messages[sessionId] = update(env.messages[sessionId] ?? []);
         },
+        flushUpdates: () => env.queued?.(env.messages),
         onAttention: (sessionId) => {
           env.attention.push(sessionId);
         },
@@ -950,6 +953,31 @@ describe("useAgentTools", () => {
       "Zorvo could not do that.",
       "Zorvo could not do that.",
     ]);
+  });
+});
+
+describe("a permission card after text the agent already sent", () => {
+  const queued = (messages: Record<string, ChatMessage[]>) => {
+    if (messages["s-1"].some((message) => message.id === "m-2")) return;
+    messages["s-1"] = [...messages["s-1"], { id: "m-2", role: "agent", content: "I will ask Qwen Code:", timestamp: 2 }];
+  };
+  // The card joins the open reply, so it sits on the queued text's own message or on a later one.
+  const expectCardAfterText = (messages: ChatMessage[], isCard: (message: ChatMessage) => boolean) => {
+    const text = messages.findIndex((message) => message.id === "m-2");
+    expect(text).toBeGreaterThan(-1);
+    expect(messages.findIndex(isCard)).toBeGreaterThanOrEqual(text);
+  };
+
+  it("puts the session's card after that text", async () => {
+    const t = setup({ queued });
+    await t.call("1", "start_worker", REVIEW);
+    expectCardAfterText(t.env.messages["s-1"], (message) => message.actionCard !== undefined);
+  });
+
+  it("puts another folder's card after that text", async () => {
+    const t = setup({ queued });
+    await t.call("1", "start_session", { agent: "codex-acp", brief: "Port it.", folder: "/Users/test/developer/titan" });
+    expectCardAfterText(t.env.messages["s-1"], (message) => message.actionCard?.zorvoTool?.isOtherFolder === true);
   });
 });
 

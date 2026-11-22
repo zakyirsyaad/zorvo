@@ -45,7 +45,7 @@ pub fn tool_list() -> Value {
         },
         {
             "name": "start_worker",
-            "description": "Start another agent as a worker on a task. It returns at once. End your turn after starting your workers: each result arrives later as a message. Use worktree new when workers would edit the same files; a new worktree starts from the last commit, so changes that are not committed are not in it.",
+            "description": "Start another agent, or another session of your own agent, as a worker on a task. Use it when the user asks to split work, to run parts in parallel, or for workers or subagents, in place of a subagent or background task of your own: the user sees a worker as a session and can answer it. It returns at once. End your turn after starting your workers: each result arrives later as a message. Use worktree new when workers would edit the same files; a new worktree starts from the last commit, so changes that are not committed are not in it.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

@@ -29,6 +29,15 @@ describe("the MCP path's context", () => {
     }
   });
 
+  it("tells both paths to use a worker unasked, in place of the agent's own background task", () => {
+    for (const note of [MCP_PATH_CONTEXT, COMMAND_PATH_CONTEXT]) {
+      expect(note).toContain("use start_worker without being asked for it by name");
+      expect(note).toContain("in place of a subagent or background task of your own");
+      expect(note).toContain("A worker may be the same agent as you");
+    }
+    expect(COMMAND_PATH_CONTEXT).not.toContain("only when the user asks for another agent");
+  });
+
   it("names start_worker and send, and says to end the turn", () => {
     expect(MCP_PATH_CONTEXT).toContain("start_worker");
     expect(MCP_PATH_CONTEXT).toContain("send");

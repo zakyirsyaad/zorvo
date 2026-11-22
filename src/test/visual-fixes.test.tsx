@@ -37,7 +37,19 @@ describe("a fork", () => {
   it("goes on when the copy fails", async () => {
     const spy = vi.spyOn(internals(), "invoke");
     spy.mockImplementation((cmd, args) => (cmd === "visual_copy_session" ? Promise.reject("EIO") : fakeTauriInvoke(cmd, args)));
-    await expect(copyForkVisuals("s-1", "s-2", [{ id: "a", role: "agent", content: "", timestamp: 2, parts: [PART] }])).resolves.toBeUndefined();
+    await expect(copyForkVisuals("s-1", "s-2", [{ id: "a", role: "agent", content: "", timestamp: 2, parts: [PART] }])).resolves.toEqual({});
+  });
+
+  it("returns where the fork's copies are, by visual id, and only well-formed answers", async () => {
+    const spy = vi.spyOn(internals(), "invoke");
+    spy.mockClear();
+    spy.mockImplementation((cmd, args) => {
+      if (cmd === "visual_copy_session") return Promise.resolve(1);
+      if (cmd === "visual_paths") return Promise.resolve([{ id: PART.id, path: "/data/v.svg" }, { id: 7 }, "x"]);
+      return fakeTauriInvoke(cmd, args);
+    });
+    await expect(copyForkVisuals("s-1", "s-2", [{ id: "a", role: "agent", content: "", timestamp: 2, parts: [PART] }])).resolves.toEqual({ [PART.id]: "/data/v.svg" });
+    expect(spy.mock.calls.filter(([cmd]) => cmd === "visual_paths").map(([, args]) => args)).toEqual([{ sessionId: "s-2", ids: [PART.id] }]);
   });
 });
 

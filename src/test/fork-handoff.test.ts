@@ -382,4 +382,13 @@ describe("buildForkHandoff visuals", () => {
     const handoff = buildForkHandoff(withVisual, "a-1", meta);
     expect(handoff.trimEnd().endsWith("### Agent")).toBe(false);
   });
+  it("says where a visual's markup is when the fork has a copy of it", () => {
+    const handoff = buildForkHandoff(withVisual, "a-1", {
+      ...meta,
+      visualPaths: { "v-000000000000000a": "/data/artifacts/s-2/visuals/v-000000000000000a.svg" },
+    });
+    expect(handoff).toContain(
+      '- Visual shown: "Checkout flow" (SVG, a copy of its markup is in "/data/artifacts/s-2/visuals/v-000000000000000a.svg")',
+    );
+  });
 });

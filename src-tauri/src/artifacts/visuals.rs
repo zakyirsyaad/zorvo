@@ -174,6 +174,21 @@ impl ArtifactStore {
         Ok((entry, markup))
     }
 
+    /// Where the session keeps the markup of the visuals `ids` names: only visuals it holds whose
+    /// file is there. A fork's handoff gives these to the new agent, which cannot see the chat.
+    pub fn visual_paths(&self, session_id: &str, ids: &[String]) -> Vec<(String, PathBuf)> {
+        if !is_session_id(session_id) {
+            return Vec::new();
+        }
+        self.read_visuals(session_id)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|entry| ids.contains(&entry.id))
+            .map(|entry| (entry.id.clone(), self.visual_path(session_id, &entry)))
+            .filter(|(_, path)| path.is_file())
+            .collect()
+    }
+
     /// Gives `to` its own copy of the visuals of `from` that `ids` names and it does not hold yet,
     /// and says how many. A fork starts with its source's messages, and so needs their visuals.
     pub fn copy_visuals(&self, from: &str, to: &str, ids: &[String]) -> Result<usize, String> {
@@ -380,5 +395,17 @@ mod tests {
         );
         assert!(store.visual(S, &a.id).is_ok() && store.visual(FORK, &b.id).is_ok());
         assert!(store.copy_visuals(S, "../x", &[a.id]).is_err());
+    }
+
+    #[test]
+    fn a_session_is_told_where_the_visuals_it_holds_are() {
+        let (_temp, store) = store();
+        let a = store.put_visual(S, "A", b"<p>a</p>", 0).unwrap();
+        let missing = "v-00000000000000ff".to_string();
+        let paths = store.visual_paths(S, &[a.id.clone(), missing, "../x".to_string()]);
+        assert_eq!(paths.len(), 1);
+        assert_eq!(paths[0].0, a.id);
+        assert_eq!(fs::read_to_string(&paths[0].1).unwrap(), "<p>a</p>");
+        assert!(store.visual_paths("../x", &[a.id]).is_empty());
     }
 }

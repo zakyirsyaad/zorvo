@@ -135,6 +135,31 @@ pub fn visual_copy_session(
     artifacts.copy_visuals(&from_session_id, &to_session_id, &ids)
 }
 
+/// One visual's file, for a fork's handoff.
+#[derive(serde::Serialize)]
+pub struct VisualPath {
+    id: String,
+    path: String,
+}
+
+/// Where a session's own copies of the named visuals are. Only a path Zorvo made itself is
+/// returned, and only for the handoff an agent is told to read: the chat never shows it.
+#[tauri::command(async)]
+pub fn visual_paths(
+    artifacts: State<'_, Arc<ArtifactStore>>,
+    session_id: String,
+    ids: Vec<String>,
+) -> Vec<VisualPath> {
+    artifacts
+        .visual_paths(&session_id, &ids)
+        .into_iter()
+        .map(|(id, path)| VisualPath {
+            id,
+            path: path.to_string_lossy().into_owned(),
+        })
+        .collect()
+}
+
 /// What a save or a copy needs: the visual, and for a picture its size and theme.
 fn picture(
     app: &AppHandle,

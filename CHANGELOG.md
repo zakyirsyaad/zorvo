@@ -9,6 +9,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - An agent now starts workers by itself when you ask it to split work or run parts in parallel, where before it could run them as background tasks of its own that Zorvo cannot show.
 - **Output is called Artifacts again.** The tab, the sidebar entry, the gallery and the section of the overview card say Artifacts. They still list the pages an agent showed and the files it made.
 
+### Fixed
+
+- **Codex no longer shows two running tasks that are its own.** The overview card listed Zorvo's tool bridge and Codex's helper process as shell commands the agent had started.
+
 ## [0.16.0] - 2026-11-22
 
 ### Added

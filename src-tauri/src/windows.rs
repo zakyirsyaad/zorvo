@@ -77,6 +77,53 @@ pub fn validated_reveal_path(path: &str) -> Result<PathBuf, String> {
     Ok(candidate.to_path_buf())
 }
 
+/// A path from a link in an agent's reply, checked before it is shown in the
+/// file manager: absolute, or under the home folder as `~/…`; no control
+/// character; and something that exists. Showing a file selects it and never
+/// opens or runs it, so the path needs no workspace check, but the refusal
+/// never repeats what was sent.
+pub fn validated_file_reveal_path(path: &str, home: Option<&Path>) -> Result<PathBuf, String> {
+    const REFUSED: &str = "That file could not be found.";
+    if path.is_empty() || path.chars().any(char::is_control) {
+        return Err(REFUSED.to_string());
+    }
+    let candidate = match path.strip_prefix("~/") {
+        Some(rest) => home.ok_or(REFUSED)?.join(rest),
+        None => PathBuf::from(path),
+    };
+    if !candidate.is_absolute() || !candidate.exists() {
+        return Err(REFUSED.to_string());
+    }
+    Ok(candidate)
+}
+
+/// Shows a file or folder that a reply links to in the file manager, selected.
+#[tauri::command(async)]
+pub fn reveal_file_in_finder(path: String) -> Result<(), String> {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    reveal_selected(&validated_file_reveal_path(&path, home.as_deref())?)
+}
+
+#[cfg(target_os = "macos")]
+fn reveal_selected(path: &Path) -> Result<(), String> {
+    // `-R` selects the item in Finder; without it `open` would open or run it.
+    let status = crate::spawn::command("open")
+        .arg("-R")
+        .arg(path)
+        .status()
+        .map_err(|_| "That file could not be shown.".to_string())?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err("That file could not be shown.".to_string())
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn reveal_selected(_path: &Path) -> Result<(), String> {
+    Err("not supported".to_string())
+}
+
 /// Opens the session in its own window, focusing the existing one if it is open.
 ///
 /// Sync on purpose: Tauri 2 runs non-async commands on the main thread, which
@@ -203,6 +250,41 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn a_linked_file_is_shown_only_when_it_is_an_existing_absolute_or_home_path() {
+        let home_folder = std::env::temp_dir().join(format!("zorvo-reveal-{}", std::process::id()));
+        std::fs::create_dir_all(&home_folder).unwrap();
+        let file = home_folder.join("notes file.md");
+        std::fs::write(&file, "x").unwrap();
+        let home = home_folder.as_path();
+
+        assert_eq!(
+            validated_file_reveal_path(file.to_str().unwrap(), None).unwrap(),
+            file
+        );
+        assert_eq!(
+            validated_file_reveal_path("~/notes file.md", Some(home)).unwrap(),
+            file
+        );
+        assert!(validated_file_reveal_path(home.to_str().unwrap(), None).is_ok());
+        for bad in [
+            "",
+            "notes file.md",
+            "./notes file.md",
+            "~/missing.md",
+            "~other/notes file.md",
+            "/definitely/not/here.md",
+            "/tmp/a\nb",
+            "file:///etc/hosts",
+        ] {
+            let refused = validated_file_reveal_path(bad, Some(home)).unwrap_err();
+            assert_eq!(refused, "That file could not be found.", "{bad:?}");
+        }
+        // No home known: a home path is refused, never read against the working directory.
+        assert!(validated_file_reveal_path("~/notes file.md", None).is_err());
+        std::fs::remove_dir_all(&home_folder).unwrap();
+    }
 
     #[test]
     fn accepts_ids_made_of_letters_digits_underscore_and_dash() {

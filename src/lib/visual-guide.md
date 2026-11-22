@@ -1,6 +1,6 @@
 # Drawing a visual for show_visual
 
-A visual is a picture inside your reply: a flow or architecture diagram, or a mockup of a card or a screen. It sits between your paragraphs, so keep it to one idea. For a page the user keeps and reopens, use show_artifact instead.
+A visual is a picture inside your reply: a flow or architecture diagram, or a mockup of a card or a screen. It sits between your paragraphs, so keep it to one idea; a reply may hold several visuals, each beside the text it explains. For something the user keeps, reopens, scrolls or clicks through, or that needs a script, use show_artifact instead.
 
 ## What it is
 

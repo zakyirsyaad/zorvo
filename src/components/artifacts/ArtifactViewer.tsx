@@ -85,9 +85,9 @@ export function ArtifactViewer({ sessionId, artifact, version, onBack, onView, i
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-11 shrink-0 items-center gap-1.5 border-b border-border px-2">
         {onBack && !isExpanded && (
-          <Button variant="ghost" size="sm" tone="secondary" aria-label="Back to output" onClick={onBack} className="gap-0.5 pl-1">
+          <Button variant="ghost" size="sm" tone="secondary" aria-label="Back to artifacts" onClick={onBack} className="gap-0.5 pl-1">
             <ChevronLeft size={14} aria-hidden="true" />
-            Output
+            Artifacts
           </Button>
         )}
         {isRenaming ? (

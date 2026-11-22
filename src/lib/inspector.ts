@@ -21,8 +21,8 @@ export function clampInspectorWidth(px: number): number {
 }
 
 /**
- * The Terminal, Output and Tasks tabs, and the Files tab while a file is open in it, need room for a
- * shell, a page or a line of code. Output is wide for its list too, so opening a page does not move the edge.
+ * The Terminal, Artifacts and Tasks tabs, and the Files tab while a file is open in it, need room for a
+ * shell, a page or a line of code. Artifacts is wide for its list too, so opening a page does not move the edge.
  */
 function isWideTab(tab: InspectorTab, isViewingFile: boolean): boolean {
   return tab === "terminal" || tab === "artifacts" || tab === "browser" || tab === "tasks" || (tab === "files" && isViewingFile);
@@ -62,7 +62,7 @@ export function minInspectorWidth(tab: InspectorTab, isViewingFile = false): num
 
 /**
  * The tabs that apply: Changes in a repository, Activity with a session, Files and Terminal with a folder,
- * Output (the `artifacts` tab) for every session, Context while the agent has reported its window's use,
+ * Artifacts for every session, Context while the agent has reported its window's use,
  * Tasks while the session has a task tab open (all three between Files and Terminal), and Private only
  * while a private session is on screen.
  */
@@ -80,7 +80,7 @@ export function offeredTabs(on: {
   if (on.hasFolder && on.isRepository) tabs.push("changes");
   if (on.hasSession) tabs.push("activity");
   if (on.hasFolder) tabs.push("files");
-  // Output is always offered for a session: empty, it says what will show there.
+  // Artifacts is always offered for a session: empty, it says what will show there.
   if (on.hasSession) tabs.push("artifacts");
   if (on.hasSession) tabs.push("browser");
   if (on.hasSession && on.hasUsage) tabs.push("context");

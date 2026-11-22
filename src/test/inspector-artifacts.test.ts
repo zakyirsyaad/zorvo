@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { INSPECTOR_WIDTH, minInspectorWidth, offeredTabs, shownInspectorWidth } from "../lib/inspector";
 
-describe("the Output tab", () => {
+describe("the Artifacts tab", () => {
   it("is offered for every session on screen, empty or not, between Files and Terminal", () => {
     const on = { hasFolder: true, isRepository: true, hasSession: true };
     expect(offeredTabs(on)).toEqual(["changes", "activity", "files", "artifacts", "browser", "terminal"]);

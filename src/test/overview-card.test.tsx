@@ -46,10 +46,10 @@ function show(overview: Partial<Overview> = {}, props: Partial<OverviewCardProps
 const section = (card: HTMLElement, name: string | RegExp) => within(card).getByRole("region", { name });
 
 describe("OverviewCard", () => {
-  it("always shows Environment and Output, and the rest only when they hold something", () => {
+  it("always shows Environment and Artifacts, and the rest only when they hold something", () => {
     const { card } = show();
     expect(section(card, "Environment")).toBeTruthy();
-    expect(within(section(card, /^Output/)).getByText("Nothing yet. Pages and files Claude Code makes in this session show here.")).toBeTruthy();
+    expect(within(section(card, /^Artifacts/)).getByText("Nothing yet. Pages and files Claude Code makes in this session show here.")).toBeTruthy();
     expect(within(card).queryByRole("region", { name: /^Running/ })).toBeNull();
     expect(within(card).queryByRole("region", { name: /^Sources/ })).toBeNull();
     expect(within(card).queryByRole("region", { name: /^Pull request/ })).toBeNull();
@@ -63,6 +63,44 @@ describe("OverviewCard", () => {
     expect(onShowTab.mock.calls).toEqual([["changes"], ["files"]]);
     expect(within(environment).getByText("+42")).toHaveClass("text-status-running");
     expect(within(environment).getByText("agent/redesign-row")).toBeTruthy();
+  });
+
+  it("shows a background agent as a plain row: no button, nothing to open, its status still read", () => {
+    const live = task("bg-1", "running", { tab: undefined, title: "Explore auth", detail: "grep: createSession" });
+    const failed = task("bg-2", "failed", { tab: undefined, title: "Write docs", detail: "Subagent" });
+    const { card, onOpenTask } = show({ tasks: [live, failed], finished: [task("bg-3", "done", { tab: undefined })], runningCount: 1 });
+    const running = section(card, /^Running/);
+
+    expect(within(running).getByText("Explore auth")).toBeTruthy();
+    expect(within(running).getByText("grep: createSession")).toBeTruthy();
+    expect(within(running).getByText("Failed")).toBeTruthy();
+    expect(within(running).queryByRole("button", { name: /Explore auth/ })).toBeNull();
+    expect(within(running).queryByRole("button", { name: /Write docs/ })).toBeNull();
+    expect(within(running).getByText("Subagent, working.")).toHaveClass("sr-only");
+    fireEvent.click(within(running).getByText("Explore auth"));
+    expect(onOpenTask).not.toHaveBeenCalled();
+
+    fireEvent.click(within(running).getByRole("button", { name: "1 finished" }));
+    expect(within(running).getByText("Task bg-3")).toBeTruthy();
+    expect(within(running).queryByRole("button", { name: /Task bg-3/ })).toBeNull();
+  });
+
+  it("marks a quiet background agent in the warning tone, with how long, and still lists it as running", () => {
+    const quiet = task("bg-q", "running", {
+      tab: undefined,
+      title: "Explore auth",
+      detail: "No activity for 55 min. Last: run_shell_command",
+      status: "Quiet",
+    });
+    const { card } = show({ tasks: [quiet], runningCount: 1 });
+    const running = section(card, /^Running/);
+
+    expect(within(running).getByText("Quiet")).toHaveClass("text-status-attention");
+    expect(within(running).getByText("No activity for 55 min. Last: run_shell_command")).toBeTruthy();
+    // The row cuts both lines to fit: hovering it gives them whole.
+    expect(within(running).getByTitle("Explore auth: No activity for 55 min. Last: run_shell_command")).toBeTruthy();
+    expect(within(running).getByText("Subagent, quiet.")).toHaveClass("sr-only");
+    expect(within(running).queryByRole("button")).toBeNull();
   });
 
   it("opens a task's tab, folds the finished ones, and keeps a failed one in sight", () => {
@@ -113,8 +151,8 @@ describe("OverviewCard", () => {
       },
     });
 
-    fireEvent.click(within(section(card, /^Output/)).getByRole("button", { name: /Session row options/ }));
-    fireEvent.click(within(section(card, /^Output/)).getByRole("button", { name: /pr-chip\.ts/ }));
+    fireEvent.click(within(section(card, /^Artifacts/)).getByRole("button", { name: /Session row options/ }));
+    fireEvent.click(within(section(card, /^Artifacts/)).getByRole("button", { name: /pr-chip\.ts/ }));
     fireEvent.click(within(section(card, "Pull request")).getByRole("button", { name: /^Open pull request 250 in your browser/ }));
 
     expect(onOpenPage).toHaveBeenCalledWith("a-1");

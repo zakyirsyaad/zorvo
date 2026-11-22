@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, within, fireEvent } from "@testing-library/react";
 import { MarkdownRenderer } from "../components/MarkdownRenderer";
+import { FILE_LINK_OPEN } from "../lib/file-links";
 import { BROWSER_OPEN } from "../lib/browser";
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
@@ -90,15 +91,65 @@ describe("MarkdownRenderer", () => {
     expect((MarkdownRenderer as unknown as { $$typeof: symbol }).$$typeof).toBe(Symbol.for("react.memo"));
   });
 
-  it("shows a link the app cannot open (a file path) as plain text with its target, not a dead link", () => {
+  it("makes a link to a file a button that asks the window to open it", () => {
     const spy = vi.spyOn(internals(), "invoke");
-    render(<MarkdownRenderer content={"Changed [App.tsx](src/App.tsx)."} />);
+    const asked: unknown[] = [];
+    const listen = (event: Event) => asked.push((event as CustomEvent).detail);
+    window.addEventListener(FILE_LINK_OPEN, listen);
+    render(<MarkdownRenderer content={"Changed [App.tsx](src/App.tsx:42)."} />);
 
     expect(screen.queryByRole("link")).toBeNull();
-    const text = screen.getByText("App.tsx");
-    expect(text.getAttribute("title")).toBe("src/App.tsx");
-    fireEvent.click(text);
+    const button = screen.getByRole("button", { name: "App.tsx" });
+    expect(button.getAttribute("title")).toBe("src/App.tsx");
+    expect(button.className).toContain("focus-ring");
+    fireEvent.click(button);
+    window.removeEventListener(FILE_LINK_OPEN, listen);
+
+    expect(asked).toEqual([{ path: "src/App.tsx" }]);
     expect(spy.mock.calls.some(([cmd]) => cmd === "open_external_url")).toBe(false);
+  });
+
+  it("keeps a file:// link and a file with its line, which the parser would empty as unknown schemes", () => {
+    const asked: unknown[] = [];
+    const listen = (event: Event) => asked.push((event as CustomEvent).detail);
+    window.addEventListener(FILE_LINK_OPEN, listen);
+    render(<MarkdownRenderer content={"See [the config](file:///Users/me/proj/tauri.conf.json) and [README.md:12](README.md:12)."} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "the config" }));
+    fireEvent.click(screen.getByRole("button", { name: "README.md:12" }));
+    window.removeEventListener(FILE_LINK_OPEN, listen);
+
+    expect(asked).toEqual([{ path: "/Users/me/proj/tauri.conf.json" }, { path: "README.md" }]);
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+
+  it("still empties a script link, which is no file", () => {
+    render(<MarkdownRenderer content={"[run](javascript:alert(1))"} />);
+
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.queryByRole("button", { name: "run" })).toBeNull();
+    expect(screen.getByText("run").getAttribute("title")).toBe("");
+  });
+
+  it("shows a link it cannot open at all as plain text, not a dead control", () => {
+    // The markdown parser drops a scheme it does not know, so there is no target left to show.
+    render(<MarkdownRenderer content={"Open [the editor](vscode://file/a) or [here](#top)."} />);
+
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.queryByRole("button", { name: "the editor" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "here" })).toBeNull();
+    expect(screen.getByText("the editor").tagName).toBe("SPAN");
+  });
+
+  it("keeps a file link as plain text in a popout, which has no Files tab", () => {
+    window.history.pushState({}, "", "?session=s-1&popout=1");
+    try {
+      render(<MarkdownRenderer content={"Changed [App.tsx](src/App.tsx)."} />);
+      expect(screen.queryByRole("button", { name: "App.tsx" })).toBeNull();
+      expect(screen.getByText("App.tsx").getAttribute("title")).toBe("src/App.tsx");
+    } finally {
+      window.history.pushState({}, "", window.location.pathname);
+    }
   });
 
   it("shows a remote image as a link to it, since the app does not load remote images", () => {

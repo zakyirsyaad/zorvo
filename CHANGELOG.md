@@ -8,6 +8,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - **Qwen Code's background agents show in the overview card.** While Qwen Code runs agents of its own in the background, the card lists each one with what it last did. An agent that has done nothing for five minutes is marked quiet, and the chat says so.
 - **Sign in again from Settings.** An agent that reads Ready has Sign in again in its menu, to switch account or run its setup again.
+- **A link to a file in a reply can be opened.** A file in the session's folder opens in the Files tab. Any other file is shown in Finder.
 
 ### Changed
 

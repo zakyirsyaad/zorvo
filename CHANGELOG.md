@@ -4,6 +4,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-22
+
 ### Added
 
 - **Qwen Code's background agents show in the overview card.** While Qwen Code runs agents of its own in the background, the card lists each one with what it last did. An agent that has done nothing for five minutes is marked quiet, and the chat says so.
@@ -22,6 +24,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 ### Fixed
 
 - **Codex no longer shows two running tasks that are its own.** The overview card listed Zorvo's tool bridge and Codex's helper process as shell commands the agent had started.
+- The inspector's tab strip no longer draws a scrollbar over the tab names when the tabs do not fit.
 
 ## [0.16.0] - 2026-11-22
 

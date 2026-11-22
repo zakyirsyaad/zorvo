@@ -150,6 +150,7 @@ function TaskRowOf({ task, onOpen }: { task: OverviewTask; onOpen: (tab: TaskTab
       type="button"
       aria-label={`Open ${task.title}. ${task.kind === "subagent" ? "Subagent" : "Shell command"}, ${task.status.toLowerCase()}.`}
       onClick={() => onOpen(tab)}
+      title={task.fullTitle}
       className={ROW}
     >
       {label}

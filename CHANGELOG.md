@@ -16,6 +16,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - **Output is called Artifacts again.** The tab, the sidebar entry, the gallery and the section of the overview card say Artifacts. They still list the pages an agent showed and the files it made.
 - **A link in a reply opens in Zorvo's browser.** A click shows the page in the Browser tab beside the chat. Right-click a link to open it in your own browser. Mail links, and links in a session's own window, still open outside.
 - **Settings, Agents: the switches come first.** "Working together" and "Computer use" are above the list of agents, where the long list no longer hides them.
+- **A running command is named by its program.** In the overview card a command reads `node server.js --port 1420`, not the start of a long path, and its second line says the ports it listens on, not the session's name. Hover it for the whole command.
 
 ### Fixed
 

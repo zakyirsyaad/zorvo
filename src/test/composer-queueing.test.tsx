@@ -45,4 +45,11 @@ describe("ComposerDock while a turn runs", () => {
     render(<ComposerDock queueing onStop={() => {}} onSendMessage={() => {}} />);
     expect(screen.getByRole("button", { name: "Send message" })).toBeInTheDocument();
   });
+
+  it("titles the queue control with the agent's name, or says the turn", () => {
+    const { rerender } = render(<ComposerDock isThinking onStop={() => {}} queueing agentName="Qwen Code" onSendMessage={() => {}} />);
+    expect(screen.getByRole("button", { name: "Queue message" })).toHaveAttribute("title", "Sent when Qwen Code finishes.");
+    rerender(<ComposerDock isThinking onStop={() => {}} queueing onSendMessage={() => {}} />);
+    expect(screen.getByRole("button", { name: "Queue message" })).toHaveAttribute("title", "Sent when the turn ends.");
+  });
 });

@@ -84,6 +84,8 @@ export interface AcpEngineDeps extends EngineDeps {
   onAttention?: (sessionId: string, reason: AttentionReason) => void;
   /** Every end of a turn, once: finished, failed, cancelled, or the agent's exit. Not called after Zorvo's own stop. */
   onTurnSettled?: (sessionId: string, end: { how: WorkerTurnEnd; reason?: string }) => void;
+  /** The user's End agent took effect: called just before the turn end or exit it causes settles. */
+  onAgentEnded?: (sessionId: string) => void;
   /** The agent refused to start, or to answer, until the user signs in: the ways it offers and the unsent message. */
   onAuthRequired: (session: Pick<Session, 'id' | 'profileId' | 'cwd'>, methods: AuthMethod[], unsent?: FirstMessage) => void;
   /** Called with what an agent offers when one of its sessions opens or its commands change. */
@@ -128,6 +130,7 @@ export function useAcpEngine({
   onAuthRequired,
   onAttention,
   onTurnSettled,
+  onAgentEnded,
   transcripts,
   onTurnFailed,
   saveSoon,
@@ -251,6 +254,7 @@ export function useAcpEngine({
     onTurnEnd: unlessStopped((sessionId, { stopReason, error }: TurnResult) => {
       // End agent is the user's own stop: its turn end reads cancelled, not failed or exited.
       const wasEnded = endAgentAsked.current.delete(sessionId);
+      if (wasEnded) onAgentEnded?.(sessionId);
       const alreadySettled = settledByExit.current.delete(sessionId);
       unsettledTurn.current.delete(sessionId);
       agentFailures.clear(sessionId);
@@ -300,6 +304,7 @@ export function useAcpEngine({
       // An exit ends a turn only when one is still unsettled; read from the ref, not the last render.
       const endedATurn = unsettledTurn.current.delete(sessionId);
       const wasEnded = endAgentAsked.current.delete(sessionId);
+      if (wasEnded) onAgentEnded?.(sessionId);
       agentFailures.clear(sessionId);
       forgetStopAsked(sessionId);
       updateNow(sessionId, closeTurn);
@@ -934,6 +939,8 @@ export function useAcpEngine({
 
   const isBusy = (sessionId: string) => starting.has(sessionId) || acp.isBusy(sessionId);
   /** Whether a turn is under way or a launch is opening, from refs: true in the tick a prompt goes out, before any render. */
+  /** A launch is under way and no prompt has gone out yet: no turn runs, and a failed start leaves none to end. */
+  const isStarting = (sessionId: string) => starting.has(sessionId) || startingRef.current.has(sessionId);
   const isTurnUnderWay = (sessionId: string) => unsettledTurn.current.has(sessionId) || startingRef.current.has(sessionId);
 
   /** Whether the session's last turn failed with a prompt that can be sent again. */
@@ -1001,6 +1008,7 @@ export function useAcpEngine({
     flushQueued: queued.flush,
     isBusy,
     isTurnUnderWay,
+    isStarting,
     busySinceOf: acp.busySinceOf,
     /** The failed requests in a row the session's agent reported, if any. */
     failuresOf: (sessionId: string) => agentFailures.failures[sessionId],

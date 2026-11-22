@@ -1359,9 +1359,10 @@ describe("ACP sessions in the app", () => {
     await waitFor(() => expect(callsTo(spy, "acp_set_mode")).toHaveLength(1));
     await send("second");
 
-    // "second" waits in the queue, behind the turn that has not started yet.
+    // Nothing is queued while the session starts: the text stays in the box, as it always did.
     expect(callsTo(spy, "acp_prompt")).toHaveLength(0);
-    expect(within(screen.getByRole("list", { name: "Queued messages" })).getByText("second")).toBeDefined();
+    expect(prompt().value).toBe("second");
+    expect(screen.queryByRole("list", { name: "Queued messages" })).toBeNull();
     await act(async () => {
       finishSetMode();
     });

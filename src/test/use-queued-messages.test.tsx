@@ -13,6 +13,7 @@ function setup(overrides: Partial<QueuedMessagesDeps> = {}, strict = false) {
     isWaiting: () => false,
     isTurnUnderWay: () => true,
     isEnded: () => false,
+    canResume: () => true,
     agentNameOf: () => 'Qwen Code',
     onNotice: vi.fn(),
     ...overrides,
@@ -33,7 +34,7 @@ describe('useQueuedMessages', () => {
     });
     expect(texts(result)).toEqual(['one', 'two']);
     expect(result.current.queueOf('s1')[0]?.attachments).toEqual(['/a.png']);
-    expect(result.current.announcement).toContain('Qwen Code');
+    expect(result.current.announcementFor('s1').text).toContain('Qwen Code');
   });
 
   it('refuses a sixth message', () => {
@@ -198,17 +199,115 @@ describe('useQueuedMessages', () => {
     expect(texts(result)).toEqual([]);
   });
 
-  it('a rewind puts the first back and drops the rest with one notice', () => {
+  it('a rewind drops the whole queue, gives nothing back, and says how many went', () => {
     const { result, deps } = setup();
     act(() => {
       result.current.add('s1', 'one');
       result.current.add('s1', 'two');
-      result.current.add('s1', 'three');
     });
     act(() => result.current.clearForRewind('s1'));
-    expect(deps.giveBack).toHaveBeenCalledWith('s1', 'one', []);
+    expect(deps.giveBack).not.toHaveBeenCalled();
     expect(deps.onNotice).toHaveBeenCalledTimes(1);
-    expect(deps.onNotice).toHaveBeenCalledWith(expect.stringContaining('2 queued messages'));
+    expect(deps.onNotice).toHaveBeenCalledWith('2 queued messages were removed with the rewind.');
     expect(texts(result)).toEqual([]);
+  });
+
+  it('a rewind of one message says so in the singular, and of none says nothing', () => {
+    const { result, deps } = setup();
+    act(() => result.current.clearForRewind('s1'));
+    expect(deps.onNotice).not.toHaveBeenCalled();
+    act(() => void result.current.add('s1', 'one'));
+    act(() => result.current.clearForRewind('s1'));
+    expect(deps.onNotice).toHaveBeenCalledWith('1 queued message was removed with the rewind.');
+  });
+
+  it('runs a turn end that arrived while the queued send was in flight, once it resolves', async () => {
+    let resolveFirst: (taken: boolean) => void = () => {};
+    const deliver = vi
+      .fn<QueuedMessagesDeps['deliver']>()
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)))
+      .mockResolvedValue(true);
+    const { result } = setup({ deliver, isTurnUnderWay: () => false });
+    act(() => {
+      result.current.add('s1', 'one');
+      result.current.add('s1', 'two');
+    });
+    act(() => result.current.onTurnSettled('s1', { how: 'finished' }));
+    // The send was refused fast: its turn ended before the prompt call returned.
+    act(() => result.current.onTurnSettled('s1', { how: 'finished' }));
+    expect(deliver).toHaveBeenCalledTimes(1);
+    await act(async () => resolveFirst(true));
+    expect(deliver).toHaveBeenCalledTimes(2);
+    expect(deliver).toHaveBeenLastCalledWith('s1', expect.objectContaining({ text: 'two' }), 'send');
+  });
+
+  it('remembers a turn end that came while the session waits, and sends when it no longer waits', async () => {
+    let waiting = true;
+    const { result, deps, rerender } = setup({ isWaiting: () => waiting, isTurnUnderWay: () => false });
+    act(() => void result.current.add('s1', 'one'));
+    await act(async () => result.current.onTurnSettled('s1', { how: 'finished' }));
+    expect(result.current.holdOf('s1')).toBe('waiting');
+    expect(deps.deliver).not.toHaveBeenCalled();
+    rerender();
+    expect(deps.deliver).not.toHaveBeenCalled();
+    waiting = false;
+    await act(async () => rerender());
+    expect(deps.deliver).toHaveBeenCalledTimes(1);
+    expect(result.current.holdOf('s1')).toBeNull();
+    await act(async () => rerender());
+    expect(deps.deliver).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not send into an agent the user ended, and says it has ended', async () => {
+    const { result, deps } = setup();
+    act(() => void result.current.add('s1', 'one'));
+    await act(async () => {
+      result.current.onAgentEnded('s1');
+      result.current.onTurnSettled('s1', { how: 'cancelled' });
+    });
+    expect(deps.deliver).not.toHaveBeenCalled();
+    expect(result.current.holdOf('s1')).toBe('ended');
+    expect(texts(result)).toEqual(['one']);
+  });
+
+  it('Send now on an ended session that cannot be resumed does nothing', () => {
+    const { result, deps } = setup({ isTurnUnderWay: () => false, isEnded: () => true, canResume: () => false });
+    act(() => void result.current.add('s1', 'one'));
+    act(() => result.current.sendNow('s1', result.current.queueOf('s1')[0]!.id));
+    expect(deps.deliver).not.toHaveBeenCalled();
+    expect(deps.stop).not.toHaveBeenCalled();
+    expect(texts(result)).toEqual(['one']);
+  });
+
+  it('announces "sent" only when the agent took the message', async () => {
+    const { result } = setup({ deliver: vi.fn(async () => false), isTurnUnderWay: () => false });
+    act(() => void result.current.add('s1', 'one'));
+    await act(async () => result.current.sendNow('s1', result.current.queueOf('s1')[0]!.id));
+    expect(result.current.announcementFor('s1').text).not.toBe('Queued message sent.');
+  });
+
+  it('gives each announcement its own key, names one session, and clears', () => {
+    const { result } = setup();
+    act(() => void result.current.add('s1', 'one'));
+    const first = result.current.announcementFor('s1');
+    act(() => void result.current.add('s1', 'two'));
+    const second = result.current.announcementFor('s1');
+    expect(second.text).toBe(first.text);
+    expect(second.key).not.toBe(first.key);
+    expect(result.current.announcementFor('s2').text).toBe('');
+    act(() => result.current.clearAnnouncement());
+    expect(result.current.announcementFor('s1').text).toBe('');
+  });
+
+  it('Send now on a held queue clears the hold at once', async () => {
+    const { result } = setup({ isTurnUnderWay: () => false });
+    act(() => {
+      result.current.add('s1', 'one');
+      result.current.add('s1', 'two');
+    });
+    await act(async () => result.current.onTurnSettled('s1', { how: 'failed' }));
+    expect(result.current.holdOf('s1')).toBe('failed');
+    await act(async () => result.current.sendNow('s1', result.current.queueOf('s1')[1]!.id));
+    expect(result.current.holdOf('s1')).toBeNull();
   });
 });

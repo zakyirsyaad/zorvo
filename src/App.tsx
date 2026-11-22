@@ -247,6 +247,7 @@ export default function App() {
   const [delegationMention, setDelegationMention] = useState<{ agentId: string; task: string } | null>(null);
   // Set once useDelegation is built: the engine's turns reach it through this, as it is built before the hook.
   const delegationTurnEndedRef = useRef<(sessionId: string, reason: AttentionReason) => void>(() => {});
+  const queueAgentEndedRef = useRef<(sessionId: string) => void>(() => {});
   const queueTurnSettledRef = useRef<(sessionId: string, end: { how: WorkerTurnEnd }) => void>(() => {});
   const delegationTurnSettledRef = useRef<(sessionId: string, end: { how: WorkerTurnEnd; reason?: string }) => void>(() => {});
   // Set once useDelegation is built: the engine's retries read why the pair blocks them, as it is built before the hook.
@@ -705,6 +706,7 @@ export default function App() {
       signInStatus.markNeeded(session.profileId);
       compareRun.keepSignIn(session.id, { methods, unsent });
     },
+    onAgentEnded: (id) => queueAgentEndedRef.current(id),
     onTurnFailed: (sessionId, error) =>
       error ? setFailedTurns((prev) => ({ ...prev, [sessionId]: error })) : clearFailedTurn(sessionId),
     // Read when a retry runs, long after the render that built the engine: the latest hook decides.
@@ -1450,19 +1452,23 @@ export default function App() {
    * Continues an ended ACP session: a fresh agent process loads it, then gets
    * the message. A rewound one has no agent session left to load.
    */
-  const resumeSession = (session: Session, message: FirstMessage) => {
+  const resumeSession = (session: Session, message: FirstMessage, options?: { keepUnsent?: boolean }): Promise<boolean> => {
     compareRun.dropSignIn(session.id);
     if (!session.acpSessionId) {
+      // A rewound session: `restart` gives the message back itself.
       void restart(session, message, startChoices);
       setAcpChoices(NO_CHOICES);
-      return;
+      return Promise.resolve(true);
     }
     // Continuing an archived session brings it back into the list.
     patchSession(session.id, { status: "running", endedAt: null, exitCode: null, archivedAt: null });
-    void acp.resume(session, session.acpSessionId, message, startChoices).then((isTaken) => {
-      if (!isTaken) giveBackMessage(session.id, message.text, message.attachments);
+    const taken = acp.resume(session, session.acpSessionId, message, startChoices).then((isTaken) => {
+      // The queue gives back and announces for itself (`keepUnsent`): it must know whether the agent took the message.
+      if (!isTaken && !options?.keepUnsent) giveBackMessage(session.id, message.text, message.attachments);
+      return isTaken;
     });
     setAcpChoices(NO_CHOICES);
+    return taken;
   };
 
   /** Sends one queued message the way the composer's Send does; false when the agent or the delegation pair refused it. */
@@ -1471,12 +1477,15 @@ export default function App() {
     if (!session) return false;
     const message = { text: queued.text, attachments: [...queued.attachments] };
     if (mode === "resume") {
-      // `resumeSession` gives the message back itself when the agent does not take it.
-      resumeSession(session, message);
-      return true;
+      return resumeSession(session, message, { keepUnsent: true });
     }
     if (delegation.sendBlockedReason(sessionId) !== null) return false;
     return sendTo(sessionId, message);
+  };
+  /** The composer's own rule for continuing an ended session: its agent is ready. */
+  const canResumeSession = (sessionId: string) => {
+    const session = sessionById(sessionId);
+    return session !== undefined && session.status !== "running" && agents.find((a) => a.id === session.profileId)?.detected === true;
   };
   const queue = useQueuedMessages({
     sessionIds: sessions.map((s) => s.id),
@@ -1487,10 +1496,15 @@ export default function App() {
     isWaiting: isSessionWaiting,
     isTurnUnderWay: acp.isTurnUnderWay,
     isEnded: (sessionId) => sessionById(sessionId)?.status !== "running",
+    canResume: canResumeSession,
     agentNameOf: (sessionId) => agents.find((a) => a.id === sessionById(sessionId)?.profileId)?.name ?? "The agent",
     onNotice: setNotice,
   });
   queueTurnSettledRef.current = queue.onTurnSettled;
+  queueAgentEndedRef.current = queue.onAgentEnded;
+  // What was announced belongs to the session on screen: another session starts quiet.
+  const { clearAnnouncement } = queue;
+  useEffect(() => clearAnnouncement(), [activeSessionId, clearAnnouncement]);
 
   // Read when a run's worktrees are done, seconds after the click: an empty session id also means a run's panel.
   const isDraftRef = useLatest(isNewSessionDraft);
@@ -1586,7 +1600,7 @@ export default function App() {
 
   /** True when a message sent now joins the session's queue: a turn is under way (read from refs) and no comments are held. */
   const isQueueingNow = (sessionId: string) =>
-    isQueueingActive && sessionId === activeSessionId && acp.isTurnUnderWay(sessionId);
+    isQueueingActive && sessionId === activeSessionId && acp.isTurnUnderWay(sessionId) && !acp.isStarting(sessionId);
 
   /** Sends to the active session, continues it when it can be resumed, or starts a new one (or a run). */
   const handleSendMessage = (text: string, attachments?: string[]) => {
@@ -1640,7 +1654,7 @@ export default function App() {
         sendFromComposer(activeSession.id, message);
       } else if (activeSession && isResumable) {
         review.sendFrom(activeSession.id, text);
-        resumeSession(activeSession, message);
+        void resumeSession(activeSession, message);
       } else if (compare.isCompare) handleNewRun(message);
       else void handleNewSession(message);
     };
@@ -1879,7 +1893,11 @@ export default function App() {
   const isCheckingDraftSecrets = isNewSessionDraft && secretGuard.isCheckingDraft;
   // A message sent while the agent works waits in a queue, unless review comments are held: those are marked Sent at Send.
   const canQueueActive =
-    activeSession !== undefined && isActiveRunning && acp.isBusy(activeSessionId) && !isRestarting(activeSessionId);
+    activeSession !== undefined &&
+    isActiveRunning &&
+    acp.isBusy(activeSessionId) &&
+    !acp.isStarting(activeSessionId) &&
+    !isRestarting(activeSessionId);
   const isQueueingActive = canQueueActive && review.slot === null;
   const isQueueFull = isQueueingActive && queue.isFull(activeSessionId);
   const isSendBlocked = isSendWaiting || isCheckingDraftSecrets || review.blocksSend || delegationBlock !== undefined || isQueueFull;
@@ -2318,7 +2336,14 @@ export default function App() {
                         messages={queue.queueOf(activeSessionId)}
                         agentName={activeAgent?.name ?? "The agent"}
                         hold={isActiveRunning ? queue.holdOf(activeSessionId) : queue.queueOf(activeSessionId).length > 0 ? "ended" : null}
-                        announcement={queue.announcement}
+                        announcement={queue.announcementFor(activeSessionId).text}
+                        announcementKey={queue.announcementFor(activeSessionId).key}
+                        sendNowBlockedReason={
+                          !isActiveRunning && !isResumable && queue.queueOf(activeSessionId).length > 0
+                            ? (composerNoteText ?? `${activeAgent?.name ?? "The agent"} cannot continue right now.`)
+                            : undefined
+                        }
+                        onFocusComposer={() => composerRef.current?.focus()}
                         onSendNow={(id) => queue.sendNow(activeSessionId, id)}
                         onEdit={(id) => queue.edit(activeSessionId, id)}
                         onRemove={(id) => queue.remove(activeSessionId, id)}

@@ -1,7 +1,10 @@
 import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, act, fireEvent, within, waitFor, configure } from "@testing-library/react";
-import type { FakeTauriStore } from "./setup";
+import { fakeTauriInvoke, type FakeTauriStore } from "./setup";
+import { clickRowDelete } from "./sidebar-helpers";
+import { openInspectorTab } from "./inspector-helpers";
+import { lineHash } from "../lib/review-comments";
 import type { FakePrivate } from "./fixtures/private-backend";
 
 type Listener = (event: { payload: unknown }) => void;
@@ -174,5 +177,137 @@ describe("sending while an agent works", () => {
     await turnEnd(id);
     await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(2));
     expect(screen.queryByRole("dialog", { name: "This message may hold a secret" })).toBeNull();
+  });
+
+  it("a rewind drops the queue and leaves only the rewound message in the composer, with one notice", async () => {
+    const spy = await renderApp();
+    await startRunning(spy);
+    await send("queued one");
+    await send("queued two");
+    await screen.findByRole("list", { name: "Queued messages" });
+
+    const yours = screen.getByText("get started", { selector: "p" }).closest("[data-testid^='chat-message-']") as HTMLElement;
+    await act(async () => {
+      fireEvent.click(within(yours).getByRole("button", { name: "Rewind to here" }));
+    });
+    await act(async () => {
+      fireEvent.click(within(yours).getByRole("button", { name: "Confirm rewind" }));
+    });
+
+    expect(prompt().value).toBe("get started");
+    expect(screen.queryByRole("list", { name: "Queued messages" })).toBeNull();
+    expect(await screen.findByText("2 queued messages were removed with the rewind.")).toBeInTheDocument();
+  });
+
+  it("does not queue while the session is still starting: the text stays, as before", async () => {
+    const spy = await renderApp();
+    const real = spy.getMockImplementation();
+    let finishSetMode: () => void = () => {};
+    spy.mockImplementation((cmd, args) =>
+      cmd === "acp_set_mode"
+        ? new Promise((resolve) => {
+            finishSetMode = () => resolve(fakeTauriInvoke(cmd, args));
+          })
+        : (real ? real(cmd, args) : fakeTauriInvoke(cmd, args)),
+    );
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
+    });
+    await send("first");
+    await waitFor(() => expect(callsTo(spy, "acp_set_mode")).toHaveLength(1));
+    await send("second");
+
+    expect(prompt().value).toBe("second");
+    expect(screen.queryByRole("list", { name: "Queued messages" })).toBeNull();
+    await act(async () => {
+      finishSetMode();
+    });
+    await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(1));
+  });
+
+  it("a session off screen still sends its queue at its turn end, and a refused one waits for that session", async () => {
+    const spy = await renderApp();
+    const id = await startRunning(spy);
+    await send("later one");
+    await screen.findByRole("list", { name: "Queued messages" });
+    spy.mockImplementation((cmd, args) =>
+      cmd === "acp_prompt" && JSON.stringify(args).includes("later one")
+        ? Promise.reject(new Error("refused"))
+        : fakeTauriInvoke(cmd, args),
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
+    });
+    expect(screen.queryByRole("list", { name: "Queued messages" })).toBeNull();
+    await turnEnd(id);
+
+    await waitFor(() => expect(callsTo(spy, "acp_prompt")).toHaveLength(2));
+    // The refused message waits: it is in no other session's composer.
+    expect(prompt().value).toBe("");
+    await act(async () => {
+      fireEvent.click(within(screen.getByRole("complementary")).getByText("get started"));
+    });
+    await waitFor(() => expect(prompt().value).toBe("later one"));
+  });
+
+  it("deleting a session drops its queue: its turn end sends nothing", async () => {
+    const spy = await renderApp();
+    const id = await startRunning(spy);
+    await send("never sent");
+    await screen.findByRole("list", { name: "Queued messages" });
+    // A failed turn leaves the queue held, and the session idle enough to delete.
+    await turnEnd(id, { error: "network is down" });
+    await screen.findByText("Not sent: the last turn failed.");
+    const row = () => within(screen.getByRole("complementary")).getByText("get started").closest("li") as HTMLElement;
+    await clickRowDelete(row);
+    await act(async () => {
+      fireEvent.click(within(row()).getByRole("button", { name: "Confirm delete" }));
+    });
+    await turnEnd(id);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(callsTo(spy, "acp_prompt")).toHaveLength(1);
+    expect(screen.queryByText("Not sent: the last turn failed.")).toBeNull();
+    expect(screen.queryByRole("list", { name: "Queued messages" })).toBeNull();
+  });
+
+  it("while review comments are held the composer keeps Stop only and says they go when the agent finishes", async () => {
+    const FILE = "src/app.ts";
+    const DIFF = "@@ -41,2 +41,2 @@\n the context\n-old line\n+const x\n";
+    const STAT = { path: FILE, oldPath: null, kind: "modified", added: 1, removed: 1, isBinary: false, fingerprint: "f1" };
+    const spy = await renderApp();
+    spy.mockImplementation((cmd, args) => {
+      if (cmd === "session_changes") return Promise.resolve([{ path: FILE, oldPath: null, kind: "modified" }]);
+      if (cmd === "session_diff_targets") return Promise.resolve({ base: null, root: "/Users/test/developer/ai-perpetual-trading", prefix: "" });
+      if (cmd === "session_diff_stats") return Promise.resolve([STAT]);
+      if (cmd === "session_file_diff") return Promise.resolve(DIFF);
+      return fakeTauriInvoke(cmd, args);
+    });
+    Element.prototype.scrollIntoView = () => {};
+    await startRunning(spy);
+    await openInspectorTab("Changes");
+    const panel = await screen.findByRole("complementary", { name: "Changes panel" });
+    await act(async () => {
+      fireEvent.click(await within(panel).findByTitle(FILE));
+    });
+    fireEvent.mouseOver(await within(panel).findByRole("row", { name: /^Line 42, added/ }));
+    await act(async () => {
+      fireEvent.click(within(panel).getByRole("button", { name: "Comment on line 42" }));
+    });
+    fireEvent.change(within(panel).getByRole("textbox", { name: "Comment on line 42" }), { target: { value: "Check this." } });
+    await act(async () => {
+      fireEvent.click(within(panel).getByRole("button", { name: "Save comment" }));
+    });
+    const add = await within(panel).findByRole("button", { name: "Add 1 comment to message" });
+    await waitFor(() => expect(add).toBeEnabled());
+    await act(async () => {
+      fireEvent.click(add);
+    });
+
+    expect(prompt().value).toContain("Check this.");
+    expect(screen.getByText("Comments are sent when Qwen Code finishes.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Queue message" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Stop agent" })).toBeInTheDocument();
+    expect(lineHash("const x")).toBeTruthy();
   });
 });

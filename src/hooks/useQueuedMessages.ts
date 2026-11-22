@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   addMessage,
-  droppedNotice,
   isFull as isListFull,
   moveToFront,
   queuedAnnouncement,
   removeMessage,
+  rewindNotice,
   SENT_ANNOUNCEMENT,
   takeFirst,
   type QueueHold,
@@ -31,6 +31,8 @@ export interface QueuedMessagesDeps {
   /** From refs, true in the tick a prompt goes out; React's busy flag lags a render. */
   isTurnUnderWay: (sessionId: string) => boolean;
   isEnded: (sessionId: string) => boolean;
+  /** An ended session can be continued (the composer's own rule: its agent is ready). */
+  canResume: (sessionId: string) => boolean;
   agentNameOf: (sessionId: string) => string;
   onNotice: (message: string) => void;
 }
@@ -46,25 +48,43 @@ export function useQueuedMessages(deps: QueuedMessagesDeps) {
   const holds = useRef(new Map<string, QueueHold>());
   // Sessions with a queued message on its way out: a second turn-end event in the tick must not send another.
   const inFlight = useRef(new Set<string>());
+  // A turn end that came while that send was in flight, run when it lands.
+  const missed = useRef(new Map<string, { how: WorkerTurnEnd }>());
+  // A turn end that came while a card waits for the user: sent once nothing waits.
+  const waitingSettle = useRef(new Set<string>());
+  // The user ended the agent: its turn end must not send into a dying process.
+  const agentEnded = useRef(new Set<string>());
   const counter = useRef(0);
+  const settleRef = useRef<(sessionId: string, end: { how: WorkerTurnEnd }) => void>(() => {});
   const [, setRevision] = useState(0);
-  const [announcement, setAnnouncement] = useState('');
+  const [announce, setAnnounce] = useState({ sessionId: '', text: '', key: 0 });
+  const bump = useCallback(() => setRevision((n) => n + 1), []);
 
   const queueOf = useCallback((sessionId: string): readonly QueuedMessage[] => queues.current.get(sessionId) ?? [], []);
   const holdOf = useCallback((sessionId: string): QueueHold | null => holds.current.get(sessionId) ?? null, []);
   const isFull = useCallback((sessionId: string) => isListFull(queueOf(sessionId)), [queueOf]);
 
-  const bump = useCallback(() => setRevision((n) => n + 1), []);
+  const forgetState = useCallback((sessionId: string) => {
+    holds.current.delete(sessionId);
+    missed.current.delete(sessionId);
+    waitingSettle.current.delete(sessionId);
+    agentEnded.current.delete(sessionId);
+  }, []);
+
   const setQueue = useCallback(
     (sessionId: string, list: readonly QueuedMessage[]) => {
       if (list.length === 0) {
         queues.current.delete(sessionId);
-        holds.current.delete(sessionId);
+        forgetState(sessionId);
       } else queues.current.set(sessionId, list);
       bump();
     },
-    [bump],
+    [bump, forgetState],
   );
+
+  const say = useCallback((sessionId: string, text: string) => {
+    setAnnounce((prev) => ({ sessionId, text, key: prev.key + 1 }));
+  }, []);
 
   const add = useCallback(
     (sessionId: string, text: string, attachments: readonly string[] = []): boolean => {
@@ -72,47 +92,90 @@ export function useQueuedMessages(deps: QueuedMessagesDeps) {
       if (isListFull(before)) return false;
       counter.current += 1;
       setQueue(sessionId, addMessage(before, { id: `queued-${counter.current}`, text, attachments }));
-      setAnnouncement(queuedAnnouncement(latest.current.agentNameOf(sessionId)));
+      say(sessionId, queuedAnnouncement(latest.current.agentNameOf(sessionId)));
       return true;
     },
-    [latest, queueOf, setQueue],
+    [latest, queueOf, say, setQueue],
   );
 
   /** Takes the first message off the queue, then sends it; a refusal returns it to the composer. */
-  const sendFirst = useCallback((sessionId: string, mode: 'send' | 'resume') => {
-    const taken = takeFirst(queueOf(sessionId));
-    if (!taken || inFlight.current.has(sessionId)) return;
-    inFlight.current.add(sessionId);
-    setQueue(sessionId, taken.rest);
-    const { first } = taken;
-    const finish = (isTaken: boolean) => {
-      if (isTaken) setAnnouncement(SENT_ANNOUNCEMENT);
-      else latest.current.giveBack(sessionId, first.text, first.attachments);
-    };
-    latest.current
-      .deliver(sessionId, first, mode)
-      .then(finish, () => finish(false))
-      .finally(() => inFlight.current.delete(sessionId));
-  }, [latest, queueOf, setQueue]);
+  const sendFirst = useCallback(
+    (sessionId: string, mode: 'send' | 'resume') => {
+      const taken = takeFirst(queueOf(sessionId));
+      if (!taken || inFlight.current.has(sessionId)) return;
+      inFlight.current.add(sessionId);
+      // A new turn starts with this message: what held the others back no longer applies.
+      forgetState(sessionId);
+      setQueue(sessionId, taken.rest);
+      const { first } = taken;
+      const finish = (isTaken: boolean) => {
+        if (isTaken) say(sessionId, SENT_ANNOUNCEMENT);
+        else latest.current.giveBack(sessionId, first.text, first.attachments);
+      };
+      latest.current
+        .deliver(sessionId, first, mode)
+        .then(finish, () => finish(false))
+        .finally(() => {
+          inFlight.current.delete(sessionId);
+          const end = missed.current.get(sessionId);
+          missed.current.delete(sessionId);
+          // A turn that is still under way is the one just sent: the event was a repeat, not a new end.
+          if (end && !latest.current.isTurnUnderWay(sessionId)) settleRef.current(sessionId, end);
+        });
+    },
+    [forgetState, latest, queueOf, say, setQueue],
+  );
 
   const onTurnSettled = useCallback(
     (sessionId: string, end: { how: WorkerTurnEnd }) => {
+      if (inFlight.current.has(sessionId)) {
+        missed.current.set(sessionId, end);
+        return;
+      }
+      const wasEnded = agentEnded.current.delete(sessionId);
       if (queueOf(sessionId).length === 0) return;
-      if (end.how === 'failed' || end.how === 'exited') {
-        holds.current.set(sessionId, end.how === 'failed' ? 'failed' : 'ended');
+      if (wasEnded || end.how === 'exited') {
+        holds.current.set(sessionId, 'ended');
         bump();
         return;
       }
-      if (latest.current.isWaiting(sessionId)) return;
+      if (end.how === 'failed') {
+        holds.current.set(sessionId, 'failed');
+        bump();
+        return;
+      }
+      if (latest.current.isWaiting(sessionId)) {
+        // A card can outlive its turn: try again once nothing waits for the user.
+        holds.current.set(sessionId, 'waiting');
+        waitingSettle.current.add(sessionId);
+        bump();
+        return;
+      }
       holds.current.delete(sessionId);
       sendFirst(sessionId, 'send');
     },
     [bump, latest, queueOf, sendFirst],
   );
+  settleRef.current = onTurnSettled;
 
-  const remove = useCallback((sessionId: string, id: string) => {
-    setQueue(sessionId, removeMessage(queueOf(sessionId), id));
-  }, [queueOf, setQueue]);
+  /** The user ended the agent (End agent): the turn end that follows is not a chance to send. */
+  const onAgentEnded = useCallback(
+    (sessionId: string) => {
+      agentEnded.current.add(sessionId);
+      if (queueOf(sessionId).length > 0) {
+        holds.current.set(sessionId, 'ended');
+        bump();
+      }
+    },
+    [bump, queueOf],
+  );
+
+  const remove = useCallback(
+    (sessionId: string, id: string) => {
+      setQueue(sessionId, removeMessage(queueOf(sessionId), id));
+    },
+    [queueOf, setQueue],
+  );
 
   const edit = useCallback(
     (sessionId: string, id: string) => {
@@ -127,37 +190,74 @@ export function useQueuedMessages(deps: QueuedMessagesDeps) {
 
   const sendNow = useCallback(
     (sessionId: string, id: string) => {
+      const { isTurnUnderWay, isEnded, canResume, stop } = latest.current;
+      const isRunning = isTurnUnderWay(sessionId);
+      const ended = isEnded(sessionId);
+      // An ended session continues only when the composer's own Send could continue it.
+      if (!isRunning && ended && !canResume(sessionId)) return;
       setQueue(sessionId, moveToFront(queueOf(sessionId), id));
-      const { isTurnUnderWay, isEnded, stop } = latest.current;
-      if (isTurnUnderWay(sessionId)) stop(sessionId);
-      else sendFirst(sessionId, isEnded(sessionId) ? 'resume' : 'send');
+      if (isRunning) stop(sessionId);
+      else sendFirst(sessionId, ended ? 'resume' : 'send');
     },
     [latest, queueOf, sendFirst, setQueue],
   );
 
-  /** The conversation changed under the queue: the first message returns to the composer, the rest are dropped. */
+  /** The conversation changed under the queue: all of it goes, with one notice. Nothing is given back. */
   const clearForRewind = useCallback(
     (sessionId: string) => {
-      const taken = takeFirst(queueOf(sessionId));
-      if (!taken) return;
+      const count = queueOf(sessionId).length;
+      if (count === 0) return;
       setQueue(sessionId, []);
-      latest.current.giveBack(sessionId, taken.first.text, taken.first.attachments);
-      if (taken.rest.length > 0) latest.current.onNotice(droppedNotice(taken.rest.length));
+      latest.current.onNotice(rewindNotice(count));
     },
     [latest, queueOf, setQueue],
   );
 
-  // A deleted session takes its queue along.
+  const announcementFor = useCallback(
+    (sessionId: string) => ({ text: announce.sessionId === sessionId ? announce.text : '', key: announce.key }),
+    [announce],
+  );
+  const clearAnnouncement = useCallback(() => {
+    setAnnounce((prev) => (prev.text === '' ? prev : { ...prev, sessionId: '', text: '' }));
+  }, []);
+
+  // After every render: a deleted session takes its queue along, and a turn end that waited for an answer is retried.
   useEffect(() => {
     let changed = false;
     for (const id of [...queues.current.keys()]) {
       if (deps.sessionIds.includes(id)) continue;
       queues.current.delete(id);
-      holds.current.delete(id);
+      forgetState(id);
       changed = true;
+    }
+    for (const id of [...waitingSettle.current]) {
+      const { isWaiting, isTurnUnderWay } = latest.current;
+      if (queueOf(id).length === 0) waitingSettle.current.delete(id);
+      else if (isTurnUnderWay(id)) {
+        // The user answered and the agent went on: that turn's own end comes later.
+        waitingSettle.current.delete(id);
+        if (holds.current.get(id) === 'waiting') holds.current.delete(id);
+        changed = true;
+      } else if (!isWaiting(id)) {
+        waitingSettle.current.delete(id);
+        sendFirst(id, 'send');
+      }
     }
     if (changed) bump();
   });
 
-  return { queueOf, holdOf, isFull, add, remove, edit, sendNow, onTurnSettled, clearForRewind, announcement };
+  return {
+    queueOf,
+    holdOf,
+    isFull,
+    add,
+    remove,
+    edit,
+    sendNow,
+    onTurnSettled,
+    onAgentEnded,
+    clearForRewind,
+    announcementFor,
+    clearAnnouncement,
+  };
 }

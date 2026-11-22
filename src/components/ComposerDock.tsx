@@ -821,7 +821,7 @@ export function ComposerDock({
               <IconButton
                 variant="primary"
                 label="Queue message"
-                title="Send when the agent finishes"
+                title={agentName ? `Sent when ${agentName} finishes.` : "Sent when the turn ends."}
                 aria-describedby={sendBlockedNoteId}
                 onClick={handleSend}
                 disabled={isSendEmpty || !canSend}

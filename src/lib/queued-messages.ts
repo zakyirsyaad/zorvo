@@ -11,8 +11,8 @@ export interface QueuedMessage {
   attachments: readonly string[];
 }
 
-/** Why a session's queue is not sending by itself: the last turn failed, or the agent is gone. */
-export type QueueHold = 'failed' | 'ended';
+/** Why a session's queue is not sending by itself: the last turn failed, the agent is gone, or it waits for the user's answer. */
+export type QueueHold = 'failed' | 'ended' | 'waiting';
 
 export const isFull = (list: readonly QueuedMessage[]): boolean => list.length >= MAX_QUEUED_MESSAGES;
 
@@ -42,6 +42,7 @@ export const previewOf = (text: string): string => escapeVisible(text.replace(/\
 export function queueHoldNote(hold: QueueHold | null, agentName: string): string | null {
   if (hold === 'failed') return 'Not sent: the last turn failed.';
   if (hold === 'ended') return `Not sent: ${agentName} has ended.`;
+  if (hold === 'waiting') return 'Waits for your answer in the chat.';
   return null;
 }
 
@@ -50,7 +51,6 @@ export const queuedAnnouncement = (agentName: string): string =>
 
 export const SENT_ANNOUNCEMENT = 'Queued message sent.';
 
-export const droppedNotice = (count: number): string =>
-  count === 1
-    ? 'One queued message was dropped because the conversation changed.'
-    : `${count} queued messages were dropped because the conversation changed.`;
+/** A rewind removes the whole queue: the conversation it was written for changed. */
+export const rewindNotice = (count: number): string =>
+  count === 1 ? '1 queued message was removed with the rewind.' : `${count} queued messages were removed with the rewind.`;

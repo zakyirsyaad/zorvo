@@ -27,10 +27,13 @@ export interface QueuedMessagesProps {
 
 type Control = "send" | "remove";
 
-/** First words of a message, for a control's name: it says which message it acts on. */
+const NAME_CHARS = 40;
+
+/** First words of a message, for a control's name: it says which message it acts on. Cut by characters, so none is split. */
 function firstWords(text: string): string {
   const line = previewOf(text);
-  return line.length > 40 ? `${line.slice(0, 40)}...` : line;
+  const chars = [...line];
+  return chars.length > NAME_CHARS ? `${chars.slice(0, NAME_CHARS).join("")}...` : line;
 }
 
 const attachmentLabel = (count: number) => (count === 1 ? "1 attachment" : `${count} attachments`);

@@ -40,6 +40,13 @@ describe("QueuedMessages", () => {
     expect(first.querySelector("strong")).toBeNull();
   });
 
+  it("cuts a long name between characters, never inside one", () => {
+    const text = `${"a".repeat(39)}\u{1F600}${"b".repeat(10)}`;
+    render(<QueuedMessages {...base} messages={[{ id: "e", text, attachments: [] }]} />);
+
+    expect(screen.getByRole("button", { name: `Remove: ${"a".repeat(39)}\u{1F600}...` })).toBeInTheDocument();
+  });
+
   it("counts attachments", () => {
     render(<QueuedMessages {...base} />);
     expect(screen.getByText("2 attachments")).toBeInTheDocument();

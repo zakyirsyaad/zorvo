@@ -50,6 +50,10 @@ describe("a shell command's row", () => {
     const [plain] = overviewOf({ ...base, shellTasks: [{ ...task, name: "pnpm dev", detail: "Fix login bug" }] }).tasks;
     expect(plain).toMatchObject({ title: "pnpm dev", detail: "Shell" });
     expect(plain.fullTitle).toBeUndefined();
+    // A character that reshapes text shows in the tooltip as what it is.
+    const [hidden] = overviewOf({ ...base, shellTasks: [{ ...task, name: "/Users/me/bin/tool \u202Egnp.exe" }] }).tasks;
+    expect(hidden.fullTitle).not.toContain("\u202E");
+    expect(hidden.fullTitle).toContain("tool");
   });
 });
 

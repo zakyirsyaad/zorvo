@@ -2,7 +2,7 @@ import type { PullRequestStatus } from '../hooks/usePullRequest';
 import type { TaskTab } from '../hooks/useTaskTabs';
 import type { Artifact, ChatMessage } from '../types';
 import { isImagePath } from './attachments';
-import { portsOf, shortCommand, type BackgroundTask } from './background-tasks';
+import { portsOf, shortCommand, wholeCommand, type BackgroundTask } from './background-tasks';
 import type { CreatedFile } from './created-files';
 import { secondLine, shownTools, subagentTaskOf, waitingToolCallIds, type TaskStatus } from './task-view';
 
@@ -96,7 +96,7 @@ function shellTask(task: BackgroundTask): OverviewTask {
     kind: 'shell',
     title,
     // The whole command, for a tooltip, when the title is a shorter form of it.
-    ...(title !== task.name ? { fullTitle: task.name } : {}),
+    ...(title !== task.name ? { fullTitle: wholeCommand(task.name) } : {}),
     // The card is one session's own: its name would only repeat the page's title.
     detail: ['Shell', ...portsOf(task)].join(' · '),
     state: 'running',

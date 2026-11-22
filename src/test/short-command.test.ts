@@ -23,6 +23,12 @@ describe("shortCommand", () => {
     }
   });
 
+  it("keeps the slash of a name right under the root, which has no folder to drop", () => {
+    for (const command of ["ls /tmp", "du -sh /Users", "python3 -m http.server --directory /srv", "~/run.sh --once"]) {
+      expect(shortCommand(command), command).toBe(command);
+    }
+  });
+
   it("keeps a folder argument readable and never returns nothing for a command", () => {
     expect(shortCommand("ls /Users/me/project/")).toBe("ls project/");
     expect(shortCommand("/")).toBe("/");

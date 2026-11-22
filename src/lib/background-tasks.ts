@@ -1,5 +1,6 @@
 import { runningTurnReplyIndexes } from './acp-events';
 import type { ChatMessage, Session, ToolExecution } from '../types';
+import { escapeVisible } from './visible-text';
 
 /** What a background row stands for. */
 export type BackgroundTaskKind = 'agent' | 'shell' | 'subagent';
@@ -533,9 +534,10 @@ export function findShellTask(
  * The folders in front of a file name, at the start of the command or of an argument. `ps` does not
  * quote a path, so a space inside a folder name ("Application Support") cannot be told from the
  * space before the next argument: it is read as part of the name only before a capital letter or a
- * digit, which is how such folders are written and how an argument rarely starts.
+ * digit, which is how such folders are written and how an argument rarely starts. A name right
+ * under the root (`/tmp`) has no folder in front of it and keeps its slash: `tmp` would be another place.
  */
-const LEADING_FOLDERS = /(^|\s)~?\/(?:(?:[^/\s]| (?=[A-Z0-9]))+\/)*(?=[^/\s])/g;
+const LEADING_FOLDERS = /(^|\s)~?\/(?:(?:[^/\s]| (?=[A-Z0-9]))+\/)+(?=[^/\s])/g;
 
 /**
  * A command as a row's title: each long path cut down to its file name, so the program and its
@@ -544,6 +546,9 @@ const LEADING_FOLDERS = /(^|\s)~?\/(?:(?:[^/\s]| (?=[A-Z0-9]))+\/)*(?=[^/\s])/g;
 export function shortCommand(command: string): string {
   return command.replace(LEADING_FOLDERS, '$1');
 }
+
+/** The whole command for a row's tooltip, with characters that hide or reshape text shown as what they are. */
+export const wholeCommand = (command: string): string => escapeVisible(command);
 
 const PORT_PART = /^localhost:\d+$/;
 

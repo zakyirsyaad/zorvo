@@ -6,6 +6,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Changed
 
+- An agent now starts workers by itself when you ask it to split work or run parts in parallel, where before it could run them as background tasks of its own that Zorvo cannot show.
 - **Output is called Artifacts again.** The tab, the sidebar entry, the gallery and the section of the overview card say Artifacts. They still list the pages an agent showed and the files it made.
 
 ## [0.16.0] - 2026-11-22

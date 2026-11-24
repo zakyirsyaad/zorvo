@@ -1018,6 +1018,8 @@ describe("ACP sessions in the app", () => {
     await send("hello");
 
     const panel = within(await screen.findByRole("region", { name: "Sign in to Qwen Code" }));
+    // ChatGPT is the one method Zorvo can run, so it leads; the key method folds under it.
+    fireEvent.click(panel.getByRole("button", { name: "Other ways to sign in (1)" }));
     expect(panel.getByText("Use an API key to authenticate")).toBeDefined();
     // The message waits in the composer, to be sent again after signing in.
     expect(prompt().value).toBe("hello");

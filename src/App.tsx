@@ -2043,6 +2043,7 @@ export default function App() {
                   agents={agents}
                   settings={state.settings}
                   signInStateOf={signInStatus.stateOf}
+                  signIn={settingsSignIn}
                   onSetUpAgent={(profileId) => {
                     openNewSession(undefined, profileId);
                     // Asks again even when this agent is already the draft's: its panel may have been dismissed.
@@ -2301,6 +2302,9 @@ export default function App() {
                         agentId={isPrivateLaunch ? undefined : (activeSession?.profileId ?? (activeRun ? undefined : newSessionAgent?.id))}
                         showTerminal={settingsPage.section === null}
                         panelTarget={draftSignInSlot}
+                        onCancelLogin={settingsSignIn.cancelSignIn}
+                        onFinishLogin={settingsSignIn.finishSignIn}
+                        onRetryLogin={settingsSignIn.retrySignIn}
                       />
                       {activeTopupRequest && (
                         <PrivateTopupRequestCard

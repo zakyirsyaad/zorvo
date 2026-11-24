@@ -56,9 +56,14 @@ export interface SettingsSignIn {
   sweep: (profileIds: readonly string[]) => void;
   /** The agent whose sign-in is running now, if any: another row's sign-in waits for it. */
   busyAgentId: string | null;
+  /** That agent's name, for the line that says whose sign-in runs. */
+  busyAgentName?: string | null;
   /** The agent login's terminal, for a dialog drawn above Settings. */
   terminal: ReturnType<typeof useAgentSignIn>['terminal'];
+  /** The login dialog's Cancel, X or Escape: ends the login and checks nothing. */
   cancelSignIn: () => void;
+  /** The login dialog's done button: the login may be finished, so the agent is checked. */
+  finishSignIn: () => void;
   retrySignIn: () => void;
 }
 
@@ -102,8 +107,6 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
   // Agents a sweep was asked for while another ran: the running one asks them when it ends.
   const queuedRef = useRef<readonly string[] | null>(null);
   const sweepRef = useRef<(profileIds: readonly string[]) => void>(() => {});
-  // The agent whose sign-in was started from a row, so a Cancel there clears its request.
-  const startedHereRef = useRef<string | null>(null);
 
   const setCheck = useCallback(
     (profileId: string, next: AgentCheck) => setChecks((prev) => ({ ...prev, [profileId]: next })),
@@ -349,7 +352,6 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
       const offered = methodsOf(profileId);
       if (!folder || offered.length === 0) return;
       if (login.startSignIn({ profileId, cwd: folder, methods: [...offered] }, methodId)) {
-        startedHereRef.current = profileId;
         if (againRef.current[profileId] === 'open') startedFromListRef.current.add(profileId);
       }
     },
@@ -374,8 +376,29 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
 
   /** The login dialog's Cancel. A request left idle by a cancel would make a new session of that agent wait on its panel. */
   const { cancel, auth } = signIn;
+  /** The agent of the request in the slot when a row or the Agents menu started it; the draft's own is not this hook's. */
+  const startedOutside = useCallback((): string | null => {
+    const request = depsRef.current.signIn.auth.authRequest;
+    return request?.isOutside ? request.profileId : null;
+  }, [depsRef]);
+
   const cancelSignIn = useCallback(() => {
-    const startedHere = startedHereRef.current;
+    const startedHere = startedOutside();
+    const login = depsRef.current.signIn;
+    // A check under way finishes on its own: only the dialog goes.
+    if (login.terminal.dialog?.phase === 'checking') {
+      login.terminal.close();
+      return;
+    }
+    cancel();
+    // The draft's login, and one carrying a refused message, keep their request: the panel shows it again.
+    if (startedHere === null || login.auth.authRequest?.pending) return;
+    auth.dismiss();
+  }, [cancel, auth, depsRef, startedOutside]);
+
+  /** The login dialog's done button: as Cancel, then the agent is asked whether the login took. */
+  const finishSignIn = useCallback(() => {
+    const startedHere = startedOutside();
     const login = depsRef.current.signIn;
     const phase = login.terminal.dialog?.phase;
     // A check under way finishes on its own: only the dialog goes.
@@ -383,20 +406,27 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
       login.terminal.close();
       return;
     }
-    // A login that still runs may be done: the dialog's line says Zorvo checks again on Close.
+    // A login that still runs may be done: the done button asks Zorvo to check.
     const wasRunning = phase === 'running';
     if (startedHere === null) {
-      // The draft's login, drawn here while Settings is open: its own Close checks the draft's request.
+      // The draft's login, drawn here while Settings is open: its own done button checks the draft's request.
+      if (wasRunning) login.closeDialog();
+      else cancel();
+      return;
+    }
+    // A refused message waits on this request: the draft's own check sends it once signed in.
+    if (login.auth.authRequest?.pending) {
       if (wasRunning) login.closeDialog();
       else cancel();
       return;
     }
     cancel();
     auth.dismiss();
-    startedHereRef.current = null;
     if (wasRunning) check(startedHere);
-  }, [cancel, auth, depsRef, check]);
+  }, [cancel, auth, depsRef, check, startedOutside]);
 
+  const busyId = authRequest && (authRequest.status === 'signing-in' || authRequest.status === 'checking') ? authRequest.profileId : null;
+  const { agents } = deps;
   return useMemo<SettingsSignIn>(
     () => ({
       cwd,
@@ -411,11 +441,13 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
       check,
       signInWith,
       sweep,
-      busyAgentId: authRequest && (authRequest.status === 'signing-in' || authRequest.status === 'checking') ? authRequest.profileId : null,
+      busyAgentId: busyId,
+      busyAgentName: busyId === null ? null : (agents.find((a) => a.id === busyId)?.name ?? busyId),
       terminal: signIn.terminal,
       cancelSignIn,
+      finishSignIn,
       retrySignIn: signIn.retryStart,
     }),
-    [cwd, status.stateOf, checks, reports, methodsOf, again, openAgain, closeAgain, authRequest, check, signInWith, sweep, signIn.terminal, cancelSignIn, signIn.retryStart],
+    [cwd, status.stateOf, checks, reports, methodsOf, again, openAgain, closeAgain, authRequest, busyId, agents, check, signInWith, sweep, signIn.terminal, cancelSignIn, finishSignIn, signIn.retryStart],
   );
 }

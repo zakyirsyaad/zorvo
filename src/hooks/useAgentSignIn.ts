@@ -52,7 +52,7 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
   const currentRequestRef = useLatest(authRequest);
 
   const requestSignIn = useCallback<AgentAuth['requestSignIn']>(
-    (profileId, cwd, methods, pending) => {
+    (profileId, cwd, methods, pending, isOutside) => {
       const current = currentRequestRef.current;
       const isOtherAgentSigningIn =
         current !== null && current.profileId !== profileId && (current.status === 'signing-in' || current.status === 'checking');
@@ -62,7 +62,7 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
       attemptRef.current = null;
       // A login of the request this one replaces ends with it, and so does its dialog.
       closeTerminal();
-      openPanel(profileId, cwd, methods, pending);
+      openPanel(profileId, cwd, methods, pending, isOutside);
       return true;
     },
     [closeTerminal, openPanel, depsRef, currentRequestRef],
@@ -217,10 +217,13 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
 
   /** Signs in to an agent from Settings: the same login as the draft's panel, for the methods the row shows. */
   const startSignIn = (start: SignInStart, methodId: string): boolean => {
+    // A refused message of this agent that waits in its composer is kept: the sign-in sends it as the panel's would.
+    const current = currentRequestRef.current;
+    const pending = current?.profileId === start.profileId ? current.pending : undefined;
     // Without its request (refused while another agent signs in) no login may run.
-    if (!requestSignIn(start.profileId, start.cwd, start.methods)) return false;
+    if (!requestSignIn(start.profileId, start.cwd, start.methods, pending, true)) return false;
     lastStartRef.current = { start, methodId };
-    void signInWith(methodId, { ...start, status: 'idle' }, true);
+    void signInWith(methodId, { ...start, status: 'idle', isOutside: true, ...(pending ? { pending } : {}) }, true);
     return true;
   };
 
@@ -265,9 +268,18 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
     dismiss,
   };
 
+  /** The dialog's Cancel, X or Escape: the login ends and nothing is checked. A check already under way finishes. */
+  const cancelDialog = () => {
+    if (terminal.dialog?.phase === 'checking') {
+      terminal.close();
+      return;
+    }
+    cancel();
+  };
+
   /**
-   * The dialog's Close. A login or setup that still runs may already be done (Qwen's setup never
-   * exits on its own), so Zorvo checks again, as its line says; in any other phase it only cancels.
+   * The dialog's done button (and Close once the login ended). A login or setup that still runs may already
+   * be done (Qwen's setup never exits on its own), so Zorvo checks again; in any other phase it only cancels.
    */
   const closeDialog = () => {
     const phase = terminal.dialog?.phase;
@@ -281,5 +293,5 @@ export function useAgentSignIn(deps: AgentSignInDeps) {
     if (phase === 'running') void recheck();
   };
 
-  return { auth, handBack, handBackKept, cancel, closeDialog, terminal, startSignIn, retryStart };
+  return { auth, handBack, handBackKept, cancel, cancelDialog, closeDialog, terminal, startSignIn, retryStart };
 }

@@ -61,7 +61,7 @@ export interface DelegateDialogProps {
 
 const STATUS_TEXT: Readonly<Record<DelegateAgentStatus, string>> = {
   ready: "Ready",
-  "not-checked": "Not checked",
+  "not-checked": "Not checked yet",
   "needs-sign-in": "Needs sign-in",
   "not-installed": "Not installed",
 };

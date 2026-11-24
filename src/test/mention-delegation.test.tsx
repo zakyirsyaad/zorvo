@@ -73,7 +73,7 @@ describe("the @ mention's delegation group", () => {
     expect(agentRow("codex").querySelector(".size-4.rounded.bg-chip img")).not.toBeNull();
     expect(within(agentRow("codex")).getByText("Codex")).toHaveClass("text-ui");
     expect(within(agentRow("codex")).getByText("Ready")).toHaveClass("text-caption", "text-fg-muted");
-    expect(within(agentRow("qwen-code")).getByText("Not checked")).toHaveClass("text-fg-subtle");
+    expect(within(agentRow("qwen-code")).getByText("Not checked yet")).toHaveClass("text-fg-subtle");
     expect(within(agentRow("kimi-cli")).getByText("Not installed")).toHaveClass("text-fg-subtle");
 
     const signIn = within(agentRow("gemini-cli")).getByText("Needs sign-in");

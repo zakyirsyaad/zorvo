@@ -62,6 +62,7 @@ function agentSignIn(overrides: Partial<SettingsSignIn> = {}): SettingsSignIn {
     closeAgain: vi.fn(),
     terminal,
     cancelSignIn: vi.fn(),
+    finishSignIn: vi.fn(),
     retrySignIn: vi.fn(),
     ...overrides,
   };
@@ -101,13 +102,15 @@ describe("the Agents section's order", () => {
 });
 
 describe("an agent's login started in Settings", () => {
-  it("is drawn by Settings, and Close stops it", () => {
+  it("is drawn by Settings: Cancel stops it, and I've signed in checks it", () => {
     const signIn = agentSignIn();
     renderSettings(signIn);
 
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "I've signed in" }));
 
-    expect(signIn.cancelSignIn).toHaveBeenCalled();
+    expect(signIn.cancelSignIn).toHaveBeenCalledTimes(1);
+    expect(signIn.finishSignIn).toHaveBeenCalledTimes(1);
   });
 
   it("offers Try again after a failure, which runs the same login once more", () => {

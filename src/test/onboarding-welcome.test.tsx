@@ -113,7 +113,7 @@ describe("agents you'll use", () => {
 
   it("an agent that needs a sign-in says it will ask when you start", () => {
     renderChoices({ signInStateOf: (id) => (id === "codex-acp" ? "needed" : "ready") });
-    expect(rowOf("Codex")).toHaveTextContent("Installed by Zorvo · Sign in when you start");
+    expect(rowOf("Codex")).toHaveTextContent("Installed by Zorvo · Needs sign-in");
   });
 
   it("an agent not installed says Zorvo can install it, and offers nothing to press until ticked", () => {

@@ -43,8 +43,8 @@ export function arrangedAgents(
 
 const SIGN_IN_WORDS: Readonly<Record<SignInState, string>> = {
   ready: 'Ready',
-  unchecked: 'Not checked',
-  needed: 'Sign in when you start',
+  unchecked: 'Not checked yet',
+  needed: 'Needs sign-in',
 };
 
 function sourceOf(agent: CatalogAgent): string {

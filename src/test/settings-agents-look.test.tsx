@@ -41,6 +41,7 @@ function fakeSignIn(states: Record<string, SignInState> = {}): SettingsSignIn {
     closeAgain: vi.fn(),
     terminal: { dialog: null } as unknown as SettingsSignIn["terminal"],
     cancelSignIn: vi.fn(),
+    finishSignIn: vi.fn(),
     retrySignIn: vi.fn(),
   };
 }

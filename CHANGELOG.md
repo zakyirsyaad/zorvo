@@ -6,6 +6,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Changed
 
+- **While an agent works, the chat shows Zorvo's logo at work.** Its two chevrons light in turn and its cursor blinks, in place of the green dot. With Reduce motion on, the logo stands still.
 - **A new session shows Zorvo's logo** and the line "Every coding agent. One desktop." above the card where you write the first message.
 - **Signing in to an agent takes fewer steps.** The sign-in card leads with one button, and other ways to sign in fold under it. A way that needs an API key shows the line to add to your shell, with Copy. A failed sign-in says what to try next.
 - **Sign in from the Agents menu without leaving your session.** Sign in and Check now work inside the agent's row in the sidebar menu, where before they opened a new session.

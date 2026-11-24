@@ -85,7 +85,7 @@ Monochrome on the zinc scale, in a dark and a light theme. The app follows the M
 - **Hover:** fill `surface-hover` and lift the label one text step (`fg-muted` → `fg`).
 - **Focus:** a solid 1px `focus-ring` with 1px offset on every focusable control. Never remove it without a replacement.
 - **Disabled:** `cursor: not-allowed` and no hover change. A primary button turns flat, `surface-hover` with an `fg-muted` label, rather than a faded fill; outline, ghost and danger drop to 40% opacity.
-- **Motion:** 150ms color and background transitions only. The one animation is the `status-running` dot's pulse; stop it under `prefers-reduced-motion`.
+- **Motion:** 150ms color and background transitions only. The one animation is the `status-running` dot's pulse; stop it under `prefers-reduced-motion`. While an agent works, the chat shows the Zorvo symbol at work (`animate-working-chevron`, `animate-working-chevron-late`, `animate-working-cursor`: the chevrons light in turn, the cursor blinks, opacity only); it stands still under `prefers-reduced-motion`.
 
 ## Iconography
 

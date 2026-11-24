@@ -1,6 +1,7 @@
 import { memo, useEffect, useState } from "react";
 import { CheckCircle2, ChevronDown, ChevronRight, Circle, CircleDot, ListTodo } from "lucide-react";
 import { formatElapsed } from "../../lib/background-tasks";
+import { ZorvoSymbol } from "../ui/ZorvoSymbol";
 import type { PlanEntry } from "../../types";
 
 /**
@@ -35,9 +36,11 @@ export function WorkingIndicator({ agentName, since }: { agentName: string; sinc
   }, [since]);
   return (
     <div data-testid="agent-working" role="status" className="mx-auto w-full max-w-chat">
-      {/* Its own dot, with a soft 4px ring, as the canvas draws it: not one of StatusLine's states. */}
+      {/* The Zorvo symbol at work (artboard WorkingLogo): the words say it, the symbol is hidden from the live region. */}
       <div className="flex items-center gap-2.5 py-1">
-        <span data-working-dot="" aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-status-running ring-4 ring-chip" />
+        <span data-working-logo="" className="flex shrink-0 text-fg">
+          <ZorvoSymbol className="size-3.5" strokeWidth={4.2} isWorking />
+        </span>
         <span className="text-ui text-fg-secondary">{agentName} is working</span>
         {/* Hidden from the live region: a time that ticks every second would be read out every second. */}
         {since !== undefined && (

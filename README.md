@@ -90,11 +90,15 @@ has the rest.
 - **An agent catalog.** Settings → Agents lists every agent in the ACP
   registry. Add, install, update and remove agents there.
 - **Sign in without leaving the app.** An agent's own login, or its own setup
-  (Qwen Code: **Set up Qwen Code**), runs in a terminal inside Zorvo. The
-  **Agents** button next to Settings and each row in Settings → Agents say
-  whether an agent is ready, needs a sign-in or was not checked yet. An agent
-  that needs a sign-in lists its methods under its name, **Check sign-in** is
-  in the row's ⋯ menu, and a new session shows a sign-in card before you send.
+  (Qwen Code: **Open setup in terminal**), runs in a terminal inside Zorvo.
+  Press **I've signed in** (or **I'm done** after a setup) and Zorvo checks;
+  **Cancel** stops it without checking. A sign-in card leads with one button
+  and folds the other ways under it, and a way that needs an API key shows the
+  `export` line to add to your shell, with **Copy**. The **Agents** button next
+  to Settings and each row in Settings → Agents say whether an agent is
+  **Ready**, **Needs sign-in** or **Not checked yet**, and you can sign in or
+  check from either without leaving your session. A new session shows the
+  sign-in card before you send.
 - **Answer the agent's questions.** When an agent needs an answer from you, it
   can show a form or a question card in the chat, or send you to a web page.
 - **Pick up where you left off.** Continue a session you started in an agent's
@@ -499,10 +503,10 @@ before it edits files or runs commands. Pick another mode in the composer.
 |---|---|
 | macOS blocks Zorvo on first open | Zorvo 0.14.1 and later only asks once, with **Open**. A copy macOS still blocks is an older version, or one that did not come from this repository's [releases](https://github.com/zakyirsyaad/zorvo/releases); see [Open Zorvo the first time](#open-zorvo-the-first-time). |
 | An agent shows as not installed | Click **Install** next to it in Settings → Agents, or pick it in a new session's agent list and click **Install**. Zorvo brings Node.js or `uv` when the agent needs them. Then click **Check again**. |
-| "Sign in to *agent*" | Use a sign-in method the panel offers, or sign in once in a terminal (see [Requirements](#requirements)). If you set a key outside Zorvo (for example in `~/.zshrc`), click **Check again** in the panel: Zorvo reads your shell's settings again, then asks the agent. Your refused message waits in the box and is sent once you are signed in. |
+| "Sign in to *agent*" | Use a sign-in method the panel offers, or sign in once in a terminal (see [Requirements](#requirements)). If you set a key outside Zorvo (for example in `~/.zshrc`), come back to Zorvo's window, or click **Check again** in the panel: Zorvo reads your shell's settings again, then asks the agent. Your refused message waits in the box and is sent once you are signed in. |
 | **Update & restart** fails with a read-only message | A copy that runs from the disk image cannot update itself: drag it into Applications and open it from there. Or download the newest DMG from [releases](https://github.com/zakyirsyaad/zorvo/releases) and replace Zorvo in Applications. |
 | The welcome screen says "Zorvo could not read your agents" | Press **Check again**. Zorvo reads your login shell's environment to find your agents, so if it keeps failing, check that a new terminal window opens without errors, then quit and reopen Zorvo. |
-| GLM Agent asks you to sign in, or reads **Not checked** | It needs `Z_AI_API_KEY` in your shell. Export it in `~/.zshrc` (or run the agent's own setup), then click **Check again**. Zorvo only checks that the variable is set, never its value. |
+| GLM Agent asks you to sign in, or reads **Not checked yet** | It needs `Z_AI_API_KEY` in your shell. Export it in `~/.zshrc` (or run the agent's own setup), then click **Check again**. Zorvo only checks that the variable is set, never its value. |
 | An agent's row says **Installing** after an update | Zorvo installs the package of each agent you have used, once, in the background. The agent can start a session when its row stops saying Installing. |
 | The agent keeps working after **Stop** | Stop asks the agent to end its turn. If it has not stopped after ten seconds, the chat offers **End agent**, which ends the agent's process. You can continue the session afterwards. |
 | The agent stays on **Working…** | If Zorvo shows that the agent's requests failed, the cause is usually the agent's account, such as a used-up quota. Check it in the agent's own CLI, then click **Stop** and send your message again. |

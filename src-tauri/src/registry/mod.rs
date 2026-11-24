@@ -178,9 +178,10 @@ impl CatalogState {
             .filter(|offered| compare_versions(&offered.version, version) == Ordering::Greater)
     }
 
-    /// A row for an agent with nothing to offer, since the registry withdrew
-    /// every version the history has. When the newest is a binary with no build
-    /// for this Mac, the row says "unsupported".
+    /// A row for an agent with no version to run. The registry's listed
+    /// version is always offered, so this is a fallback that a valid history
+    /// does not reach. When the newest is a binary with no build for this Mac,
+    /// the row says "unsupported".
     fn waiting_agent(&self, id: &str, listed: bool) -> CatalogAgent {
         let newest = self
             .history

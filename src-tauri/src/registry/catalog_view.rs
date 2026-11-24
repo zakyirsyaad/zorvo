@@ -11,7 +11,7 @@ pub const STATUS_ON_YOUR_MAC: &str = "on_your_mac";
 pub const STATUS_READY: &str = "ready";
 pub const STATUS_NOT_INSTALLED: &str = "not_installed";
 pub const STATUS_UNSUPPORTED: &str = "unsupported";
-/// The registry withdrew every version Zorvo knows, so none can run.
+/// No version can run. A fallback: the listed version is always offered.
 pub const STATUS_WAITING: &str = "waiting";
 
 #[derive(Debug, Clone, PartialEq, Serialize)]

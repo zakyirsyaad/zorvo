@@ -43,6 +43,17 @@ describe("motion tokens", () => {
     expect(declared("default-transition-timing-function")).toBe("ease-out");
   });
 
+  it("declares the working logo's two loops and their keyframes, opacity only", () => {
+    expect(declared("animate-working-chevron")).toBe("working-light1.4sease-in-outinfinite");
+    expect(declared("animate-working-chevron-late")).toBe("working-light1.4sease-in-out200msinfinitebackwards");
+    expect(declared("animate-working-cursor")).toBe("working-blink1ssteps(1,end)infinite");
+    for (const name of ["working-light", "working-blink"]) {
+      const body = new RegExp(`@keyframes ${name} \\{([\\s\\S]*?)\\n  \\}`).exec(css)?.[1] ?? "";
+      expect(body, name).toContain("opacity");
+      expect(body, name).not.toMatch(/transform|width|height|margin/);
+    }
+  });
+
   it("ends every transition and animation at once under Reduce motion", () => {
     const block = /@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\}/.exec(css)?.[1] ?? "";
     expect(block).toContain("animation-duration: 1ms !important;");
@@ -50,8 +61,8 @@ describe("motion tokens", () => {
     expect(block).toContain("animation-iteration-count: 1 !important;");
   });
 
-  it("animates nothing but a spinner, a loading pulse and the three entrances, and each only with motion allowed", () => {
-    const allowed = new Set(["spin", "pulse", "menu-in", "panel-in", "appear"]);
+  it("animates nothing but a spinner, a loading pulse, the three entrances and the working logo, and each only with motion allowed", () => {
+    const allowed = new Set(["spin", "pulse", "menu-in", "panel-in", "appear", "working-chevron", "working-chevron-late", "working-cursor"]);
     const offenders: string[] = [];
     for (const file of sourceFiles(join(ROOT, "src"))) {
       const source = readFileSync(file, "utf8");

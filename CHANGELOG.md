@@ -4,6 +4,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-25
+
 ### Changed
 
 - **Agent updates come as soon as the registry lists them.** A new version of an agent no longer waits a week before Zorvo offers it.
@@ -514,7 +516,8 @@ Tagged but never published; its fix shipped in 0.11.2.
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.14.1...v0.15.0

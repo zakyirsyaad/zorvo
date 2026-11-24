@@ -7,7 +7,7 @@ use serde_json::json;
 use zorvo_lib::installer::plan::InstalledTools;
 use zorvo_lib::installer::runtimes::InstalledRuntime;
 use zorvo_lib::registry::catalog_view::{AgentCatalog, CatalogAgent};
-use zorvo_lib::registry::history::{VersionHistory, MIN_AGE_SECS};
+use zorvo_lib::registry::history::VersionHistory;
 use zorvo_lib::registry::resolve::SystemTools;
 use zorvo_lib::registry::schema::{BinaryTarget, Distribution, RegistryEntry, UnavailableReason};
 use zorvo_lib::registry::Catalog;
@@ -125,7 +125,7 @@ fn view(
         npm_globals: globals,
         installed,
     };
-    catalog.catalog_view(&tools, versions, NOW)
+    catalog.catalog_view(&tools, versions)
 }
 
 fn agent<'a>(catalog: &'a AgentCatalog, id: &str) -> &'a CatalogAgent {
@@ -202,10 +202,10 @@ fn each_status_is_reported() {
     assert_eq!(agent(&result, "missing").status, "not_installed");
     assert_eq!(agent(&result, "linux-only").status, "unsupported");
     assert_eq!(agent(&result, "linux-only").distribution, "binary");
+    // A version the registry listed moments ago is offered at once.
     let fresh = agent(&result, "fresh");
-    assert_eq!(fresh.status, "waiting");
-    assert_eq!(fresh.version, None);
-    assert_eq!(fresh.available_from, Some(first_seen_recent + MIN_AGE_SECS));
+    assert_ne!(fresh.status, "waiting");
+    assert!(fresh.version.is_some());
     assert_eq!(fresh.name, "Agent fresh");
 
     // Only Zorvo's Node, and no package installed.
@@ -258,9 +258,9 @@ fn update_version_is_the_newer_offered_version() {
     let installed = user_node(22);
     let globals = BTreeSet::new();
 
-    let old_enough = upgradable(NOW - 8 * DAY);
+    let listed_earlier = upgradable(NOW - 8 * DAY);
     let result = view(
-        &old_enough,
+        &listed_earlier,
         &dir.path_var(),
         &globals,
         &installed,
@@ -270,15 +270,18 @@ fn update_version_is_the_newer_offered_version() {
     assert_eq!(gemini.version.as_deref(), Some("1.0.0"));
     assert_eq!(gemini.update_version.as_deref(), Some("1.1.0"));
 
-    let too_new = upgradable(NOW - 3 * DAY);
+    let just_listed = upgradable(NOW);
     let result = view(
-        &too_new,
+        &just_listed,
         &dir.path_var(),
         &globals,
         &installed,
         &recorded_1_0_0(),
     );
-    assert_eq!(agent(&result, "gemini").update_version, None);
+    assert_eq!(
+        agent(&result, "gemini").update_version.as_deref(),
+        Some("1.1.0")
+    );
 }
 
 #[test]
@@ -344,16 +347,17 @@ fn update_target_refuses_with_the_spec_copy() {
         installed: &installed,
     };
 
-    let none_newer = upgradable(NOW - 3 * DAY);
+    let newer = upgradable(NOW - 8 * DAY);
+    let up_to_date = BTreeMap::from([("gemini".to_string(), "1.1.0".to_string())]);
     assert_eq!(
-        none_newer
-            .update_target("gemini", &tools, &recorded_1_0_0(), NOW)
+        newer
+            .update_target("gemini", &tools, &up_to_date)
             .unwrap_err(),
         "No newer version of Agent gemini is offered"
     );
     assert_eq!(
-        none_newer
-            .update_target("nope", &tools, &BTreeMap::new(), NOW)
+        newer
+            .update_target("nope", &tools, &BTreeMap::new())
             .unwrap_err(),
         "Unknown agent 'nope'"
     );
@@ -361,20 +365,19 @@ fn update_target_refuses_with_the_spec_copy() {
     let on_path = BTreeMap::from([("tool".to_string(), "1.0.0".to_string())]);
     assert_eq!(
         binary_upgradable()
-            .update_target("tool", &tools, &on_path, NOW)
+            .update_target("tool", &tools, &on_path)
             .unwrap_err(),
         "Agent tool is managed outside Zorvo"
     );
 
-    let newer = upgradable(NOW - 8 * DAY);
     let target = newer
-        .update_target("gemini", &tools, &recorded_1_0_0(), NOW)
+        .update_target("gemini", &tools, &recorded_1_0_0())
         .expect("a newer version is offered");
     assert_eq!(target.version, "1.1.0");
 }
 
 #[test]
-fn update_target_refuses_unsupported_and_waiting_agents() {
+fn update_target_refuses_an_unsupported_agent() {
     let dir = BinDir::new(&["npx"]);
     let installed = user_node(22);
     let globals = BTreeSet::new();
@@ -392,21 +395,14 @@ fn update_target_refuses_unsupported_and_waiting_agents() {
             T0,
         ),
         (current_binary("linux-only", "1.1.0", "./x"), NOW - 8 * DAY),
-        (npx_entry("fresh", "1.0.0"), NOW - 2 * DAY),
     ]));
     let versions = BTreeMap::from([("linux-only".to_string(), "1.0.0".to_string())]);
 
     assert_eq!(
         catalog
-            .update_target("linux-only", &tools, &versions, NOW)
+            .update_target("linux-only", &tools, &versions)
             .unwrap_err(),
         "No newer version of Agent linux-only is offered"
-    );
-    assert_eq!(
-        catalog
-            .update_target("fresh", &tools, &BTreeMap::new(), NOW)
-            .unwrap_err(),
-        "No newer version of Agent fresh is offered"
     );
 }
 
@@ -427,11 +423,11 @@ fn catalog_serialises_in_camel_case() {
     assert!(value.get("lastChecked").is_some());
     let gemini = &value["agents"][0];
     assert_eq!(gemini["updateVersion"], "1.1.0");
-    assert!(gemini.get("availableFrom").is_some());
+    assert!(gemini.get("availableFrom").is_none());
 }
 
 #[test]
-fn a_new_binary_without_this_macs_target_is_unsupported_not_waiting() {
+fn a_new_binary_is_offered_at_once_or_unsupported_without_this_macs_target() {
     let bundle = bundle_of(&[
         (
             binary_entry("fresh-linux", "1.0.0", "linux-x86_64", "./x"),
@@ -452,9 +448,12 @@ fn a_new_binary_without_this_macs_target_is_unsupported_not_waiting() {
 
     let fresh_linux = agent(&result, "fresh-linux");
     assert_eq!(fresh_linux.status, "unsupported");
-    assert_eq!(fresh_linux.available_from, None);
     assert_eq!(fresh_linux.distribution, "binary");
-    assert_eq!(agent(&result, "fresh-mac").status, "waiting");
+    assert_ne!(agent(&result, "fresh-mac").status, "waiting");
+    assert_eq!(
+        agent(&result, "fresh-mac").version.as_deref(),
+        Some("1.0.0")
+    );
 }
 
 // Agents the registry lists but Zorvo cannot offer.
@@ -479,7 +478,7 @@ fn unsigned_binary(id: &str, name: &str) -> serde_json::Value {
     })
 }
 
-fn no_tools_view_at(catalog: &Catalog, now: u64) -> AgentCatalog {
+fn no_tools_view(catalog: &Catalog) -> AgentCatalog {
     let dir = BinDir::new(&[]);
     let path_var = dir.path_var();
     let globals = BTreeSet::new();
@@ -489,11 +488,7 @@ fn no_tools_view_at(catalog: &Catalog, now: u64) -> AgentCatalog {
         npm_globals: &globals,
         installed: &installed,
     };
-    catalog.catalog_view(&tools, &BTreeMap::new(), now)
-}
-
-fn no_tools_view(catalog: &Catalog) -> AgentCatalog {
-    no_tools_view_at(catalog, NOW)
+    catalog.catalog_view(&tools, &BTreeMap::new())
 }
 
 #[test]
@@ -602,15 +597,7 @@ fn the_bundled_history_offers_kilo_and_sigit_from_the_start() {
     // Both publish a binary and an npx package; they were dropped as "two distributions".
     // They run as the pinned package, so the choice does not depend on this Mac.
     let catalog = Catalog::bundled(BUNDLED);
-    let generated_at = VersionHistory::from_json(BUNDLED)
-        .unwrap()
-        .agents
-        .values()
-        .flat_map(|versions| versions.values())
-        .map(|record| record.first_seen)
-        .max()
-        .unwrap();
-    let result = no_tools_view_at(&catalog, generated_at + MIN_AGE_SECS);
+    let result = no_tools_view(&catalog);
 
     for id in ["kilo", "sigit"] {
         let row = agent(&result, id);
@@ -618,7 +605,7 @@ fn the_bundled_history_offers_kilo_and_sigit_from_the_start() {
         assert_eq!(row.distribution, "npx", "{id} runs as its package");
         assert_ne!(
             row.status, "waiting",
-            "{id} is older than the seven-day wait"
+            "{id} is offered as soon as it is listed"
         );
         assert_ne!(row.status, "unsupported", "{id} runs on this Mac");
     }
@@ -647,20 +634,16 @@ fn an_unavailable_agent_cannot_be_launched_planned_installed_or_updated() {
     };
     let versions = BTreeMap::new();
 
-    assert!(catalog.profile("zeta", &tools, &versions, NOW).is_none());
+    assert!(catalog.profile("zeta", &tools, &versions).is_none());
     assert!(catalog
-        .profiles(&tools, &versions, NOW)
+        .profiles(&tools, &versions)
         .iter()
         .all(|profile| profile.id != "zeta"));
     assert!(catalog
-        .planned_steps_for("zeta", &tools, &versions, NOW)
+        .planned_steps_for("zeta", &tools, &versions)
         .is_none());
-    assert!(catalog.agent_name("zeta", &versions, NOW).is_none());
-    assert!(catalog
-        .unsupported_agent_name("zeta", &versions, NOW)
-        .is_none());
-    assert!(catalog
-        .update_target("zeta", &tools, &versions, NOW)
-        .is_err());
+    assert!(catalog.agent_name("zeta", &versions).is_none());
+    assert!(catalog.unsupported_agent_name("zeta", &versions).is_none());
+    assert!(catalog.update_target("zeta", &tools, &versions).is_err());
     assert!(catalog.launch_env("zeta", "1.0.0").is_empty());
 }

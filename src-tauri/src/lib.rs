@@ -123,7 +123,7 @@ fn get_agent_catalog(
 ) -> Result<registry::catalog_view::AgentCatalog, String> {
     let versions = versions_in_use(&store);
     Ok(profiles::with_system_tools(|catalog, tools| {
-        catalog.catalog_view(tools, &versions, registry::unix_now())
+        catalog.catalog_view(tools, &versions)
     }))
 }
 

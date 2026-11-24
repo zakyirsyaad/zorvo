@@ -74,7 +74,7 @@ function baseStatusLine(agent: CatalogAgent, plan: readonly InstallStep[] | null
       if (plan === null || plan.length === 0) return 'Not installed';
       return `Not installed · ${isInUse ? 'Install adds' : 'Add installs'} ${describePlan(plan)}`;
     case 'waiting':
-      return agent.availableFrom === null ? 'Not available yet' : `Available from ${formatAvailableFrom(agent.availableFrom)}`;
+      return 'Not available yet';
     case 'unsupported':
       return 'Not available for this Mac';
   }
@@ -164,13 +164,6 @@ export function pendingUpdates(agents: readonly CatalogAgent[], enabledIds: read
   return agents.filter((agent) => enabledIds.includes(agent.id) && agent.updateVersion !== null);
 }
 
-const DATE_FORMAT = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric' });
-
-/** "Oct 27" */
-export function formatAvailableFrom(seconds: number): string {
-  return DATE_FORMAT.format(new Date(seconds * 1000));
-}
-
 const RELATIVE_FORMAT = new Intl.RelativeTimeFormat('en', { numeric: 'always' });
 
 /** "2 hours ago"; "just now" within the first minute. Both arguments are unix seconds. */
@@ -197,7 +190,7 @@ function sourceWords(agent: CatalogAgent): string | null {
     case 'not_installed':
       return 'not installed';
     case 'waiting':
-      return agent.availableFrom === null ? 'not available yet' : `available from ${formatAvailableFrom(agent.availableFrom)}`;
+      return 'not available yet';
     case 'unsupported':
       return 'not available for this Mac';
   }

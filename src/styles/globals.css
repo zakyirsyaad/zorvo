@@ -5,13 +5,13 @@
 
   --color-bg: #0a0a0b;
   --color-surface-1: #111113;
-  --color-surface-2: #18181b;
+  --color-surface-2: #141417;
   --color-surface-3: #1f1f23;
   --color-surface-hover: #27272a;
   /* The window behind the sidebar and the sheets; also wells (code, inputs) on a sheet. */
   --color-ground: #0a0a0b;
   /* The raised panels: chat, inspector. In light mode these two are the reverse of bg and surface-1. */
-  --color-sheet: #111113;
+  --color-sheet: #0d0d0f;
   /* A translucent fill: chips, agent tiles, segmented tracks. */
   --color-chip: rgba(255, 255, 255, 0.06);
   --color-overlay: rgba(0, 0, 0, 0.7);

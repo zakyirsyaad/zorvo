@@ -1,10 +1,12 @@
 import { SIGN_IN_STATUS_WORDS, type SignInState } from "../../lib/agent-sign-in";
 
-/** Every state has a dot, and the word beside it says the state; the colour is never the only sign. */
-const DOTS: Readonly<Record<SignInState, string>> = {
+/**
+ * Ready and Needs sign-in have a dot, and the word beside it says the state; the colour is never the only
+ * sign. Not checked yet has none: nothing needs doing until the agent is used.
+ */
+const DOTS: Readonly<Partial<Record<SignInState, string>>> = {
   ready: "bg-status-running",
   needed: "bg-status-attention",
-  unchecked: "bg-fg-subtle",
 };
 
 /**
@@ -13,8 +15,8 @@ const DOTS: Readonly<Record<SignInState, string>> = {
  */
 export function SignInStatus({ state }: { state: SignInState }) {
   return (
-    <span className="flex shrink-0 items-center gap-1.5 text-ui-sm text-fg-muted">
-      <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${DOTS[state]}`} />
+    <span className={`flex shrink-0 items-center gap-1.5 text-ui-sm ${state === "unchecked" ? "text-fg-subtle" : "text-fg-muted"}`}>
+      {DOTS[state] && <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${DOTS[state]}`} />}
       <span className="sr-only">Sign-in: </span>
       {SIGN_IN_STATUS_WORDS[state]}
     </span>

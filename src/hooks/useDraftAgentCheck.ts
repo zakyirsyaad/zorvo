@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAgentProbe } from './useAgentProbe';
 import type { AgentAuth } from './useAgentAuth';
+import { useLatest } from './useLatest';
+import { refreshLoginEnv } from '../lib/sign-in-check';
 import { hasReportedOptions, type AgentOptions, type ProbedOptions } from '../lib/acp-draft';
 import type { AgentProfile } from '../types';
 
@@ -70,6 +72,8 @@ export function useDraftAgentCheck({ agent, cwd, agentOptions, rememberProbed, a
       ? authRequest.profileId
       : undefined;
   const lastFocusCheckRef = useRef(new Map<string, number>());
+  // The agent still waiting when the shell has been read: a dismissed or replaced request is not asked.
+  const awaitingRef = useLatest(awaitingAgentId);
   useEffect(() => {
     if (!awaitingAgentId) return;
     const askAgain = () => {
@@ -77,11 +81,14 @@ export function useDraftAgentCheck({ agent, cwd, agentOptions, rememberProbed, a
       const last = lastFocusCheckRef.current.get(awaitingAgentId);
       if (last !== undefined && now - last < FOCUS_RECHECK_INTERVAL_MS) return;
       lastFocusCheckRef.current.set(awaitingAgentId, now);
-      reprobe(awaitingAgentId);
+      // The shell is read again first: a key exported in ~/.zshrc while Zorvo was in the back is only seen then.
+      void refreshLoginEnv().then(() => {
+        if (awaitingRef.current === awaitingAgentId) reprobe(awaitingAgentId);
+      });
     };
     window.addEventListener('focus', askAgain);
     return () => window.removeEventListener('focus', askAgain);
-  }, [awaitingAgentId, reprobe]);
+  }, [awaitingAgentId, reprobe, awaitingRef]);
 
   /** Whether the agent last said it can list its other sessions. */
   const canListSessions = useCallback((profileId: string) => canListByAgent[profileId] === true, [canListByAgent]);

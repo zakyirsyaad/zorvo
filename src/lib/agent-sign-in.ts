@@ -14,18 +14,18 @@ export function signInStateOf(
   return signedIn?.includes(profileId) ? 'ready' : 'unchecked';
 }
 
-/** The sidebar chip's words for each state. */
+/** The sidebar chip's words for each state: `needed` is the button that acts on it. */
 export const SIGN_IN_LABELS: Readonly<Record<SignInState, string>> = {
   ready: 'Ready',
   needed: 'Sign in',
-  unchecked: 'Not checked',
+  unchecked: 'Not checked yet',
 };
 
 /** Settings → Agents' words for each state: a status, not the sidebar's call to act. */
 export const SIGN_IN_STATUS_WORDS: Readonly<Record<SignInState, string>> = {
   ready: 'Ready',
   needed: 'Needs sign-in',
-  unchecked: 'Not checked',
+  unchecked: 'Not checked yet',
 };
 
 /** The composer's placeholder while the draft's agent waits for a sign-in. */
@@ -47,6 +47,11 @@ export function unconfirmedMessage(agentName: string, variables: readonly string
     `If you saved a key with ${agentName}'s own setup, Zorvo cannot see it. ` +
     `Otherwise run that setup or ${exported} (for example in ~/.zshrc), then check again.`
   );
+}
+
+/** Said under a row that needs a sign-in while another agent's sign-in runs, naming that agent. */
+export function otherSignInRunningLine(runningName: string, agentName: string): string {
+  return `${runningName}'s sign-in is running. Finish it, then sign in to ${agentName}.`;
 }
 
 /** Said when a request to sign in to one agent is refused because another agent's sign-in is running. */

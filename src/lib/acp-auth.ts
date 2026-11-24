@@ -16,6 +16,8 @@ export interface AuthMethod {
   name: string;
   description?: string;
   kind: AuthMethodKind;
+  /** The variables a key method needs set (an `env_var` method's required `vars`), for the line the user copies. */
+  variables?: readonly string[];
 }
 
 type Json = Record<string, unknown>;
@@ -47,17 +49,33 @@ const limited = (text: string, max: number) => {
   return characters.length > max ? `${characters.slice(0, max - 1).join('')}…` : text;
 };
 
+/** A shell variable name, so the export line shown can only ever be `export NAME=...`. */
+const VARIABLE_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+const MAX_VARIABLES = 5;
+
+/** The names of the variables a method requires (`vars` entries not marked optional). */
+function requiredVariables(method: Json): string[] {
+  if (!Array.isArray(method.vars)) return [];
+  const names = method.vars
+    .filter(isObject)
+    .filter((v) => v.optional !== true && typeof v.name === 'string' && VARIABLE_NAME.test(v.name))
+    .map((v) => v.name as string);
+  return [...new Set(names)].slice(0, MAX_VARIABLES);
+}
+
 /** The methods of an `initialize` answer, validated as the ones a sign-in refusal carries. */
 export function toAuthMethods(raw: unknown): AuthMethod[] {
   if (!Array.isArray(raw)) return [];
   return raw.filter(isObject).flatMap((method) => {
     if (typeof method.id !== 'string' || typeof method.name !== 'string') return [];
+    const variables = requiredVariables(method);
     return [
       {
         id: method.id,
         name: limited(method.name, MAX_NAME),
         ...(typeof method.description === 'string' ? { description: limited(withoutBackticks(method.description), MAX_DESCRIPTION) } : {}),
         kind: methodKind(method),
+        ...(variables.length > 0 ? { variables } : {}),
       },
     ];
   });
@@ -76,6 +94,14 @@ export function parseAuthRequired(error: unknown): AuthMethod[] | null {
 /** A name that already starts with a verb ("Log in with Google") is the whole button label. */
 const NAME_STARTS_WITH_VERB = /^(log ?in|sign ?in|sign ?up|use|connect|continue|authenticate|authorize)\b/i;
 
+/** The button that opens an agent's own setup in the terminal dialog. */
+export const OPEN_SETUP_LABEL = 'Open setup in terminal';
+
+/** The words on a method's button: a setup opens the agent's own setup, a sign-in names its method. */
+export function methodButtonLabel(method: Pick<AuthMethod, 'name' | 'kind'>): string {
+  return method.kind === 'setup' ? OPEN_SETUP_LABEL : signInButtonLabel(method);
+}
+
 /** The words on a method's sign-in button. */
 export function signInButtonLabel(method: Pick<AuthMethod, 'name'>): string {
   const name = method.name.trim();
@@ -89,6 +115,23 @@ export interface AuthCopy {
   cliHint: string | null;
   /** For methods that need a key or setting Zorvo never handles. */
   keysNote: string | null;
+}
+
+/**
+ * The method a sign-in leads with, the first one Zorvo can run, and the other ways folded under it.
+ * The agent's own order is kept: Zorvo does not know which method the agent recommends.
+ */
+export function splitMethods(methods: readonly AuthMethod[]): { first: AuthMethod | null; others: AuthMethod[] } {
+  const first = methods.find((method) => method.kind !== 'explain') ?? null;
+  return { first, others: methods.filter((method) => method !== first) };
+}
+
+/**
+ * The line the user adds to their shell for a key variable, ending at the `=` the key is pasted after.
+ * It holds no value, not even a placeholder: pasted as it is, the variable stays empty and still reads as not set.
+ */
+export function exportLine(variable: string): string {
+  return `export ${variable}=`;
 }
 
 /** True when Zorvo can run one of the methods itself: inside the agent, its login in a terminal, or its own setup. */
@@ -111,11 +154,11 @@ export function authCopy(agentName: string, methods: readonly AuthMethod[]): Aut
       ? `${agentName} needs you to sign in before it can start.`
       : onlyKeys
       ? `${agentName} needs an API key or another account setting before it can start.`
-      : `Pick how ${agentName} signs in. It uses its own tool; Zorvo never sees your password or key.`;
+      : `${agentName} signs in with its own tool. Zorvo never sees your password or key.`;
   return {
     lead,
     cliHint: methods.length === 0 ? `Sign in with ${agentName}'s own command line tool, then check again.` : null,
-    keysNote: hasExplained
+    keysNote: onlyKeys
       ? `Zorvo never stores keys. To use a key or another account setting, set it up in ${agentName} or your shell (for example in ~/.zshrc), then check again.`
       : null,
   };

@@ -124,6 +124,7 @@ export function SettingsPage({
         state={agentSignIn.terminal.dialog}
         output={agentSignIn.terminal.output}
         onClose={agentSignIn.cancelSignIn}
+        onDone={agentSignIn.finishSignIn}
         onTryAgain={agentSignIn.retrySignIn}
         onInput={agentSignIn.terminal.sendInput}
         onResize={agentSignIn.terminal.resize}

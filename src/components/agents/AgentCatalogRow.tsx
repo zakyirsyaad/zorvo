@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { MoreHorizontal } from "lucide-react";
 import { InstallBar, InstallStatus } from "../InstallProgressLine";
-import { AgentSignIn, isSignInBusy, sessionWarning, signInStatus } from "./AgentSignIn";
+import { AgentSignIn, isSignInBusy, sessionWarning, shortSessionWarning, signInStatus } from "./AgentSignIn";
 import { SignInStatus } from "./SignInStatus";
 import { AgentTile } from "../ui/AgentTile";
 import { Button } from "../ui/Button";
@@ -11,7 +11,7 @@ import type { SettingsSignIn } from "../../hooks/useSettingsSignIn";
 import { useAgentInstall } from "../../hooks/useAgentInstall";
 import { useConfirmFocus } from "../../hooks/useConfirmFocus";
 import { availableLine, rowActions, sourceLine, statusLine } from "../../lib/agent-catalog";
-import { SIGN_IN_RUNNING_NOTICE } from "../../lib/agent-sign-in";
+import { otherSignInRunningLine, SIGN_IN_RUNNING_NOTICE } from "../../lib/agent-sign-in";
 import type { CatalogAgent, InstallStep } from "../../types";
 
 export interface AgentCatalogRowProps {
@@ -83,6 +83,7 @@ export function AgentCatalogRow({
   const { confirmRef, returnRef: moreRef } = useConfirmFocus(isConfirmingRemove);
   const warningId = useId();
   const againNoticeId = useId();
+  const shortWarningId = useId();
 
   // Back to this row when a login's dialog closes and nothing holds the focus (the method's button is gone once the agent is ready).
   const hasDialog = canCheckSignIn && signIn.terminal.dialog !== null && signIn.requestOf(agent.id) !== null;
@@ -124,6 +125,23 @@ export function AgentCatalogRow({
 
   const isOtherAgentBusy = canCheckSignIn && signIn.busyAgentId !== null && signIn.busyAgentId !== agent.id;
   const warning = canCheckSignIn ? sessionWarning(agent.name, signIn.reportsStatusOf(agent.id), signIn.cwd) : null;
+  // A row with nothing to install or update and an agent never checked: Check sign-in is its button.
+  const hasOtherAction = isBusy || hasFailed || actions.update || actions.add || actions.install;
+  const checksFromRow = canCheckSignIn && signInState === "unchecked" && !hasOtherAction;
+  const shortWarning = checksFromRow ? shortSessionWarning(agent.name, signIn.reportsStatusOf(agent.id), signIn.cwd) : null;
+  const status = canCheckSignIn ? signInStatus(agent.name, signIn, agent.id) : null;
+  const hasStatusText = status !== null && status.text !== "";
+  // The warning gives way to what the check says.
+  const showsShortWarning = shortWarning !== null && !hasStatusText;
+  // Check sign-in goes once the agent has a state: focus that was on it moves to ⋯ rather than to the page.
+  const hadCheckButton = useRef(false);
+  useEffect(() => {
+    if (hadCheckButton.current && !checksFromRow) {
+      const focused = document.activeElement;
+      if (!focused || focused === document.body) moreRef.current?.focus();
+    }
+    hadCheckButton.current = checksFromRow;
+  }, [checksFromRow, moreRef]);
   // Remove stays offered while an install runs: removing ends the install too.
   const hasMenu = actions.remove || canCheckSignIn;
   const menu = hasMenu && (
@@ -146,7 +164,7 @@ export function AgentCatalogRow({
         </IconButton>
       }
     >
-      {canCheckSignIn && !isBusy && (
+      {canCheckSignIn && !isBusy && !checksFromRow && (
         <PopoverOption
           disabled={isSignInBusy(signIn, agent.id)}
           description={warning ?? undefined}
@@ -202,12 +220,18 @@ export function AgentCatalogRow({
     <RowButton onClick={onAdd}>{hasPlan ? "Install" : "Add"}</RowButton>
   ) : actions.install ? (
     <RowButton onClick={job.install}>Install</RowButton>
+  ) : checksFromRow ? (
+    <Button size="md" disabled={isSignInBusy(signIn, agent.id)} aria-describedby={showsShortWarning ? shortWarningId : undefined} onClick={() => signIn.check(agent.id)}>
+      <span className="text-fg">Check sign-in</span>
+    </Button>
   ) : null;
 
   const failure = hasFailed ? statusLine(agent, plan, isInUse, job) : isBusy ? job.error : null;
-  const status = canCheckSignIn ? signInStatus(agent.name, signIn, agent.id) : null;
-  const hasStatusText = status !== null && status.text !== "";
-  const hasUnder = showsMethods || hasStatusText || isConfirmingRemove || failure !== null || removeError !== null;
+  // A row waiting on another agent's sign-in says whose it is.
+  const busyLine =
+    showsMethods && isOtherAgentBusy && signIn?.busyAgentName ? otherSignInRunningLine(signIn.busyAgentName, agent.name) : null;
+  const hasUnder =
+    showsMethods || hasStatusText || showsShortWarning || busyLine !== null || isConfirmingRemove || failure !== null || removeError !== null;
 
   return (
     <li aria-label={agent.name} className="flex flex-col border-b border-border last:border-b-0">
@@ -232,6 +256,12 @@ export function AgentCatalogRow({
               <AgentSignIn agentId={agent.id} agentName={agent.name} signIn={signIn} isAgain={isAgainShown} />
             </div>
           )}
+          {showsShortWarning && (
+            <p id={shortWarningId} className="text-ui-sm text-fg-muted">
+              {shortWarning}
+            </p>
+          )}
+          {busyLine && <p className="text-ui-sm text-fg-muted">{busyLine}</p>}
           {status !== null && (
             // One region, always mounted, so a check started from ⋯ is read out when its result arrives.
             <p role="status" className={!hasStatusText ? "sr-only" : status.isError ? "text-ui-sm text-danger" : "text-ui-sm text-fg-muted"}>

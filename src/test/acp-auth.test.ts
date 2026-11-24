@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { authCopy, isSetupOnly, parseAuthRequired, signInButtonLabel, type AuthMethod } from "../lib/acp-auth";
+import { authCopy, exportLine, isSetupOnly, parseAuthRequired, signInButtonLabel, splitMethods, toAuthMethods, type AuthMethod } from "../lib/acp-auth";
 
 const codexMethods = [
   { id: "api-key", name: "API Key", description: "Use an API key to authenticate", _meta: { "api-key": { provider: "openai" } } },
@@ -99,7 +99,7 @@ describe("authCopy", () => {
   const login: AuthMethod = { id: "chat-gpt", name: "ChatGPT", kind: "agent" };
 
   it("asks for a sign-in when the agent offers one", () => {
-    expect(authCopy("Codex", [key, login])).toMatchObject({ lead: "Pick how Codex signs in. It uses its own tool; Zorvo never sees your password or key.", cliHint: null });
+    expect(authCopy("Codex", [key, login])).toMatchObject({ lead: "Codex signs in with its own tool. Zorvo never sees your password or key.", cliHint: null });
   });
 
   it("does not ask an agent whose only method is a key to sign in", () => {
@@ -169,7 +169,7 @@ describe("an agent's own setup", () => {
   });
 
   it("counts the setup among the ways in, not among the keys", () => {
-    expect(authCopy("Qwen Code", [setup, agent]).lead).toBe("Pick how Qwen Code signs in. It uses its own tool; Zorvo never sees your password or key.");
+    expect(authCopy("Qwen Code", [setup, agent]).lead).toBe("Qwen Code signs in with its own tool. Zorvo never sees your password or key.");
     expect(authCopy("Qwen Code", [setup, agent]).keysNote).toBeNull();
   });
 });
@@ -193,5 +193,32 @@ describe("text an agent writes about its methods", () => {
       name: "ChatGPT",
       description: "Use ChatGPT",
     });
+  });
+});
+
+describe("key variables and the order of methods", () => {
+  it("keeps the required variable names of an env_var method, and drops optional or unsafe ones", () => {
+    const [method] = toAuthMethods([
+      {
+        type: "env_var",
+        id: "key",
+        name: "API key",
+        vars: [{ name: "GEMINI_API_KEY" }, { name: "EXTRA", optional: true }, { name: "bad name; rm" }, { name: 7 }, { name: "GEMINI_API_KEY" }],
+      },
+    ]);
+    expect(method).toMatchObject({ kind: "explain", variables: ["GEMINI_API_KEY"] });
+    expect(toAuthMethods([{ id: "x", name: "X" }])[0]).not.toHaveProperty("variables");
+  });
+
+  it("leads with the first method Zorvo can run and keeps the rest in the agent's order", () => {
+    const key = { id: "k", name: "Key", kind: "explain" } as const;
+    const login = { id: "l", name: "Login", kind: "terminal" } as const;
+    const browser = { id: "b", name: "Browser", kind: "agent" } as const;
+    expect(splitMethods([key, login, browser])).toEqual({ first: login, others: [key, browser] });
+    expect(splitMethods([key])).toEqual({ first: null, others: [key] });
+  });
+
+  it("writes an export line that ends at the =, with no value", () => {
+    expect(exportLine("GEMINI_API_KEY")).toBe("export GEMINI_API_KEY=");
   });
 });

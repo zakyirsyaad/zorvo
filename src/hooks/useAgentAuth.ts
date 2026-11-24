@@ -12,6 +12,11 @@ export interface AuthRequest {
   error?: string;
   /** The refused message, put back into its session's composer: sent again after the sign-in. */
   pending?: FirstMessage & { sessionId: string };
+  /**
+   * Started outside the draft (Settings, the Agents menu): its own row shows it, so the draft's panel does not,
+   * and the login dialog's Cancel, done button and Try again are that row's.
+   */
+  isOutside?: boolean;
 }
 
 export interface AgentAuth {
@@ -25,6 +30,7 @@ export interface AgentAuth {
     cwd: string,
     methods: AuthMethod[],
     pending?: FirstMessage & { sessionId: string },
+    isOutside?: boolean,
   ) => boolean;
   /** Signs in with one of the agent's methods, checks it took, and sends the refused message again. */
   signIn: (methodId: string) => void;
@@ -38,8 +44,8 @@ export function useAgentAuth() {
   const [authRequest, setAuthRequest] = useState<AuthRequest | null>(null);
 
   const requestSignIn = useCallback<AgentAuth['requestSignIn']>(
-    (profileId, cwd, methods, pending) => {
-      setAuthRequest({ profileId, cwd, methods, status: 'idle', ...(pending ? { pending } : {}) });
+    (profileId, cwd, methods, pending, isOutside) => {
+      setAuthRequest({ profileId, cwd, methods, status: 'idle', ...(pending ? { pending } : {}), ...(isOutside ? { isOutside } : {}) });
       return true;
     },
     [],

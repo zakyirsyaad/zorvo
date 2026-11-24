@@ -4,7 +4,16 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Changed
+
+- **Signing in to an agent takes fewer steps.** The sign-in card leads with one button, and other ways to sign in fold under it. A way that needs an API key shows the line to add to your shell, with Copy. A failed sign-in says what to try next.
+- **Sign in from the Agents menu without leaving your session.** Sign in and Check now work inside the agent's row in the sidebar menu, where before they opened a new session.
+- **The sign-in terminal asks when you are done.** While an agent's sign-in or setup runs, press I've signed in (or I'm done) to have Zorvo check. Cancel now stops it without checking.
+- **One set of words for sign-in everywhere:** Ready, Needs sign-in, Not checked yet. In Settings, an agent never checked has Check sign-in as its button, with one line saying what checking does.
+
 ### Fixed
+
+- **A key you add to your shell is seen when you come back to Zorvo.** The automatic check on returning to the window now reads your shell again first, so you no longer have to press Check again.
 
 - **Slash commands work as a session's first message.** A command such as `/logout` or `/compact` now reaches the agent exactly as you typed it. Before, Zorvo put a hidden note in front of it, so the agent could read it as ordinary text.
 

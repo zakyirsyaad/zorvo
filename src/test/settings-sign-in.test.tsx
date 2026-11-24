@@ -51,6 +51,7 @@ function fakeSignIn(overrides: Partial<SettingsSignIn> = {}): SettingsSignIn {
     closeAgain: vi.fn(),
     terminal: { dialog: null } as unknown as SettingsSignIn["terminal"],
     cancelSignIn: vi.fn(),
+    finishSignIn: vi.fn(),
     retrySignIn: vi.fn(),
     ...overrides,
   };
@@ -96,13 +97,24 @@ describe("the sign-in of an agent row", () => {
     expect(screen.queryByRole("button", { name: /^Sign in with/ })).toBeNull();
   });
 
-  it("shows Not checked, and Check sign-in in ⋯ asks for a check", () => {
+  it("shows Not checked yet, with Check sign-in as the row's button and not in ⋯", () => {
     const signIn = fakeSignIn();
     renderRow(signIn);
 
-    expect(chip()).toHaveTextContent("Sign-in: Not checked");
-    fireEvent.click(checkSignInItem());
+    expect(chip()).toHaveTextContent("Sign-in: Not checked yet");
+    fireEvent.click(screen.getByRole("button", { name: "Check sign-in" }));
+    expect(signIn.check).toHaveBeenCalledWith("claude-acp");
 
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Claude Agent" }));
+    expect(screen.queryByRole("menuitem", { name: /^Check sign-in/ })).toBeNull();
+  });
+
+  it("keeps Check sign-in in ⋯ for an agent that already has a state", () => {
+    const signIn = fakeSignIn({ stateOf: () => "ready" });
+    renderRow(signIn);
+
+    expect(screen.queryByRole("button", { name: "Check sign-in" })).toBeNull();
+    fireEvent.click(checkSignInItem());
     expect(signIn.check).toHaveBeenCalledWith("claude-acp");
   });
 
@@ -117,7 +129,10 @@ describe("the sign-in of an agent row", () => {
     fireEvent.click(signInButton);
 
     expect(signIn.signInWith).toHaveBeenCalledWith("claude-acp", "claude-ai-login");
-    // The key method is explained, with Check again and no field to type a key in.
+    // The key method is folded under the first; opened, it is explained, with Check again and no field.
+    expect(signInButton.className).toContain("bg-primary");
+    expect(screen.queryByText("Use an API key")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Other ways to sign in (1)" }));
     expect(screen.getByText("Use an API key")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /API Key/ })).toBeNull();
     expect(screen.queryByRole("textbox")).toBeNull();
@@ -169,7 +184,7 @@ describe("the sign-in of an agent row", () => {
     rerender(rowFor(fakeSignIn({ checkOf: () => ({ phase: "checking" }) })));
     expect(screen.getByRole("status")).toBe(region);
     expect(region).toHaveTextContent("Checking Claude Agent…");
-    expect(checkSignInItem()).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Check sign-in" })).toBeDisabled();
 
     rerender(rowFor(fakeSignIn({ checkOf: () => ({ phase: "done", message: "Could not check Claude Agent. Try again.", isFailure: true }) })));
     expect(screen.getByRole("status")).toBe(region);
@@ -186,8 +201,22 @@ describe("the sign-in of an agent row", () => {
 });
 
 describe("the warning before a check", () => {
-  it("says a session stays in the history of an agent that cannot report who is signed in", () => {
+  it("says in one line under a never-checked row that checking opens a session", () => {
     renderRow(fakeSignIn({ reportsStatusOf: () => false }), "Gemini CLI");
+
+    const line = "Checking opens a short session in zorvo. It may stay in Gemini CLI's history.";
+    expect(screen.getByText(line)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Check sign-in" })).toHaveAccessibleDescription(line);
+  });
+
+  it("names the agent whose sign-in runs under a row that waits for it", () => {
+    renderRow(fakeSignIn({ stateOf: () => "needed", methodsOf: () => [claudeLogin], busyAgentId: "gemini-cli", busyAgentName: "Gemini CLI" }));
+
+    expect(screen.getByText("Gemini CLI's sign-in is running. Finish it, then sign in to Claude Agent.")).toBeInTheDocument();
+  });
+
+  it("says a session stays in the history of an agent that cannot report who is signed in", () => {
+    renderRow(fakeSignIn({ stateOf: () => "ready", reportsStatusOf: () => false }), "Gemini CLI");
 
     const warning =
       "Gemini CLI cannot say who is signed in, so Zorvo opens a session in the zorvo folder to find out. " +
@@ -275,13 +304,20 @@ function setupHook(
     state = updater(state);
   });
   const rememberProbed = vi.fn();
-  const startSignIn = vi.fn(() => true);
   const dismiss = vi.fn();
   const cancel = vi.fn();
+  const closeDialog = vi.fn();
+  const auth: { authRequest: AuthRequest | null; dismiss: typeof dismiss } = { authRequest: overrides.authRequest ?? null, dismiss };
+  // As the real one does, a start from a row puts its request, marked as started outside the draft, in the slot.
+  const startSignIn = vi.fn((start: { profileId: string; cwd: string; methods: AuthRequest["methods"] }) => {
+    auth.authRequest = { ...start, status: "signing-in", isOutside: true };
+    return true;
+  });
   const signIn = {
-    auth: { authRequest: overrides.authRequest ?? null, dismiss },
+    auth,
     terminal: { dialog: null },
     cancel,
+    closeDialog,
     retryStart: vi.fn(),
     startSignIn,
   } as unknown as Parameters<typeof useSettingsSignIn>[0]["signIn"];
@@ -303,7 +339,7 @@ function setupHook(
   // The sidebar reads the same store: what it would show for `id`.
   const sidebarState = (id: string) => hook.result.current.status.stateOf(id);
   const sync = () => hook.rerender({ settings: state.settings });
-  return { hook, sync, sidebarState, rememberProbed, startSignIn, dismiss, cancel, signIn };
+  return { hook, sync, sidebarState, rememberProbed, startSignIn, dismiss, cancel, closeDialog, signIn };
 }
 
 const PROBED = { modes: null, models: null, configOptions: [], commands: [], signInChecked: true, canListSessions: false };
@@ -672,7 +708,7 @@ describe("overlaps and leftovers", () => {
     expect(dismiss).toHaveBeenCalled();
   });
 
-  it("checks the agent again, once, when its running login is closed", async () => {
+  it("checks nothing when a running login is cancelled", async () => {
     const spy = vi.spyOn(internals(), "invoke").mockRejectedValue(authRequiredError(claudeMethods));
     const { hook, cancel, signIn } = setupHook();
     act(() => hook.result.current.settingsSignIn.check("claude-acp"));
@@ -683,6 +719,23 @@ describe("overlaps and leftovers", () => {
     const before = probes();
 
     act(() => hook.result.current.settingsSignIn.cancelSignIn());
+    await act(async () => {});
+
+    expect(cancel).toHaveBeenCalled();
+    expect(probes()).toBe(before);
+  });
+
+  it("checks the agent again, once, when the user says its running login is done", async () => {
+    const spy = vi.spyOn(internals(), "invoke").mockRejectedValue(authRequiredError(claudeMethods));
+    const { hook, cancel, signIn } = setupHook();
+    act(() => hook.result.current.settingsSignIn.check("claude-acp"));
+    await waitFor(() => expect(hook.result.current.settingsSignIn.methodsOf("claude-acp")).toHaveLength(1));
+    act(() => hook.result.current.settingsSignIn.signInWith("claude-acp", "claude-ai-login"));
+    (signIn.terminal as { dialog: unknown }).dialog = { phase: "running" };
+    const probes = () => spy.mock.calls.filter(([cmd]) => cmd === "acp_probe_agent").length;
+    const before = probes();
+
+    act(() => hook.result.current.settingsSignIn.finishSignIn());
 
     expect(cancel).toHaveBeenCalled();
     await waitFor(() => expect(probes()).toBe(before + 1));
@@ -723,6 +776,22 @@ describe("overlaps and leftovers", () => {
     await act(async () => {});
 
     expect(probes()).toBe(before);
+  });
+
+  it("leaves a later draft login alone after a row's login ended: Cancel and done act on the draft's request", () => {
+    // A row's login that ended by itself is gone from the slot; the draft's refusal now holds it, with a message.
+    const draft = { profileId: "gemini", cwd: CWD, methods: [], status: "signing-in", pending: { sessionId: "s1", text: "hello" } } as AuthRequest;
+    const { hook, dismiss, cancel, closeDialog, signIn } = setupHook({ authRequest: draft });
+    (signIn.terminal as { dialog: unknown }).dialog = { phase: "running" };
+    const spy = vi.spyOn(internals(), "invoke");
+
+    act(() => hook.result.current.settingsSignIn.finishSignIn());
+    act(() => hook.result.current.settingsSignIn.cancelSignIn());
+
+    expect(closeDialog).toHaveBeenCalledTimes(1);
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(dismiss).not.toHaveBeenCalled();
+    expect(spy.mock.calls.filter(([cmd]) => cmd === "acp_probe_agent")).toHaveLength(0);
   });
 
   it("leaves the draft's request alone when it cancels a login it did not start", () => {
@@ -1023,18 +1092,21 @@ describe("Try again after a failed login from Settings", () => {
 
 describe("the sign-in panel as drawn", () => {
   it("methods are rows with a hairline between them, not a box, and outline buttons", () => {
-    const { container } = renderRow(fakeSignIn({ stateOf: () => "needed", methodsOf: () => [claudeLogin, apiKey] }));
+    const { container } = renderRow(fakeSignIn({ stateOf: () => "needed", methodsOf: () => [claudeLogin, apiKey, { ...claudeLogin, id: "other", name: "Console" }] }));
     const button = screen.getByRole("button", { name: "Sign in with Claude Subscription" });
     const list = button.closest("ul") as HTMLElement;
     expect(list.className).not.toMatch(/\bbg-|rounded|\bborder\b/);
-    expect(screen.getByText("API Key").closest("li")).toHaveClass("border-t", "border-border");
-    expect(button.className).toContain("border-border-strong");
+    fireEvent.click(screen.getByRole("button", { name: "Other ways to sign in (2)" }));
+    expect(screen.getByText("Console").closest("li")).toHaveClass("border-t", "border-border");
+    expect(button.className).toContain("bg-primary");
+    expect(screen.getByRole("button", { name: "Sign in with Console" }).className).toContain("border-border-strong");
     expect(button.querySelector("svg")).toBeNull();
     expect(container.querySelector(".bg-attention-surface")).toBeNull();
   });
 
   it("a key method's row has Check again as a text button, described by what checking may do", () => {
     renderRow(fakeSignIn({ stateOf: () => "needed", methodsOf: () => [claudeLogin, apiKey], reportsStatusOf: () => false }));
+    fireEvent.click(screen.getByRole("button", { name: "Other ways to sign in (1)" }));
     const row = screen.getByText("API Key").closest("li") as HTMLElement;
     const checkAgain = within(row).getByRole("button", { name: "Check again" });
     expect(checkAgain.className).not.toContain("border-border-strong");
@@ -1052,7 +1124,7 @@ describe("the sign-in panel as drawn", () => {
     expect(container.firstElementChild).toHaveTextContent("Sign-in: Needs sign-in");
     expect(container.querySelector(".size-1\\.5.bg-status-attention")).not.toBeNull();
     rerender(<SignInStatus state="unchecked" />);
-    expect(container.firstElementChild).toHaveTextContent("Sign-in: Not checked");
-    expect(container.querySelector(".size-1\\.5.bg-fg-subtle")).not.toBeNull();
+    expect(container.firstElementChild).toHaveTextContent("Sign-in: Not checked yet");
+    expect(container.querySelector(".size-1\\.5")).toBeNull();
   });
 });

@@ -42,6 +42,7 @@ function fakeSignIn(overrides: Partial<SettingsSignIn> = {}): SettingsSignIn {
     closeAgain: vi.fn(),
     terminal: { dialog: null } as unknown as SettingsSignIn["terminal"],
     cancelSignIn: vi.fn(),
+    finishSignIn: vi.fn(),
     retrySignIn: vi.fn(),
     ...overrides,
   };
@@ -100,6 +101,7 @@ describe("the row's Sign in again", () => {
 
     expect(screen.getByText(/^Sign-in:/).parentElement).toHaveTextContent("Sign-in: Ready");
     expect(screen.getByRole("button", { name: "Sign in with Claude Subscription" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Other ways to sign in (1)" }));
     expect(screen.getByText("Use an API key")).toBeInTheDocument();
   });
 

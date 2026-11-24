@@ -11,11 +11,11 @@
 
   --color-bg: #0a0a0b;
   --color-surface-1: #111113;
-  --color-surface-2: #18181b;
+  --color-surface-2: #111113;
   --color-surface-3: #1f1f23;
   --color-surface-hover: #27272a;
   --color-ground: #0a0a0b;
-  --color-sheet: #111113;
+  --color-sheet: #0c0c0d;
   --color-chip: rgba(255, 255, 255, 0.06);
   --color-overlay: rgba(0, 0, 0, 0.7);
   --color-border: #27272a;

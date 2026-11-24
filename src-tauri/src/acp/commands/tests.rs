@@ -348,9 +348,6 @@ fn a_launch_without_the_login_path_falls_back_to_the_process_path() {
     assert_eq!(path_of(&launch), Some("/zorvo/node/bin:/usr/bin:/bin"));
 }
 
-/// Later than every version in the bundle, so each one is old enough.
-const FIXED_NOW: u64 = 4_000_000_000;
-
 #[test]
 fn a_legacy_id_launches_its_registry_agent() {
     let scratch = Scratch::new("legacy");
@@ -373,7 +370,7 @@ fn a_legacy_id_launches_its_registry_agent() {
             npm_globals: &npm,
             installed: &no_install,
         };
-        profile_to_launch(&catalog, &tools, "claude-code", &BTreeMap::new(), FIXED_NOW)
+        profile_to_launch(&catalog, &tools, "claude-code", &BTreeMap::new())
             .expect("claude-code is known")
             .version
             .expect("a registry agent has a version")
@@ -394,7 +391,7 @@ fn a_legacy_id_launches_its_registry_agent() {
         installed: &installed,
     };
 
-    let profile = profile_to_launch(&catalog, &tools, "claude-code", &BTreeMap::new(), FIXED_NOW)
+    let profile = profile_to_launch(&catalog, &tools, "claude-code", &BTreeMap::new())
         .expect("claude-code is known");
     assert_eq!(profile.id, "claude-acp");
     let launch = launch_from(profile, BTreeMap::new, None, |id, version| {
@@ -421,14 +418,7 @@ fn an_unknown_profile_id_is_named_in_the_error() {
         installed: &installed,
     };
 
-    let err = profile_to_launch(
-        &catalog,
-        &tools,
-        "no-such-agent",
-        &BTreeMap::new(),
-        FIXED_NOW,
-    )
-    .unwrap_err();
+    let err = profile_to_launch(&catalog, &tools, "no-such-agent", &BTreeMap::new()).unwrap_err();
 
     assert!(
         err.contains("Unknown agent profile 'no-such-agent'"),
@@ -470,8 +460,7 @@ fn an_agent_not_built_for_this_mac_is_refused_by_name() {
         installed: &installed,
     };
 
-    let err =
-        profile_to_launch(&catalog, &tools, "linuxy", &BTreeMap::new(), FIXED_NOW).unwrap_err();
+    let err = profile_to_launch(&catalog, &tools, "linuxy", &BTreeMap::new()).unwrap_err();
 
     assert_eq!(err, "Linuxy is not available for this Mac");
 }

@@ -19,7 +19,7 @@ use crate::env_resolver::cached_user_env;
 use crate::profiles::{agent_name, agent_profiles, install_steps_for, with_system_tools};
 use crate::registry::resolve::canonical_agent_id;
 use crate::registry::schema::current_platform;
-use crate::registry::{unix_now, AGENT_PROFILES_CHANGED};
+use crate::registry::AGENT_PROFILES_CHANGED;
 use crate::store::AppStore;
 
 /// Carries an [`InstallProgress`] for each phase of each step.
@@ -101,9 +101,7 @@ pub fn update_agent(
     let installer = installer.get()?;
     let id = canonical_agent_id(&agent_id);
     let versions = versions_in_use(&store);
-    let target = with_system_tools(|catalog, tools| {
-        catalog.update_target(id, tools, &versions, unix_now())
-    })?;
+    let target = with_system_tools(|catalog, tools| catalog.update_target(id, tools, &versions))?;
     let job = installer.begin(id, &target.name)?;
     let (_, steps) = install_steps_for(id, &versions_with(&versions, id, &target.version))
         .ok_or_else(|| format!("Unknown agent '{agent_id}'"))?;

@@ -11,7 +11,7 @@ pub const STATUS_ON_YOUR_MAC: &str = "on_your_mac";
 pub const STATUS_READY: &str = "ready";
 pub const STATUS_NOT_INSTALLED: &str = "not_installed";
 pub const STATUS_UNSUPPORTED: &str = "unsupported";
-/// Every version is younger than the seven-day wait, so none can run yet.
+/// The registry withdrew every version Zorvo knows, so none can run.
 pub const STATUS_WAITING: &str = "waiting";
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -28,8 +28,6 @@ pub struct CatalogAgent {
     /// A newer offered version Update can move to.
     pub update_version: Option<String>,
     pub status: String,
-    /// Unix seconds when a waiting agent first becomes available.
-    pub available_from: Option<u64>,
     /// Where a binary agent found on the Mac lives.
     pub location: Option<String>,
 }

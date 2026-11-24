@@ -252,8 +252,8 @@ Every agent works the same way in Zorvo: its own models, effort and modes,
 approvals in the chat, fork and rewind. A session continues after a restart
 when its agent can resume or reload sessions; an agent that cannot says so.
 
-A new version of an agent is offered a week after it was published, never
-sooner, and never one the registry has withdrawn.
+A new version of an agent is offered as soon as the ACP registry lists it,
+and never one the registry has withdrawn.
 
 ## Requirements
 

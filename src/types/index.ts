@@ -53,8 +53,6 @@ export interface CatalogAgent {
   /** The newer version on offer, if any. */
   updateVersion: string | null;
   status: CatalogStatus;
-  /** Unix seconds; set while a new version waits out its seven days. */
-  availableFrom: number | null;
   /** Where a program installed outside Zorvo lives. */
   location: string | null;
 }

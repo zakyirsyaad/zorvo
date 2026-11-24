@@ -31,7 +31,7 @@ use catalog_view::{
     STATUS_READY, STATUS_UNSUPPORTED, STATUS_WAITING,
 };
 use fetch::{fetch_registry, FETCH_TIMEOUT, MAX_REGISTRY_BYTES, REGISTRY_URL};
-use history::{compare_versions, is_within, VersionHistory, MIN_AGE_SECS};
+use history::{compare_versions, is_within, VersionHistory};
 use icons::{IconSource, BUNDLED_ICONS, ICON_TIMEOUT, MAX_ICON_BYTES};
 use npm_globals::{npm_globals, NPM_TIMEOUT};
 use resolve::{
@@ -93,40 +93,27 @@ impl CatalogState {
                 .is_some_and(|cache| cache.is_withdrawn(id, version))
     }
 
-    /// The newest old-enough version the registry has not withdrawn.
-    fn offered(&self, id: &str, now: u64) -> Option<&RegistryEntry> {
+    /// The newest version the registry has not withdrawn.
+    fn offered(&self, id: &str) -> Option<&RegistryEntry> {
         self.history
-            .offered_where(id, now, |version| !self.is_withdrawn(id, version))
+            .offered_where(id, |version| !self.is_withdrawn(id, version))
     }
 
     /// The version to run: the one in use when the history has it and the
     /// registry has not withdrawn it, else the offered one. A withdrawn
     /// version in use keeps running when nothing else is offered, so the
     /// agent never disappears.
-    fn entry_for(
-        &self,
-        id: &str,
-        versions: &BTreeMap<String, String>,
-        now: u64,
-    ) -> Option<&RegistryEntry> {
+    fn entry_for(&self, id: &str, versions: &BTreeMap<String, String>) -> Option<&RegistryEntry> {
         let recorded = versions
             .get(id)
-            .filter(|version| self.is_old_enough(id, version, now))
             .and_then(|version| Some((version, self.history.version(id, version)?)));
         match recorded {
             Some((version, entry)) if self.is_withdrawn(id, version) => {
-                self.offered(id, now).or(Some(entry))
+                self.offered(id).or(Some(entry))
             }
             Some((_, entry)) => Some(entry),
-            None => self.offered(id, now),
+            None => self.offered(id),
         }
-    }
-
-    /// True when `version` was first seen at least `MIN_AGE_SECS` before `now`.
-    fn is_old_enough(&self, id: &str, version: &str, now: u64) -> bool {
-        self.history
-            .first_seen(id, version)
-            .is_some_and(|seen| now.saturating_sub(seen) >= MIN_AGE_SECS)
     }
 
     /// The agents the last fetch listed that Zorvo cannot offer (stored sorted by
@@ -152,10 +139,9 @@ impl CatalogState {
         id: &str,
         tools: &SystemTools,
         versions: &BTreeMap<String, String>,
-        now: u64,
     ) -> CatalogAgent {
         let listed = self.is_listed(id);
-        let Some(entry) = self.entry_for(id, versions, now) else {
+        let Some(entry) = self.entry_for(id, versions) else {
             return self.waiting_agent(id, listed);
         };
         let install = install_status(entry, tools);
@@ -170,7 +156,7 @@ impl CatalogState {
         let update_version = if status == STATUS_UNSUPPORTED || user_binary {
             None
         } else {
-            self.newer_offered(id, &entry.version, now)
+            self.newer_offered(id, &entry.version)
                 .map(|offered| offered.version.clone())
         };
         CatalogAgent {
@@ -182,20 +168,19 @@ impl CatalogState {
             version: Some(entry.version.clone()),
             update_version,
             status: status.to_string(),
-            available_from: None,
             location,
         }
     }
 
     /// The offered entry when it is newer than `version`.
-    fn newer_offered(&self, id: &str, version: &str, now: u64) -> Option<&RegistryEntry> {
-        self.offered(id, now)
+    fn newer_offered(&self, id: &str, version: &str) -> Option<&RegistryEntry> {
+        self.offered(id)
             .filter(|offered| compare_versions(&offered.version, version) == Ordering::Greater)
     }
 
-    /// A row for an agent whose every version is still younger than the wait.
-    /// When the newest is a binary with no build for this Mac, the wait would
-    /// end in "unsupported", so that is what the row says from the start.
+    /// A row for an agent with nothing to offer, since the registry withdrew
+    /// every version the history has. When the newest is a binary with no build
+    /// for this Mac, the row says "unsupported".
     fn waiting_agent(&self, id: &str, listed: bool) -> CatalogAgent {
         let newest = self
             .history
@@ -203,16 +188,6 @@ impl CatalogState {
             .max_by(|(a, _), (b, _)| compare_versions(a, b))
             .map(|(_, record)| &record.entry);
         let is_unsupported = newest.is_some_and(|entry| !is_supported(entry));
-        let available_from = if is_unsupported {
-            None
-        } else {
-            self.history
-                .records(id)
-                .filter(|(version, _)| !self.is_withdrawn(id, version))
-                .map(|(_, record)| record.first_seen)
-                .min()
-                .map(|seen| seen + MIN_AGE_SECS)
-        };
         let status = if is_unsupported {
             STATUS_UNSUPPORTED
         } else {
@@ -227,7 +202,6 @@ impl CatalogState {
             version: None,
             update_version: None,
             status: status.to_string(),
-            available_from,
             location: None,
         }
     }
@@ -237,9 +211,8 @@ impl CatalogState {
         id: &str,
         tools: &SystemTools,
         versions: &BTreeMap<String, String>,
-        now: u64,
     ) -> Option<AgentProfile> {
-        let entry = self.entry_for(id, versions, now)?;
+        let entry = self.entry_for(id, versions)?;
         if !is_supported(entry) {
             return None;
         }
@@ -350,8 +323,7 @@ impl Catalog {
         };
         let profiles_changed = next.history.ids().any(|id| {
             state.is_listed(id) != next.is_listed(id)
-                || state.offered(id, now).map(|e| &e.version)
-                    != next.offered(id, now).map(|e| &e.version)
+                || state.offered(id).map(|e| &e.version) != next.offered(id).map(|e| &e.version)
         });
         *state = next;
         Ok(!unseen.is_empty() || withdrawn_changed || unavailable_changed || profiles_changed)
@@ -373,13 +345,12 @@ impl Catalog {
         &self,
         tools: &SystemTools,
         versions: &BTreeMap<String, String>,
-        now: u64,
     ) -> Vec<AgentProfile> {
         let state = self.read_state();
         state
             .history
             .ids()
-            .filter_map(|id| state.profile(id, tools, versions, now))
+            .filter_map(|id| state.profile(id, tools, versions))
             .collect()
     }
 
@@ -390,9 +361,8 @@ impl Catalog {
         id: &str,
         tools: &SystemTools,
         versions: &BTreeMap<String, String>,
-        now: u64,
     ) -> Option<AgentProfile> {
-        self.read_state().profile(id, tools, versions, now)
+        self.read_state().profile(id, tools, versions)
     }
 
     /// The agent's name and what an install of it would do, for the same
@@ -403,24 +373,18 @@ impl Catalog {
         id: &str,
         tools: &SystemTools,
         versions: &BTreeMap<String, String>,
-        now: u64,
     ) -> Option<(String, Vec<PlannedStep>)> {
         let state = self.read_state();
-        let entry = state.entry_for(id, versions, now)?;
+        let entry = state.entry_for(id, versions)?;
         Some((entry.name.clone(), planned_steps(entry, tools)))
     }
 
     /// The agent's name at the entry [`Self::planned_steps_for`] would plan,
     /// without looking at what the machine has; `None` for the same ids.
-    pub fn agent_name(
-        &self,
-        id: &str,
-        versions: &BTreeMap<String, String>,
-        now: u64,
-    ) -> Option<String> {
+    pub fn agent_name(&self, id: &str, versions: &BTreeMap<String, String>) -> Option<String> {
         let state = self.read_state();
         state
-            .entry_for(id, versions, now)
+            .entry_for(id, versions)
             .map(|entry| entry.name.clone())
     }
 
@@ -430,11 +394,10 @@ impl Catalog {
         &self,
         id: &str,
         versions: &BTreeMap<String, String>,
-        now: u64,
     ) -> Option<String> {
         let state = self.read_state();
         state
-            .entry_for(id, versions, now)
+            .entry_for(id, versions)
             .filter(|entry| !is_supported(entry))
             .map(|entry| entry.name.clone())
     }
@@ -445,7 +408,6 @@ impl Catalog {
         &self,
         tools: &SystemTools,
         versions: &BTreeMap<String, String>,
-        now: u64,
     ) -> AgentCatalog {
         let state = self.read_state();
         AgentCatalog {
@@ -453,7 +415,7 @@ impl Catalog {
             agents: state
                 .history
                 .ids()
-                .map(|id| state.catalog_agent(id, tools, versions, now))
+                .map(|id| state.catalog_agent(id, tools, versions))
                 .collect(),
             unavailable: state.unavailable_agents(),
         }
@@ -466,15 +428,14 @@ impl Catalog {
         id: &str,
         tools: &SystemTools,
         versions: &BTreeMap<String, String>,
-        now: u64,
     ) -> Result<RegistryEntry, String> {
         let state = self.read_state();
         if !state.history.ids().any(|known| known == id) {
             return Err(format!("Unknown agent '{id}'"));
         }
-        let row = state.catalog_agent(id, tools, versions, now);
+        let row = state.catalog_agent(id, tools, versions);
         let is_user_binary = state
-            .entry_for(id, versions, now)
+            .entry_for(id, versions)
             .is_some_and(|entry| install_status(entry, tools).is_user_binary());
         if is_user_binary {
             return Err(format!("{} is managed outside Zorvo", row.name));

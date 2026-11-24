@@ -6,6 +6,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Changed
 
+- **Agent updates come as soon as the registry lists them.** A new version of an agent no longer waits a week before Zorvo offers it.
 - **The dark theme's panels are darker, closer to the sidebar.** The chat, the inspector, your messages, the composer and the cards on them sit nearer the window's black.
 - **While an agent works, the chat shows Zorvo's logo at work.** Its two chevrons light in turn and its cursor blinks, in place of the green dot. With Reduce motion on, the logo stands still.
 - **A new session shows Zorvo's logo** and the line "Every coding agent. One desktop." above the card where you write the first message.

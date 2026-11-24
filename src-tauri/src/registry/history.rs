@@ -1,6 +1,5 @@
-//! A dated record of every registry version Zorvo has seen. A version is only
-//! offered once it has been public for `MIN_AGE_SECS`, matching the app's
-//! "pinned to releases at least two weeks old" spirit with a shorter window.
+//! A dated record of every registry version Zorvo has seen. An agent's newest
+//! version is offered as soon as the registry lists it.
 
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -9,9 +8,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::schema::{parse_entry, RegistryEntry};
-
-/// How long a version must have been seen before it is offered: seven days.
-pub const MIN_AGE_SECS: u64 = 7 * 24 * 60 * 60;
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct VersionHistory {
@@ -99,33 +95,26 @@ impl VersionHistory {
         }
     }
 
-    /// Newest version (semver order) first seen at least `MIN_AGE_SECS` before `now`.
-    pub fn offered(&self, id: &str, now: u64) -> Option<&RegistryEntry> {
-        self.offered_up_to(id, now, None)
+    /// Newest version (semver order) of `id`.
+    pub fn offered(&self, id: &str) -> Option<&RegistryEntry> {
+        self.offered_up_to(id, None)
     }
 
     /// [`Self::offered`], ignoring versions newer than `ceiling` (the version the
     /// registry lists now), so a version the registry withdrew is not offered.
-    pub fn offered_up_to(
-        &self,
-        id: &str,
-        now: u64,
-        ceiling: Option<&str>,
-    ) -> Option<&RegistryEntry> {
-        self.offered_where(id, now, |version| is_within(version, ceiling))
+    pub fn offered_up_to(&self, id: &str, ceiling: Option<&str>) -> Option<&RegistryEntry> {
+        self.offered_where(id, |version| is_within(version, ceiling))
     }
 
     /// [`Self::offered`], considering only the versions `allowed` accepts.
     pub fn offered_where(
         &self,
         id: &str,
-        now: u64,
         allowed: impl Fn(&str) -> bool,
     ) -> Option<&RegistryEntry> {
         self.agents
             .get(id)?
             .iter()
-            .filter(|(_, record)| now.saturating_sub(record.first_seen) >= MIN_AGE_SECS)
             .filter(|(version, _)| allowed(version))
             .max_by(|(a, _), (b, _)| compare_versions(a, b))
             .map(|(_, record)| &record.entry)

@@ -22,6 +22,15 @@ describe("the draft's column", () => {
     expect(container.firstElementChild).toHaveClass("flex-1", "justify-end");
   });
 
+  it("shows the Zorvo lockup and the welcome screen's line over the card, centred, as a paragraph", () => {
+    render(<NewSessionAbove />);
+    const logo = screen.getByRole("img", { name: "Zorvo" });
+    const line = screen.getByText("Every coding agent. One desktop.");
+    expect(line.tagName).toBe("P");
+    expect(logo.parentElement).toBe(line.parentElement);
+    expect(logo.parentElement).toHaveClass("mx-auto", "max-w-draft", "items-center");
+  });
+
   it("says why nothing can start right above the card, in the card's column", () => {
     render(<NewSessionAbove unavailableReason="Install an agent first." />);
     expect(screen.getByText("Install an agent first.")).toHaveClass("mx-auto", "w-full", "max-w-draft");

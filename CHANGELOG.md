@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+
+- **One scrollbar in the chat again.** Since 0.20.0 the area around the chat could scroll too, past the message box and into empty space, beside the chat's own scrollbar.
+
 ## [0.20.0] - 2026-11-25
 
 ### Added

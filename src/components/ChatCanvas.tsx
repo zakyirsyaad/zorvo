@@ -283,7 +283,9 @@ export function ChatCanvas({
         onTouchStart={stickToBottom.onTouchStart}
         onTouchMove={stickToBottom.onTouchMove}
         data-testid="chat-canvas-container"
-        className="flex-1 overflow-y-auto pt-9 px-8 pb-4"
+        // Relative, so what is absolutely placed inside the chat (its sr-only live lines) scrolls and clips
+        // with it; placed by the frame around it, it would stretch the main column into a second scroll.
+        className="relative flex-1 overflow-y-auto pt-9 px-8 pb-4"
       >
         {/* The content alone, so its growth can be watched apart from the frame's own size. */}
         <div ref={stickToBottom.contentRef} className="space-y-8">

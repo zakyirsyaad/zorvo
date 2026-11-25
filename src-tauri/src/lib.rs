@@ -24,6 +24,7 @@ pub mod git_info;
 pub mod github;
 pub mod installer;
 pub mod instruction_files;
+pub mod media;
 pub mod navigation_guard;
 pub mod pasted_images;
 pub mod private_mode;

@@ -6,6 +6,7 @@ pub mod artifacts;
 pub mod attachment_paths;
 pub mod attachments;
 pub mod background_processes;
+pub mod branch_state;
 pub mod branches;
 pub mod browser;
 pub mod browser_commands;
@@ -781,6 +782,7 @@ pub fn run() {
             changes::session_file_diff,
             diff_stats::session_diff_targets,
             diff_stats::session_diff_stats,
+            branch_state::session_branch_state,
             diff_stats::session_diff_stats_since,
             changes::commit_session_changes,
             worktrees::create_session_worktree,

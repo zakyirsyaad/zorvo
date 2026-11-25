@@ -16,6 +16,8 @@ use tauri::http::{header, Request, Response, StatusCode};
 use tauri::State;
 
 use crate::artifacts::motion::{out_file, read_motion};
+use crate::artifacts::motion_protocol::motion_root;
+use crate::artifacts::protocol::Served;
 use crate::artifacts::store::ArtifactStore;
 use crate::files::{ensure_known_workspace, resolve_inside_root};
 use crate::store::AppStore;
@@ -240,7 +242,7 @@ pub fn media_url_for_video(
         .video(&session_id, &key)
         .ok_or_else(|| NOT_A_VIDEO.to_string())?;
     let path = PathBuf::from(&entry.path);
-    if !is_inside_known(&store, &path) {
+    if !is_in_known_session_folder(&store, &path, &entry.relative) {
         return Err(NOT_A_VIDEO.to_string());
     }
     let mime = video_type(&path).ok_or_else(|| NOT_A_VIDEO.to_string())?;
@@ -250,20 +252,13 @@ pub fn media_url_for_video(
 /// A URL for a motion's rendered format, when it has been rendered.
 #[tauri::command(async)]
 pub fn media_url_for_render(
-    artifacts: State<'_, Arc<ArtifactStore>>,
-    store: State<'_, AppStore>,
+    served: State<'_, Arc<Served>>,
     tokens: State<'_, MediaTokens>,
     session_id: String,
     key: String,
     format: String,
 ) -> Result<String, String> {
-    let entry = artifacts
-        .motion(&session_id, &key)
-        .ok_or_else(|| NOT_RENDERED.to_string())?;
-    let root = PathBuf::from(&entry.folder);
-    if !is_inside_known(&store, &root) {
-        return Err(NOT_RENDERED.to_string());
-    }
+    let root = motion_root(&served, &session_id, &key).ok_or_else(|| NOT_RENDERED.to_string())?;
     let motion = read_motion(&root)?;
     let format = motion
         .format(&format)
@@ -273,12 +268,19 @@ pub fn media_url_for_render(
     tokens.issue(path, mime)
 }
 
-/// Whether `path` lies in a folder Zorvo knows: an entry recorded earlier names a canonical path,
-/// and the folder it was shown from must still be one the user has open.
-fn is_inside_known(store: &AppStore, path: &Path) -> bool {
-    path.ancestors()
-        .skip(1)
-        .any(|folder| store.is_known_workspace(folder).unwrap_or(false))
+/// Whether the file at `path` is still inside the session folder it was shown from (its path
+/// minus `relative`), and that folder is one the user has open.
+fn is_in_known_session_folder(store: &AppStore, path: &Path, relative: &str) -> bool {
+    let Ok(file) = fs::canonicalize(path) else {
+        return false;
+    };
+    let mut folder = file.clone();
+    for _ in relative.split('/').filter(|part| !part.is_empty()) {
+        if !folder.pop() {
+            return false;
+        }
+    }
+    file.starts_with(&folder) && store.is_known_workspace(&folder).unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -308,7 +310,10 @@ mod tests {
         assert_eq!(parse_range("bytes=0-99", 1000), Some(Ok((0, 99))));
         assert_eq!(parse_range("bytes=900-", 1000), Some(Ok((900, 999))));
         assert_eq!(parse_range("bytes=-100", 1000), Some(Ok((900, 999))));
-        assert_eq!(parse_range("bytes=0-", 100 * MAX_CHUNK), Some(Ok((0, MAX_CHUNK - 1))));
+        assert_eq!(
+            parse_range("bytes=0-", 100 * MAX_CHUNK),
+            Some(Ok((0, MAX_CHUNK - 1)))
+        );
         assert_eq!(parse_range("bytes=1000-", 1000), Some(Err(())));
         assert_eq!(parse_range("bytes=0-1,5-6", 1000), None);
         assert_eq!(parse_range("items=0-1", 1000), None);
@@ -345,21 +350,35 @@ mod tests {
         assert_eq!(whole.status(), StatusCode::OK);
         assert_eq!(whole.body().len(), bytes.len());
 
-        assert_eq!(get(&tokens, &url, Some("bytes=9999-")).status(), StatusCode::RANGE_NOT_SATISFIABLE);
+        assert_eq!(
+            get(&tokens, &url, Some("bytes=9999-")).status(),
+            StatusCode::RANGE_NOT_SATISFIABLE
+        );
         assert_eq!(
             get(&tokens, &format!("{URL_PREFIX}{}", "0".repeat(32)), None).status(),
             StatusCode::NOT_FOUND
         );
-        let post = Request::builder().method("POST").uri(&url).body(Vec::new()).expect("post");
-        assert_eq!(respond(&tokens, &post).status(), StatusCode::METHOD_NOT_ALLOWED);
+        let post = Request::builder()
+            .method("POST")
+            .uri(&url)
+            .body(Vec::new())
+            .expect("post");
+        assert_eq!(
+            respond(&tokens, &post).status(),
+            StatusCode::METHOD_NOT_ALLOWED
+        );
     }
 
     #[test]
     fn keeps_at_most_the_newest_tokens() {
         let tokens = MediaTokens::default();
-        let first = tokens.issue(PathBuf::from("/a"), "video/mp4").expect("first");
+        let first = tokens
+            .issue(PathBuf::from("/a"), "video/mp4")
+            .expect("first");
         for _ in 0..MAX_TOKENS {
-            tokens.issue(PathBuf::from("/b"), "video/mp4").expect("more");
+            tokens
+                .issue(PathBuf::from("/b"), "video/mp4")
+                .expect("more");
         }
         let token = first.trim_start_matches(URL_PREFIX);
         assert!(tokens.target(token).is_none());

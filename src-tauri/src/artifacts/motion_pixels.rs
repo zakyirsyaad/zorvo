@@ -25,6 +25,13 @@ pub fn sample_times(frame_start: f64, fps: u32) -> Vec<f64> {
         .collect()
 }
 
+/// A snapshot whose size is not the accumulator's.
+#[derive(Debug, PartialEq)]
+pub struct WrongSize;
+
+/// Where each cell of a contact sheet goes: x, y, width and height.
+pub type Placement = (u32, u32, u32, u32);
+
 /// Running sums of RGBA snapshots of one size, averaged into one frame.
 pub struct Accumulator {
     sums: Vec<u16>,
@@ -40,9 +47,9 @@ impl Accumulator {
     }
 
     /// Adds one RGBA snapshot. A snapshot of another size is refused.
-    pub fn add(&mut self, rgba: &[u8]) -> Result<(), ()> {
+    pub fn add(&mut self, rgba: &[u8]) -> Result<(), WrongSize> {
         if rgba.len() != self.sums.len() {
-            return Err(());
+            return Err(WrongSize);
         }
         for (sum, value) in self.sums.iter_mut().zip(rgba) {
             *sum += u16::from(*value);
@@ -98,7 +105,7 @@ pub struct SheetCell {
 
 /// Where each cell goes: a row per format, cells left to right, each scaled to one width.
 /// Returns the sheet's size and each cell's position and size, in the order given.
-pub fn sheet_layout(cells: &[(usize, u32, u32)]) -> (u32, u32, Vec<(u32, u32, u32, u32)>) {
+pub fn sheet_layout(cells: &[(usize, u32, u32)]) -> (u32, u32, Vec<Placement>) {
     let rows = cells.iter().map(|(row, _, _)| row + 1).max().unwrap_or(0);
     let per_row = |row: usize| cells.iter().filter(|(r, _, _)| *r == row).count() as u32;
     let widest = (0..rows).map(per_row).max().unwrap_or(1).max(1);
@@ -120,7 +127,12 @@ pub fn sheet_layout(cells: &[(usize, u32, u32)]) -> (u32, u32, Vec<(u32, u32, u3
     for (row, width, height) in cells {
         let x = next_in_row[*row] * (cell_width + SHEET_GAP);
         next_in_row[*row] += 1;
-        placed.push((x, row_tops[*row], cell_width, scaled_height(*width, *height, cell_width)));
+        placed.push((
+            x,
+            row_tops[*row],
+            cell_width,
+            scaled_height(*width, *height, cell_width),
+        ));
     }
     let sheet_width = widest * cell_width + SHEET_GAP * (widest - 1);
     let sheet_height = top.saturating_sub(SHEET_GAP).max(1);

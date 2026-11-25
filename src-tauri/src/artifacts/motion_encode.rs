@@ -103,8 +103,10 @@ impl VideoWriter {
                 ),
             ]);
             let video = AVMediaTypeVideo.ok_or_else(failed)?;
-            let input =
-                AVAssetWriterInput::assetWriterInputWithMediaType_outputSettings(video, Some(&settings));
+            let input = AVAssetWriterInput::assetWriterInputWithMediaType_outputSettings(
+                video,
+                Some(&settings),
+            );
             input.setExpectsMediaDataInRealTime(false);
             let format = NSNumber::new_u32(kCVPixelFormatType_32BGRA);
             let attributes = dictionary(&[
@@ -139,9 +141,11 @@ impl VideoWriter {
         // SAFETY: the pool belongs to the adaptor and lives while it does; the out pointer is a
         // local that the pool fills with a +1 buffer, taken over by `CFRetained::from_raw`.
         unsafe {
-            let pool: Retained<CVPixelBufferPool> = self.adaptor.pixelBufferPool().ok_or_else(failed)?;
+            let pool: Retained<CVPixelBufferPool> =
+                self.adaptor.pixelBufferPool().ok_or_else(failed)?;
             let mut raw: *mut CVPixelBuffer = std::ptr::null_mut();
-            let status = CVPixelBufferPool::create_pixel_buffer(None, &pool, NonNull::from(&mut raw));
+            let status =
+                CVPixelBufferPool::create_pixel_buffer(None, &pool, NonNull::from(&mut raw));
             if status != 0 {
                 return Err(failed());
             }
@@ -182,7 +186,10 @@ impl VideoWriter {
             }
             CVPixelBufferUnlockBaseAddress(&buffer, CVPixelBufferLockFlags(0));
             let at = CMTime::new(i64::from(index), self.fps as i32);
-            if !self.adaptor.appendPixelBuffer_withPresentationTime(&buffer, at) {
+            if !self
+                .adaptor
+                .appendPixelBuffer_withPresentationTime(&buffer, at)
+            {
                 return Err(failed());
             }
         }
@@ -200,7 +207,9 @@ impl VideoWriter {
             self.input.markAsFinished();
             self.writer.finishWritingWithCompletionHandler(&done);
         }
-        received.recv_timeout(EXPORT_TIMEOUT).map_err(|_| failed())?;
+        received
+            .recv_timeout(EXPORT_TIMEOUT)
+            .map_err(|_| failed())?;
         // SAFETY: as in `new`.
         let status = unsafe { self.writer.status() };
         (status == AVAssetWriterStatus::Completed)
@@ -221,18 +230,25 @@ fn seconds(value: f64) -> CMTime {
     unsafe { CMTime::with_seconds(value, AUDIO_TIMESCALE) }
 }
 
-fn first_track(path: &Path, kind: &objc2_av_foundation::AVMediaType) -> Result<Retained<AVAssetTrack>, String> {
+fn first_track(
+    path: &Path,
+    kind: &objc2_av_foundation::AVMediaType,
+) -> Result<Retained<AVAssetTrack>, String> {
     let (sent, received) = mpsc::channel();
     // SAFETY: the asset is used on this thread; the block copies the first track out of the
     // array AVFoundation hands it (or nothing) and sends it, which is all it does.
     unsafe {
         let asset = AVURLAsset::URLAssetWithURL_options(&file_url(path), None);
-        let done = RcBlock::new(move |tracks: *mut NSArray<AVAssetTrack>, _error: *mut objc2_foundation::NSError| {
-            let first = tracks.as_ref().and_then(|tracks| tracks.firstObject());
-            let _ = sent.send(first.map(SendTrack));
-        });
+        let done = RcBlock::new(
+            move |tracks: *mut NSArray<AVAssetTrack>, _error: *mut objc2_foundation::NSError| {
+                let first = tracks.as_ref().and_then(|tracks| tracks.firstObject());
+                let _ = sent.send(first.map(SendTrack));
+            },
+        );
         asset.loadTracksWithMediaType_completionHandler(kind, &done);
-        let track = received.recv_timeout(EXPORT_TIMEOUT).map_err(|_| failed())?;
+        let track = received
+            .recv_timeout(EXPORT_TIMEOUT)
+            .map_err(|_| failed())?;
         // The asset must outlive its track's use; keep it alive until the track is taken.
         drop(asset);
         track.map(|track| track.0).ok_or_else(failed)
@@ -253,7 +269,9 @@ fn export(session: &AVAssetExportSession) -> Result<(), String> {
     unsafe {
         session.exportAsynchronouslyWithCompletionHandler(&done);
     }
-    received.recv_timeout(EXPORT_TIMEOUT).map_err(|_| failed())?;
+    received
+        .recv_timeout(EXPORT_TIMEOUT)
+        .map_err(|_| failed())?;
     // SAFETY: as above.
     let status = unsafe { session.status() };
     (status == AVAssetExportSessionStatus::Completed)
@@ -275,7 +293,11 @@ pub fn mix_audio(tracks: &[Track], duration: f64, out: &Path) -> Result<(), Stri
             let length = (duration - track.start).max(0.0);
             let available = source.timeRange().duration;
             let wanted = seconds(length);
-            let take = if CMTime::compare(available, wanted) < 0 { available } else { wanted };
+            let take = if CMTime::compare(available, wanted) < 0 {
+                available
+            } else {
+                wanted
+            };
             let target = composition
                 .addMutableTrackWithMediaType_preferredTrackID(audio, kCMPersistentTrackID_Invalid)
                 .ok_or_else(failed)?;
@@ -286,7 +308,8 @@ pub fn mix_audio(tracks: &[Track], duration: f64, out: &Path) -> Result<(), Stri
                     seconds(track.start),
                 )
                 .map_err(|_| failed())?;
-            let input = AVMutableAudioMixInputParameters::audioMixInputParametersWithTrack(Some(&target));
+            let input =
+                AVMutableAudioMixInputParameters::audioMixInputParametersWithTrack(Some(&target));
             input.setVolume_atTime(track.volume as f32, kCMTimeZero);
             parameters.push(Retained::into_super(input));
         }
@@ -323,11 +346,19 @@ pub fn join(video: &Path, audio: &Path, duration: f64, out: &Path) -> Result<(),
             .map_err(|_| failed())?;
         let sound_length = sound.timeRange().duration;
         let wanted = seconds(duration);
-        let take = if CMTime::compare(sound_length, wanted) < 0 { sound_length } else { wanted };
+        let take = if CMTime::compare(sound_length, wanted) < 0 {
+            sound_length
+        } else {
+            wanted
+        };
         composition
             .addMutableTrackWithMediaType_preferredTrackID(audio_kind, kCMPersistentTrackID_Invalid)
             .ok_or_else(failed)?
-            .insertTimeRange_ofTrack_atTime_error(CMTimeRange::new(kCMTimeZero, take), &sound, kCMTimeZero)
+            .insertTimeRange_ofTrack_atTime_error(
+                CMTimeRange::new(kCMTimeZero, take),
+                &sound,
+                kCMTimeZero,
+            )
             .map_err(|_| failed())?;
         let session = AVAssetExportSession::exportSessionWithAsset_presetName(
             &composition,

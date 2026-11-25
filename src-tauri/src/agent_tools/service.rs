@@ -124,6 +124,9 @@ struct CallPhase {
     ended_early: bool,
 }
 
+/// A pending call taken out of the table: its id, its state and the backend that carried it out.
+type Removed = (String, Arc<CallState>, Option<Arc<dyn ScreenTools>>);
+
 struct Pending {
     tool: String,
     args: Value,
@@ -447,7 +450,7 @@ impl AgentTools {
 
     /// Removes every pending call that matches and reports each as ended.
     fn end_pending(&self, matches: impl Fn(&Pending) -> bool) {
-        let removed: Vec<(String, Arc<CallState>, Option<Arc<dyn ScreenTools>>)> = {
+        let removed: Vec<Removed> = {
             let mut pending = lock(&self.pending);
             let ids: Vec<String> = pending
                 .iter()
@@ -522,6 +525,11 @@ impl AgentTools {
         args: Value,
     ) {
         let screen = self.backend_for(&tool);
+        if crate::agent_tools::tools::MOTION_TOOL_NAMES.contains(&tool.as_str()) && screen.is_none()
+        {
+            connection.send(&tool_result(&rpc_id, false, "Rendering is not available."));
+            return;
+        }
         if is_screen_tool(&tool) && screen.is_none() {
             connection.send(&tool_result(
                 &rpc_id,

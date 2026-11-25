@@ -15,8 +15,7 @@ use objc2::MainThreadMarker;
 use objc2_app_kit::NSImage;
 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
 use objc2_core_graphics::{
-    kCGColorSpaceSRGB, CGBitmapContextCreate, CGColorSpace, CGContext, CGImage,
-    CGImageAlphaInfo,
+    kCGColorSpaceSRGB, CGBitmapContextCreate, CGColorSpace, CGContext, CGImage, CGImageAlphaInfo,
 };
 use objc2_foundation::{NSError, NSNumber, NSPoint, NSRect, NSSize};
 use objc2_web_kit::WKSnapshotConfiguration;
@@ -104,8 +103,12 @@ impl CaptureView {
                             is_allowed_motion_navigation(&to, &session_id, &key)
                         })
                         .with_custom_protocol(SCHEME.to_string(), move |_id, request| {
-                            respond(&served, request.method().as_str(), &request.uri().to_string())
-                                .map(Cow::from)
+                            respond(
+                                &served,
+                                request.method().as_str(),
+                                &request.uri().to_string(),
+                            )
+                            .map(Cow::from)
                         })
                         .with_on_page_load_handler(move |event, _url| {
                             if matches!(event, wry::PageLoadEvent::Finished) {

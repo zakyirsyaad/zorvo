@@ -31,8 +31,15 @@ form-action 'none'; sandbox allow-scripts";
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MotionUrl {
-    Shell { session_id: String, key: String },
-    File { session_id: String, key: String, relative: String },
+    Shell {
+        session_id: String,
+        key: String,
+    },
+    File {
+        session_id: String,
+        key: String,
+        relative: String,
+    },
 }
 
 fn encode_segment(segment: &str) -> String {
@@ -81,7 +88,12 @@ pub fn motion_file_url(session_id: &str, key: &str, relative: &str) -> String {
 }
 
 /// The page of `motion` in `format`, with what the runtime reads from its query.
-pub fn motion_page_url(session_id: &str, key: &str, motion: &Motion, format: &MotionFormat) -> String {
+pub fn motion_page_url(
+    session_id: &str,
+    key: &str,
+    motion: &Motion,
+    format: &MotionFormat,
+) -> String {
     format!(
         "{}?format={}&w={}&h={}&d={}&fps={}",
         motion_file_url(session_id, key, &motion.page),
@@ -127,8 +139,15 @@ pub fn parse_motion_url(uri: &str) -> Option<MotionUrl> {
 /// Whether a motion view may go to `url`: the wrapper and the files of this motion only.
 pub fn is_allowed_motion_navigation(url: &str, session_id: &str, key: &str) -> bool {
     match parse_motion_url(url) {
-        Some(MotionUrl::Shell { session_id: s, key: k })
-        | Some(MotionUrl::File { session_id: s, key: k, .. }) => s == session_id && k == key,
+        Some(MotionUrl::Shell {
+            session_id: s,
+            key: k,
+        })
+        | Some(MotionUrl::File {
+            session_id: s,
+            key: k,
+            ..
+        }) => s == session_id && k == key,
         None => false,
     }
 }
@@ -195,7 +214,13 @@ pub fn respond_motion(served: &Served, uri: &str) -> Option<Response<Vec<u8>>> {
 }
 
 /// The state the wrapper is handed: the format shown, each format's page URL and the audio.
-pub fn shell_state(session_id: &str, key: &str, motion: &Motion, format: &str, version: &str) -> String {
+pub fn shell_state(
+    session_id: &str,
+    key: &str,
+    motion: &Motion,
+    format: &str,
+    version: &str,
+) -> String {
     let formats: Vec<_> = motion
         .formats
         .iter()
@@ -254,7 +279,9 @@ pub fn command_script(name: &str, value: Option<f64>) -> Option<String> {
         }
         _ => return None,
     };
-    Some(format!("window.__zorvoMotionShell && window.__zorvoMotionShell.{call};"))
+    Some(format!(
+        "window.__zorvoMotionShell && window.__zorvoMotionShell.{call};"
+    ))
 }
 
 /// Whether `id` could be a format id; checked before it reaches a script or a file name.
@@ -296,19 +323,33 @@ mod tests {
                 relative: "audio/bed one.mp3".into()
             })
         );
-        assert_eq!(parse_motion_url(&format!("{ORIGIN}motion/{SESSION}/c-0123456789abcdef/")), None);
-        assert_eq!(parse_motion_url(&format!("{ORIGIN}motion/{SESSION}/{KEY}/f/a%2Fb")), None);
+        assert_eq!(
+            parse_motion_url(&format!("{ORIGIN}motion/{SESSION}/c-0123456789abcdef/")),
+            None
+        );
+        assert_eq!(
+            parse_motion_url(&format!("{ORIGIN}motion/{SESSION}/{KEY}/f/a%2Fb")),
+            None
+        );
     }
 
     #[test]
     fn navigation_stays_in_one_motion() {
-        assert!(is_allowed_motion_navigation(&motion_shell_url(SESSION, KEY), SESSION, KEY));
+        assert!(is_allowed_motion_navigation(
+            &motion_shell_url(SESSION, KEY),
+            SESSION,
+            KEY
+        ));
         assert!(!is_allowed_motion_navigation(
             &motion_shell_url(SESSION, "m-ffffffffffffffff"),
             SESSION,
             KEY
         ));
-        assert!(!is_allowed_motion_navigation("https://example.com/", SESSION, KEY));
+        assert!(!is_allowed_motion_navigation(
+            "https://example.com/",
+            SESSION,
+            KEY
+        ));
     }
 
     #[test]

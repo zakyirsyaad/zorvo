@@ -533,6 +533,15 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(navigation_guard::plugin())
+        // Videos for the main webview: only tokens a command made, read in byte ranges off the
+        // main thread (`media.rs`).
+        .register_asynchronous_uri_scheme_protocol(media::SCHEME, |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            std::thread::spawn(move || {
+                let tokens = app.state::<media::MediaTokens>();
+                responder.respond(media::respond(&tokens, &request));
+            });
+        })
         .manage(manager)
         .manage(acp_manager)
         .manage(app_update::PendingAppUpdate::default())
@@ -609,7 +618,7 @@ pub fn run() {
                 artifacts::render::sweep_thumbs(&swept, std::time::SystemTime::now());
             });
             app.manage(artifacts::commands::Thumbs::default());
-            app.manage(Arc::new(artifacts::protocol::Served {
+            let served = Arc::new(artifacts::protocol::Served {
                 store: Arc::clone(&artifact_store),
                 thumbs: thumbs_dir,
                 is_known: Arc::new(move |path| {
@@ -618,8 +627,16 @@ pub fn run() {
                         .is_known_workspace(path)
                         .unwrap_or(false)
                 }),
-            }));
+            });
+            app.manage(Arc::clone(&served));
             app.manage(artifact_store);
+            // Motion renders: one worker thread, and `render_motion`/`render_status` answered by it.
+            let motion_renderer =
+                artifacts::motion_render::MotionRenderer::start(app.handle().clone(), served);
+            artifacts::motion_tools::MotionServer::new(Arc::clone(&motion_renderer))
+                .attach(&app.state::<Arc<agent_tools::AgentTools>>());
+            app.manage(motion_renderer);
+            app.manage(media::MediaTokens::default());
             if let Err(error) = migration {
                 report_migration_failure(app.handle(), &error);
             }
@@ -713,6 +730,18 @@ pub fn run() {
             artifacts::visual_commands::visual_copy_image,
             artifacts::commands::artifact_list,
             artifacts::commands::canvas_show,
+            artifacts::motion_commands::motion_show,
+            artifacts::motion_commands::video_show,
+            artifacts::motion_commands::motion_read,
+            artifacts::motion_commands::motion_view_show,
+            artifacts::motion_commands::motion_view_apply,
+            artifacts::motion_commands::motion_view_command,
+            artifacts::motion_commands::motion_export,
+            artifacts::motion_commands::motion_render_cancel,
+            artifacts::motion_commands::media_forget,
+            media::media_url_for_file,
+            media::media_url_for_video,
+            media::media_url_for_render,
             artifacts::commands::canvas_read,
             artifacts::commands::canvas_thumbs,
             artifacts::commands::canvas_export,

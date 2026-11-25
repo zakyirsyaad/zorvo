@@ -82,7 +82,11 @@ pub struct ShownMotion<'a> {
 }
 
 impl ArtifactStore {
-    fn read_list<T: DeserializeOwned>(&self, session_id: &str, file: &str) -> Result<Vec<T>, String> {
+    fn read_list<T: DeserializeOwned>(
+        &self,
+        session_id: &str,
+        file: &str,
+    ) -> Result<Vec<T>, String> {
         match fs::read(self.session_dir(session_id).join(file)) {
             Ok(bytes) => serde_json::from_slice(&bytes).map_err(|_| FAILED.to_string()),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
@@ -90,7 +94,12 @@ impl ArtifactStore {
         }
     }
 
-    fn write_list<T: Serialize>(&self, session_id: &str, file: &str, list: &[T]) -> Result<(), String> {
+    fn write_list<T: Serialize>(
+        &self,
+        session_id: &str,
+        file: &str,
+        list: &[T],
+    ) -> Result<(), String> {
         let dir = self.session_dir(session_id);
         fs::create_dir_all(&dir).map_err(|_| FAILED.to_string())?;
         let bytes = serde_json::to_vec_pretty(list).map_err(|_| FAILED.to_string())?;
@@ -180,7 +189,9 @@ impl ArtifactStore {
 
     /// Newest shown first.
     pub fn motions(&self, session_id: &str) -> Result<Vec<MotionEntry>, String> {
-        self.sorted(session_id, MOTIONS_FILE, |entry: &MotionEntry| entry.shown_at)
+        self.sorted(session_id, MOTIONS_FILE, |entry: &MotionEntry| {
+            entry.shown_at
+        })
     }
 
     /// Newest shown first.
@@ -271,11 +282,18 @@ mod tests {
         let data = Temp::new("motion-store");
         let store = ArtifactStore::new(data.0.join("artifacts"));
         let folder = data.0.join("promo");
-        let first = store.remember_motion("s1", shown(&folder, "One"), 1).expect("first");
-        let again = store.remember_motion("s1", shown(&folder, "Two"), 2).expect("again");
+        let first = store
+            .remember_motion("s1", shown(&folder, "One"), 1)
+            .expect("first");
+        let again = store
+            .remember_motion("s1", shown(&folder, "Two"), 2)
+            .expect("again");
         assert_eq!(first.key, again.key);
         assert!(is_motion_key(&first.key));
-        assert_eq!(store.motion("s1", &first.key).map(|e| e.title), Some("Two".to_string()));
+        assert_eq!(
+            store.motion("s1", &first.key).map(|e| e.title),
+            Some("Two".to_string())
+        );
         assert_eq!(store.motions("s1").expect("list").len(), 1);
     }
 
@@ -283,9 +301,18 @@ mod tests {
     fn videos_are_kept_newest_first_and_forgotten_by_key() {
         let data = Temp::new("video-store");
         let store = ArtifactStore::new(data.0.join("artifacts"));
-        let a = store.remember_video("s1", &data.0.join("a.mp4"), "a.mp4", "A", 1).expect("a");
-        let b = store.remember_video("s1", &data.0.join("b.mp4"), "b.mp4", "B", 2).expect("b");
-        let listed: Vec<String> = store.videos("s1").expect("list").into_iter().map(|e| e.key).collect();
+        let a = store
+            .remember_video("s1", &data.0.join("a.mp4"), "a.mp4", "A", 1)
+            .expect("a");
+        let b = store
+            .remember_video("s1", &data.0.join("b.mp4"), "b.mp4", "B", 2)
+            .expect("b");
+        let listed: Vec<String> = store
+            .videos("s1")
+            .expect("list")
+            .into_iter()
+            .map(|e| e.key)
+            .collect();
         assert_eq!(listed, vec![b.key.clone(), a.key.clone()]);
         store.forget_media("s1", &a.key).expect("forget");
         assert!(store.video("s1", &a.key).is_none());
@@ -297,7 +324,9 @@ mod tests {
     fn refuses_a_bad_session_id() {
         let data = Temp::new("motion-store-bad");
         let store = ArtifactStore::new(data.0.join("artifacts"));
-        assert!(store.remember_motion("../x", shown(&data.0, "T"), 1).is_err());
+        assert!(store
+            .remember_motion("../x", shown(&data.0, "T"), 1)
+            .is_err());
         assert!(store.motions("../x").is_err());
     }
 }

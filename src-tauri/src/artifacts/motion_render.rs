@@ -27,7 +27,8 @@ pub const MAX_QUEUED_PER_SESSION: usize = 4;
 pub const RENDER_FILE: &str = "render.json";
 pub const NOT_SHOWN: &str =
     "Show the motion with show_artifact (kind motion) first, then render it by its key.";
-pub const TOO_MANY_JOBS: &str = "This session already has 4 renders waiting. Wait for one to finish.";
+pub const TOO_MANY_JOBS: &str =
+    "This session already has 4 renders waiting. Wait for one to finish.";
 pub const NO_SUCH_JOB: &str = "There is no render with that id in this session.";
 pub const CANCELLED: &str = "The render was cancelled.";
 const PROGRESS_EVERY: u32 = 15;
@@ -127,9 +128,8 @@ fn new_job_id() -> String {
 }
 
 pub fn is_job_id(id: &str) -> bool {
-    id.strip_prefix("r-").is_some_and(|hex| {
-        hex.len() == JOB_HEX_CHARS && hex.chars().all(|c| c.is_ascii_hexdigit())
-    })
+    id.strip_prefix("r-")
+        .is_some_and(|hex| hex.len() == JOB_HEX_CHARS && hex.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
 /// The formats a request names, in the motion's order; all of them when it names none.
@@ -139,7 +139,11 @@ pub fn chosen_formats(motion: &Motion, wanted: &[String]) -> Result<Vec<MotionFo
     }
     if let Some(unknown) = wanted.iter().find(|id| motion.format(id).is_none()) {
         let known: Vec<&str> = motion.formats.iter().map(|f| f.id.as_str()).collect();
-        let shown = if unknown.chars().count() <= 64 { unknown.as_str() } else { "that" };
+        let shown = if unknown.chars().count() <= 64 {
+            unknown.as_str()
+        } else {
+            "that"
+        };
         return Err(format!(
             "The motion has no format {shown}. Its formats: {}.",
             known.join(", ")
@@ -174,7 +178,8 @@ fn record_key(root: &Path, format: &str, key: &str) {
 /// Whether `out/<format>.mp4` exists and was rendered from what the folder holds now.
 pub fn is_up_to_date(root: &Path, format: &MotionFormat) -> bool {
     out_file(root, &format.id).is_file()
-        && render_key(root, format).is_some_and(|key| recorded_keys(root).get(&format.id) == Some(&key))
+        && render_key(root, format)
+            .is_some_and(|key| recorded_keys(root).get(&format.id) == Some(&key))
 }
 
 impl MotionRenderer {
@@ -195,7 +200,8 @@ impl MotionRenderer {
     /// The composition of a motion this session showed, when it is still readable and inside a
     /// known workspace.
     pub fn motion_of(&self, session_id: &str, key: &str) -> Result<(PathBuf, Motion), String> {
-        let root = motion_root(&self.served, session_id, key).ok_or_else(|| NOT_SHOWN.to_string())?;
+        let root =
+            motion_root(&self.served, session_id, key).ok_or_else(|| NOT_SHOWN.to_string())?;
         let motion = read_motion(&root)?;
         Ok((root, motion))
     }
@@ -251,7 +257,9 @@ impl MotionRenderer {
             .iter()
             .filter(|id| {
                 queue.jobs.get(*id).is_some_and(|job| {
-                    job.view.key == key && job.view.session_id == session_id && job.destination == Destination::Out
+                    job.view.key == key
+                        && job.view.session_id == session_id
+                        && job.destination == Destination::Out
                 })
             })
             .cloned()
@@ -265,7 +273,12 @@ impl MotionRenderer {
         let waiting = queue
             .waiting
             .iter()
-            .filter(|id| queue.jobs.get(*id).is_some_and(|job| job.view.session_id == session_id))
+            .filter(|id| {
+                queue
+                    .jobs
+                    .get(*id)
+                    .is_some_and(|job| job.view.session_id == session_id)
+            })
             .count();
         if waiting >= MAX_QUEUED_PER_SESSION {
             return Err(TOO_MANY_JOBS.to_string());
@@ -328,7 +341,11 @@ impl MotionRenderer {
 
     pub fn cancel(&self, session_id: &str, job: &str) -> bool {
         let mut queue = lock(&self.queue);
-        let Some(entry) = queue.jobs.get_mut(job).filter(|j| j.view.session_id == session_id) else {
+        let Some(entry) = queue
+            .jobs
+            .get_mut(job)
+            .filter(|j| j.view.session_id == session_id)
+        else {
             return false;
         };
         entry.cancelled = true;
@@ -342,12 +359,15 @@ impl MotionRenderer {
         true
     }
 
-    /// The session stopped or went away: its jobs end.
-    pub fn forget(&self, session_id: &str) {
+    /// The session's agent stopped (`with_user` false: the user's exports go on) or the session
+    /// was deleted (`with_user` true): its jobs end.
+    pub fn forget(&self, session_id: &str, with_user: bool) {
         let ids: Vec<String> = lock(&self.queue)
             .jobs
             .iter()
-            .filter(|(_, job)| job.view.session_id == session_id)
+            .filter(|(_, job)| {
+                job.view.session_id == session_id && (with_user || !job.view.by_user)
+            })
             .map(|(id, _)| id.clone())
             .collect();
         for id in ids {
@@ -367,7 +387,10 @@ impl MotionRenderer {
     }
 
     fn is_cancelled(&self, job: &str) -> bool {
-        lock(&self.queue).jobs.get(job).is_none_or(|job| job.cancelled)
+        lock(&self.queue)
+            .jobs
+            .get(job)
+            .is_none_or(|job| job.cancelled)
     }
 
     fn run(self: Arc<Self>) {
@@ -407,7 +430,13 @@ impl MotionRenderer {
         let _ = request.answer.send(result);
     }
 
-    fn open_view(&self, session_id: &str, key: &str, motion: &Motion, format: &MotionFormat) -> Result<CaptureView, String> {
+    fn open_view(
+        &self,
+        session_id: &str,
+        key: &str,
+        motion: &Motion,
+        format: &MotionFormat,
+    ) -> Result<CaptureView, String> {
         let view = CaptureView::open(
             &self.app,
             Arc::clone(&self.served),
@@ -422,9 +451,15 @@ impl MotionRenderer {
     }
 
     /// One frame at `start`: the blurred average of its samples.
-    fn blurred_frame(view: &CaptureView, start: f64, fps: u32, acc: &mut Accumulator) -> Result<Vec<u8>, String> {
+    fn blurred_frame(
+        view: &CaptureView,
+        start: f64,
+        fps: u32,
+        acc: &mut Accumulator,
+    ) -> Result<Vec<u8>, String> {
         for t in sample_times(start, fps) {
-            acc.add(&view.frame_at(t)?).map_err(|()| super::motion_capture::CAPTURE_FAILED.to_string())?;
+            acc.add(&view.frame_at(t)?)
+                .map_err(|_| super::motion_capture::CAPTURE_FAILED.to_string())?;
         }
         Ok(acc.take())
     }
@@ -444,7 +479,8 @@ impl MotionRenderer {
                 let name = still_name(&format.id, t);
                 let png = png_of(rgba.clone(), format.width, format.height)
                     .ok_or_else(|| super::motion_capture::CAPTURE_FAILED.to_string())?;
-                fs::write(frames.join(&name), png).map_err(|_| super::motion::OUT_NOT_A_FOLDER.to_string())?;
+                fs::write(frames.join(&name), png)
+                    .map_err(|_| super::motion::OUT_NOT_A_FOLDER.to_string())?;
                 written.push((format.id.clone(), t, format!("{OUT_DIR}/frames/{name}")));
                 cells.push(SheetCell {
                     row,
@@ -454,8 +490,10 @@ impl MotionRenderer {
                 });
             }
         }
-        let sheet = contact_sheet(cells).ok_or_else(|| super::motion_capture::CAPTURE_FAILED.to_string())?;
-        fs::write(frames.join("sheet.jpg"), &sheet).map_err(|_| super::motion::OUT_NOT_A_FOLDER.to_string())?;
+        let sheet = contact_sheet(cells)
+            .ok_or_else(|| super::motion_capture::CAPTURE_FAILED.to_string())?;
+        fs::write(frames.join("sheet.jpg"), &sheet)
+            .map_err(|_| super::motion::OUT_NOT_A_FOLDER.to_string())?;
         Ok(Stills {
             title: motion.title,
             frames: written,
@@ -466,7 +504,12 @@ impl MotionRenderer {
 
     fn run_job(&self, job: &str) {
         let Some((session_id, key, root, destination)) = lock(&self.queue).jobs.get(job).map(|j| {
-            (j.view.session_id.clone(), j.view.key.clone(), j.root.clone(), j.destination.clone())
+            (
+                j.view.session_id.clone(),
+                j.view.key.clone(),
+                j.root.clone(),
+                j.destination.clone(),
+            )
         }) else {
             return;
         };
@@ -495,7 +538,14 @@ impl MotionRenderer {
 
     /// Renders each format of the job to `out/` (or reuses an up-to-date one for an export) and
     /// copies it to the destination. Returns how many files reached an export's destination.
-    fn render_formats(&self, job: &str, session_id: &str, key: &str, root: &Path, destination: &Destination) -> Result<u32, String> {
+    fn render_formats(
+        &self,
+        job: &str,
+        session_id: &str,
+        key: &str,
+        root: &Path,
+        destination: &Destination,
+    ) -> Result<u32, String> {
         let motion = read_motion(root)?;
         out_dir(root)?;
         let ids: Vec<String> = lock(&self.queue)
@@ -505,7 +555,10 @@ impl MotionRenderer {
             .unwrap_or_default();
         let mut saved = 0;
         for id in ids {
-            let format = motion.format(&id).cloned().ok_or_else(|| NOT_SHOWN.to_string())?;
+            let format = motion
+                .format(&id)
+                .cloned()
+                .ok_or_else(|| NOT_SHOWN.to_string())?;
             let reusable = *destination != Destination::Out && is_up_to_date(root, &format);
             if !reusable {
                 self.render_one(job, session_id, key, root, &motion, &format)?;
@@ -533,19 +586,37 @@ impl MotionRenderer {
         Ok(saved)
     }
 
-    fn render_one(&self, job: &str, session_id: &str, key: &str, root: &Path, motion: &Motion, format: &MotionFormat) -> Result<(), String> {
+    fn render_one(
+        &self,
+        job: &str,
+        session_id: &str,
+        key: &str,
+        root: &Path,
+        motion: &Motion,
+        format: &MotionFormat,
+    ) -> Result<(), String> {
         let out = out_dir(root)?;
         let video = out.join(format!(".{}.video.mp4", format.id));
         let audio = out.join(format!(".{}.audio.m4a", format.id));
         let joined = out.join(format!(".{}.joined.mp4", format.id));
-        for stale in [&video, &audio, &joined] {
-            let _ = fs::remove_file(stale);
-        }
+        // Every temporary file of this format starts with `.<id>.`, AVFoundation's own copies
+        // (`.<id>.video.mp4.sb-…`) included.
+        let prefix = format!(".{}.", format.id);
         let cleanup = || {
-            for temp in [&video, &audio, &joined] {
-                let _ = fs::remove_file(temp);
+            let Ok(entries) = fs::read_dir(&out) else {
+                return;
+            };
+            for entry in entries.flatten() {
+                let is_temp = entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|name| name.starts_with(&prefix));
+                if is_temp && entry.file_type().is_ok_and(|kind| kind.is_file()) {
+                    let _ = fs::remove_file(entry.path());
+                }
             }
         };
+        cleanup();
         let key_before = render_key(root, format);
         let result = (|| {
             let view = self.open_view(session_id, key, motion, format)?;
@@ -563,7 +634,8 @@ impl MotionRenderer {
                 writer.append(index, &frame)?;
                 if index % PROGRESS_EVERY == 0 || started.elapsed() > Duration::from_secs(1) {
                     if let Some(view) = self.update(job, |view| {
-                        if let Some(progress) = view.formats.iter_mut().find(|f| f.id == format.id) {
+                        if let Some(progress) = view.formats.iter_mut().find(|f| f.id == format.id)
+                        {
                             progress.frame = index;
                         }
                     }) {
@@ -616,8 +688,12 @@ mod tests {
 
     #[test]
     fn chooses_formats_in_the_motion_order() {
-        let ids = |formats: Vec<MotionFormat>| formats.into_iter().map(|f| f.id).collect::<Vec<_>>();
-        assert_eq!(ids(chosen_formats(&motion(), &[]).expect("all")), vec!["wide", "tall"]);
+        let ids =
+            |formats: Vec<MotionFormat>| formats.into_iter().map(|f| f.id).collect::<Vec<_>>();
+        assert_eq!(
+            ids(chosen_formats(&motion(), &[]).expect("all")),
+            vec!["wide", "tall"]
+        );
         assert_eq!(
             ids(chosen_formats(&motion(), &["tall".into(), "wide".into()]).expect("both")),
             vec!["wide", "tall"]

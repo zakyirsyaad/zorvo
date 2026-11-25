@@ -66,6 +66,13 @@ name = "canvas_render"
 path = "tests/canvas_render.rs"
 harness = false
 
+# Renders a fixture motion (stills, then an MP4 of two formats with audio) in a real Tauri app.
+# Same reason for `harness = false` as canvas_render. Skips unless ZORVO_RENDER_TEST=1.
+[[test]]
+name = "motion_render"
+path = "tests/motion_render.rs"
+harness = false
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 # The browser's views and pictures of canvas artboards (`artifacts/render.rs`): the versions

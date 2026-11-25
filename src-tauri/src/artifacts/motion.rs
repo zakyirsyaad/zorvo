@@ -8,17 +8,14 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
-use super::canvas::{
-    canvas_file, digest_where, is_id, only_known, Fields, MAX_DIGEST_ENTRIES,
-};
+use super::canvas::{canvas_file, digest_where, is_id, only_known, Fields, MAX_DIGEST_ENTRIES};
 use super::source::{read_checked, MAX_PATH_CHARS};
 use super::store::clean_title_within;
 
 pub const MOTION_FILE: &str = "motion.json";
 /// The folder inside a composition Zorvo writes to, and the only one.
 pub const OUT_DIR: &str = "out";
-pub const NOT_A_MOTION: &str =
-    "The motion must be a folder with a motion.json inside this folder.";
+pub const NOT_A_MOTION: &str = "The motion must be a folder with a motion.json inside this folder.";
 pub const MAX_MOTION_JSON_BYTES: usize = 64 * 1024;
 pub const MIN_DURATION: f64 = 0.5;
 pub const MAX_DURATION: f64 = 180.0;
@@ -141,12 +138,20 @@ fn whole(fields: &Fields, name: &str, path: &str) -> Result<u64, String> {
         .ok_or_else(|| format!("{path}{name}: must be a whole number"))
 }
 
-fn format_at(item: &serde_json::Value, index: usize, seen: &mut Vec<String>) -> Result<MotionFormat, String> {
+fn format_at(
+    item: &serde_json::Value,
+    index: usize,
+    seen: &mut Vec<String>,
+) -> Result<MotionFormat, String> {
     let path = format!("formats[{index}].");
     let fields = item
         .as_object()
         .ok_or_else(|| format!("formats[{index}]: must be an object"))?;
-    only_known(fields, &["id", "width", "height"], &format!("formats[{index}]"))?;
+    only_known(
+        fields,
+        &["id", "width", "height"],
+        &format!("formats[{index}]"),
+    )?;
     let id = fields
         .get("id")
         .and_then(serde_json::Value::as_str)
@@ -178,7 +183,11 @@ fn track_at(item: &serde_json::Value, index: usize, duration: f64) -> Result<Aud
     let fields = item
         .as_object()
         .ok_or_else(|| format!("audio[{index}]: must be an object"))?;
-    only_known(fields, &["file", "start", "volume"], &format!("audio[{index}]"))?;
+    only_known(
+        fields,
+        &["file", "start", "volume"],
+        &format!("audio[{index}]"),
+    )?;
     let file = fields
         .get("file")
         .and_then(serde_json::Value::as_str)
@@ -218,7 +227,9 @@ pub fn parse_motion(bytes: &[u8]) -> Result<Motion, String> {
     }
     only_known(
         root,
-        &["version", "title", "page", "duration", "fps", "formats", "audio", "poster"],
+        &[
+            "version", "title", "page", "duration", "fps", "formats", "audio", "poster",
+        ],
         "",
     )?;
     let title = root
@@ -226,7 +237,8 @@ pub fn parse_motion(bytes: &[u8]) -> Result<Motion, String> {
         .ok_or("title: is required")?
         .as_str()
         .ok_or("title: must be a string")?;
-    let title = clean_title_within(title, MAX_TITLE_CHARS).ok_or("title: must hold visible text")?;
+    let title =
+        clean_title_within(title, MAX_TITLE_CHARS).ok_or("title: must hold visible text")?;
     let page = match root.get("page") {
         None => "index.html",
         Some(value) => value
@@ -236,7 +248,9 @@ pub fn parse_motion(bytes: &[u8]) -> Result<Motion, String> {
     };
     let duration = number(root, "duration", "")?.ok_or("duration: is required")?;
     if !(MIN_DURATION..=MAX_DURATION).contains(&duration) {
-        return Err(format!("duration: must be {MIN_DURATION} to {MAX_DURATION} seconds"));
+        return Err(format!(
+            "duration: must be {MIN_DURATION} to {MAX_DURATION} seconds"
+        ));
     }
     let fps = match root.get("fps") {
         None => DEFAULT_FPS,
@@ -343,7 +357,8 @@ pub fn out_dir(root: &Path) -> Result<PathBuf, String> {
     Ok(out)
 }
 
-pub const OUT_NOT_A_FOLDER: &str = "Zorvo writes renders to the out folder, and out is not a folder.";
+pub const OUT_NOT_A_FOLDER: &str =
+    "Zorvo writes renders to the out folder, and out is not a folder.";
 
 /// `out/frames/` for stills, made like `out/`.
 pub fn frames_dir(root: &Path) -> Result<PathBuf, String> {
@@ -361,7 +376,11 @@ pub fn frames_dir(root: &Path) -> Result<PathBuf, String> {
 /// The file name of a still: the format and the time in hundredths, so names sort by time.
 pub fn still_name(format_id: &str, seconds: f64) -> String {
     let hundredths = (seconds * 100.0).round() as u64;
-    format!("{format_id}-{:03}.{:02}.png", hundredths / 100, hundredths % 100)
+    format!(
+        "{format_id}-{:03}.{:02}.png",
+        hundredths / 100,
+        hundredths % 100
+    )
 }
 
 #[cfg(test)]
@@ -398,7 +417,10 @@ mod tests {
         let motion = parse_motion(SPEC.as_bytes()).expect("spec example parses");
         assert_eq!(motion.title, "Compare in 15 seconds");
         assert_eq!(motion.formats.len(), 2);
-        assert_eq!(motion.format("tall").map(|f| (f.width, f.height)), Some((1080, 1920)));
+        assert_eq!(
+            motion.format("tall").map(|f| (f.width, f.height)),
+            Some((1080, 1920))
+        );
         assert_eq!(motion.audio[1].volume, 1.0);
         assert_eq!(motion.frame_count(), 900);
         assert_eq!(motion.poster, 4.5);
@@ -416,7 +438,9 @@ mod tests {
     #[test]
     fn refuses_odd_and_out_of_range_sizes() {
         assert_eq!(
-            err(r#"{"version":1,"title":"T","duration":2,"formats":[{"id":"a","width":641,"height":360}]}"#),
+            err(
+                r#"{"version":1,"title":"T","duration":2,"formats":[{"id":"a","width":641,"height":360}]}"#
+            ),
             "formats[0].width: must be even"
         );
         assert!(err(r#"{"version":1,"title":"T","duration":2,"formats":[{"id":"a","width":4000,"height":360}]}"#)
@@ -432,9 +456,18 @@ mod tests {
 
     #[test]
     fn refuses_bad_timing() {
-        assert!(err(&minimal("").replace("\"duration\":2", "\"duration\":200")).starts_with("duration:"));
-        assert_eq!(err(&minimal(r#","fps":29"#)), "fps: must be 24, 25, 30, 50 or 60");
-        assert_eq!(err(&minimal(r#","poster":9"#)), "poster: must be within the duration");
+        assert!(
+            err(&minimal("").replace("\"duration\":2", "\"duration\":200"))
+                .starts_with("duration:")
+        );
+        assert_eq!(
+            err(&minimal(r#","fps":29"#)),
+            "fps: must be 24, 25, 30, 50 or 60"
+        );
+        assert_eq!(
+            err(&minimal(r#","poster":9"#)),
+            "poster: must be within the duration"
+        );
     }
 
     #[test]
@@ -478,7 +511,10 @@ mod tests {
         assert_eq!(by_folder, by_file);
         assert_eq!(by_folder.relative, "promo");
         assert_eq!(resolve_motion(&session.0, "..").unwrap_err(), NOT_A_MOTION);
-        assert_eq!(resolve_motion(&session.0, "missing").unwrap_err(), NOT_A_MOTION);
+        assert_eq!(
+            resolve_motion(&session.0, "missing").unwrap_err(),
+            NOT_A_MOTION
+        );
     }
 
     #[test]
@@ -486,7 +522,10 @@ mod tests {
         let root = Temp::new("motion-key");
         fs::write(root.0.join(MOTION_FILE), minimal("")).expect("spec");
         fs::write(root.0.join("index.html"), "<p>one</p>").expect("page");
-        let format = parse_motion(minimal("").as_bytes()).expect("parses").formats[0].clone();
+        let format = parse_motion(minimal("").as_bytes())
+            .expect("parses")
+            .formats[0]
+            .clone();
         let first = render_key(&root.0, &format).expect("key");
         let out = out_dir(&root.0).expect("out");
         fs::write(out.join("wide.mp4"), b"video").expect("render");

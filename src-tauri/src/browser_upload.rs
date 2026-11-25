@@ -12,8 +12,10 @@
 //! approval is not the one sent.
 
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
 /// At most this many files in one upload.
@@ -26,10 +28,56 @@ pub const ARM_TTL: Duration = Duration::from_secs(5);
 /// the upload, so they cannot go at once.
 pub const STAGED_MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 
+/// At most this many uploads per session browser, as the Chromium worker allows.
+pub const MAX_UPLOADS: usize = 20;
+
 pub const NEEDS_APPROVAL: &str =
     "This upload needs explicit permission for these files and the receiving origin.";
 pub const NOT_A_FILE_INPUT: &str =
     "The element did not open a file chooser. Point ref at an input of type file.";
+pub const UPLOAD_LIMIT: &str =
+    "This session has reached its upload limit. Close the session browser to start a fresh one.";
+
+/// Uploads made per session in this run, reset when its browser closes.
+static UPLOADS: Mutex<Option<HashMap<String, usize>>> = Mutex::new(None);
+
+/// Refuses an upload once the session has made `MAX_UPLOADS`.
+pub fn check_limit(session: &str) -> Result<(), String> {
+    let uploads = UPLOADS.lock().unwrap_or_else(|e| e.into_inner());
+    let made = uploads
+        .as_ref()
+        .and_then(|map| map.get(session))
+        .copied()
+        .unwrap_or(0);
+    if made >= MAX_UPLOADS {
+        return Err(UPLOAD_LIMIT.into());
+    }
+    Ok(())
+}
+
+/// Counts an upload a page took.
+pub fn record_upload(session: &str) {
+    let mut uploads = UPLOADS.lock().unwrap_or_else(|e| e.into_inner());
+    *uploads
+        .get_or_insert_with(HashMap::new)
+        .entry(session.to_owned())
+        .or_default() += 1;
+}
+
+/// Forgets a session's count when its browser closes.
+pub fn forget(session: &str) {
+    if let Some(map) = UPLOADS.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+        map.remove(session);
+    }
+}
+
+/// The file input an upload goes into: a ref is required, and the tab named in `args`, if any.
+pub fn requested_ref(args: &Value) -> Result<&str, String> {
+    args.get("ref")
+        .and_then(Value::as_str)
+        .filter(|r| !r.is_empty())
+        .ok_or_else(|| "Point ref at the file input to upload into.".to_string())
+}
 
 /// The `paths` an agent asked to upload: 1 to `MAX_FILES` non-empty strings.
 pub fn requested_paths(args: &Value) -> Result<Vec<String>, String> {
@@ -98,21 +146,24 @@ pub fn frame_origin(protocol: &str, host: &str, port: i64) -> String {
     }
 }
 
-/// What the one-time card asks the user to approve.
-pub fn approval_for(url: &str, paths: &[PathBuf]) -> Value {
+/// What the one-time card asks the user to approve, and the tab it was asked on: the upload goes
+/// into that tab even if another one is active by the time the user answers.
+pub fn approval_for(url: &str, tab: &str, paths: &[PathBuf]) -> Value {
     json!({
         "url": url,
+        "tabId": tab,
         "paths": paths.iter().map(|p| p.to_string_lossy()).collect::<Vec<_>>(),
         "engine": "webkit",
     })
 }
 
-/// The approval covers exactly this origin and these files, in this order.
-pub fn matches_approval(approval: &Value, url: &str, paths: &[PathBuf]) -> bool {
+/// The approval covers exactly this origin, this tab and these files, in this order.
+pub fn matches_approval(approval: &Value, url: &str, tab: &str, paths: &[PathBuf]) -> bool {
     let Some(approved) = approval.get("paths").and_then(Value::as_array) else {
         return false;
     };
     approval.get("url").and_then(Value::as_str) == Some(url)
+        && approval.get("tabId").and_then(Value::as_str) == Some(tab)
         && approved.len() == paths.len()
         && approved
             .iter()
@@ -195,7 +246,9 @@ pub fn sweep(dir: &Path, now: SystemTime, max_age: Duration) {
     }
 }
 
-/// The approval card's content for a WebKit upload: the page's origin and the canonical files.
+/// The approval card's content for a WebKit upload: the receiving origin, the tab and the canonical
+/// files. It is asked only for a ref that names a file input, so an approval is never spent on an
+/// upload that cannot run.
 #[cfg(target_os = "macos")]
 pub async fn info(
     app: &tauri::AppHandle,
@@ -203,17 +256,25 @@ pub async fn info(
     root: &Path,
     args: &Value,
 ) -> Result<Value, String> {
+    requested_ref(args)?;
+    check_limit(session)?;
     let paths = requested_paths(args)?
         .iter()
         .map(|path| workspace_file(root, path))
         .collect::<Result<Vec<_>, _>>()?;
-    let page = crate::browser::upload_page(app, session.into(), args).await?;
-    Ok(approval_for(&origin_of(&page)?, &paths))
+    let (origin, tab) = crate::browser::upload_page(app, session.into(), args).await?;
+    let mut pinned = args.clone();
+    pinned["tabId"] = json!(tab);
+    if !crate::browser::upload_check(app, session.into(), &pinned).await? {
+        return Err("Point ref at an input of type file.".into());
+    }
+    Ok(approval_for(&origin, &tab, &paths))
 }
 
-/// Uploads the approved files into the file input at `ref`: checks the approval against the files
-/// and the page as they are now, stages copies, arms the tab and clicks the input. The answer says
-/// so only once the page's file chooser has taken the files.
+/// Uploads the approved files into the file input at `ref`, in the tab the approval names: checks
+/// the approval against the files and the page as they are now, stages copies, arms the tab and
+/// clicks the input. It answers only once the page's chooser took the files, and on every other
+/// outcome (a failed click, an error, no chooser in time) the files are withdrawn.
 #[cfg(target_os = "macos")]
 pub async fn upload(
     app: &tauri::AppHandle,
@@ -223,16 +284,31 @@ pub async fn upload(
     approval: &Value,
 ) -> Result<Value, String> {
     use tauri::Manager;
-    if args.get("ref").and_then(Value::as_str).is_none() {
-        return Err("Point ref at the file input to upload into.".into());
+    requested_ref(args)?;
+    check_limit(session)?;
+    let tab = approval
+        .get("tabId")
+        .and_then(Value::as_str)
+        .ok_or(NEEDS_APPROVAL)?;
+    if args
+        .get("tabId")
+        .or_else(|| args.get("tabID"))
+        .and_then(Value::as_str)
+        .is_some_and(|asked| asked != tab)
+    {
+        return Err(NEEDS_APPROVAL.into());
+    }
+    let mut pinned = args.clone();
+    pinned["tabId"] = json!(tab);
+    if let Some(object) = pinned.as_object_mut() {
+        object.remove("tabID");
     }
     let paths = requested_paths(args)?
         .iter()
         .map(|path| workspace_file(root, path))
         .collect::<Result<Vec<_>, _>>()?;
-    let page = crate::browser::upload_page(app, session.into(), args).await?;
-    let origin = origin_of(&page)?;
-    if !matches_approval(approval, &origin, &paths) {
+    let (origin, _) = crate::browser::upload_page(app, session.into(), &pinned).await?;
+    if !matches_approval(approval, &origin, tab, &paths) {
         return Err(NEEDS_APPROVAL.into());
     }
     let dir = app
@@ -242,16 +318,37 @@ pub async fn upload(
         .join("browser-uploads");
     sweep(&dir, SystemTime::now(), STAGED_MAX_AGE);
     let staged = stage(&dir, &paths)?;
-    crate::browser::upload_arm(app, session.into(), args, &origin, &staged).await?;
-    let deadline = std::time::Instant::now() + ARM_TTL;
-    while std::time::Instant::now() < deadline {
-        if !crate::browser::upload_pending(app, session.into(), args).await? {
-            return Ok(json!({"files": staged.len(), "engine": "webkit"}));
+    let mut id = [0u8; 8];
+    getrandom::fill(&mut id).map_err(|_| "The upload could not be prepared.")?;
+    pinned["uploadId"] = json!((u64::from_le_bytes(id) >> 11).max(1));
+    let outcome = async {
+        crate::browser::upload_arm(app, session.into(), &pinned, &origin, &staged).await?;
+        // A little past the armed upload's own lifetime, so it always ends as taken or expired.
+        let deadline = std::time::Instant::now() + ARM_TTL + Duration::from_secs(1);
+        while std::time::Instant::now() < deadline {
+            match crate::browser::upload_state(app, session.into(), &pinned)
+                .await?
+                .as_str()
+            {
+                "taken" => return Ok(true),
+                "waiting" => tokio::time::sleep(Duration::from_millis(50)).await,
+                _ => return Ok(false),
+            }
         }
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        Ok::<_, String>(false)
     }
-    let _ = crate::browser::upload_disarm(app, session.into(), args).await;
-    Err(NOT_A_FILE_INPUT.into())
+    .await;
+    if !matches!(outcome, Ok(true)) {
+        let _ = crate::browser::upload_disarm(app, session.into(), &pinned).await;
+    }
+    match outcome {
+        Ok(true) => {
+            record_upload(session);
+            Ok(json!({"files": staged.len(), "engine": "webkit", "tabId": tab}))
+        }
+        Ok(false) => Err(NOT_A_FILE_INPUT.into()),
+        Err(error) => Err(error),
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -359,31 +456,45 @@ mod tests {
     }
 
     #[test]
-    fn an_approval_covers_exactly_its_origin_and_files() {
+    fn an_approval_covers_exactly_its_origin_tab_and_files() {
         let files = vec![PathBuf::from("/w/a.xls"), PathBuf::from("/w/b.xls")];
-        let approval = approval_for("https://example.com/", &files);
-        assert!(matches_approval(&approval, "https://example.com/", &files));
+        let site = "https://example.com/";
+        let approval = approval_for(site, "tab-1", &files);
+        assert_eq!(approval["tabId"], "tab-1");
+        assert!(matches_approval(&approval, site, "tab-1", &files));
         assert!(!matches_approval(
             &approval,
             "https://evil.example/",
+            "tab-1",
             &files
         ));
-        assert!(!matches_approval(
-            &approval,
-            "https://example.com/",
-            &files[..1]
-        ));
+        assert!(!matches_approval(&approval, site, "tab-2", &files));
+        assert!(!matches_approval(&approval, site, "tab-1", &files[..1]));
         let reversed = vec![files[1].clone(), files[0].clone()];
-        assert!(!matches_approval(
-            &approval,
-            "https://example.com/",
-            &reversed
-        ));
-        assert!(!matches_approval(
-            &json!({}),
-            "https://example.com/",
-            &files
-        ));
+        assert!(!matches_approval(&approval, site, "tab-1", &reversed));
+        assert!(!matches_approval(&json!({}), site, "tab-1", &files));
+    }
+
+    #[test]
+    fn an_upload_needs_a_ref() {
+        assert!(requested_ref(&json!({})).is_err());
+        assert!(requested_ref(&json!({"ref": ""})).is_err());
+        assert!(requested_ref(&json!({"ref": 3})).is_err());
+        assert_eq!(requested_ref(&json!({"ref": "e12"})).unwrap(), "e12");
+    }
+
+    #[test]
+    fn stops_a_session_at_twenty_uploads_until_its_browser_closes() {
+        let session = "upload-limit-test";
+        forget(session);
+        for _ in 0..MAX_UPLOADS {
+            assert!(check_limit(session).is_ok());
+            record_upload(session);
+        }
+        assert_eq!(check_limit(session).unwrap_err(), UPLOAD_LIMIT);
+        assert!(check_limit("upload-limit-other").is_ok());
+        forget(session);
+        assert!(check_limit(session).is_ok());
     }
 
     #[test]

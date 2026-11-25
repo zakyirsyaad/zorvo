@@ -256,7 +256,11 @@ impl BrowserDelegate {
                 tab.upload = None;
             }
             match &tab.upload {
-                Some(upload) if upload.origin == origin => tab.upload.take().map(Some),
+                Some(upload) if upload.origin == origin => {
+                    let taken = tab.upload.take();
+                    tab.upload_taken = taken.as_ref().map(|upload| upload.id);
+                    taken.map(Some)
+                }
                 Some(_) => Some(None),
                 None => None,
             }

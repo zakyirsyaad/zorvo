@@ -162,10 +162,12 @@ zoom/reset while checking that form state survives and another tab stays at 100%
 
 Additional explicit cases:
 
-- `upload`: an agent upload armed on a tab answers the page's own file chooser after the helper
-  clicks the input (the page reads back both files' names and contents), a click that opens no
-  chooser leaves the upload armed until it is withdrawn, and no upload is armed for an origin other
-  than the page's. The system open panel for a person's own click is not driven here.
+- `upload`: the ref check tells a file input from a button; an agent upload armed on a tab answers
+  the page's own file chooser after the helper clicks the input and reads `taken` (the page reads
+  back both files' names and contents); a click that opens no chooser reads `waiting`, then
+  `expired` once the arm's lifetime ends, never `taken`; withdrawing needs no call grant; and no
+  upload is armed for an origin other than the page's. The system open panel for a person's own
+  click is not driven here.
 - `forms`: nested open-shadow refs, a strict-CSP page, awaited expressions,
   exactly-once runtime errors, the legacy script alias, and an actual React
   controlled long form. React is bundled from the checkout into an in-memory

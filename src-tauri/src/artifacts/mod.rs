@@ -6,6 +6,7 @@ pub mod canvas_export;
 pub mod canvas_shell;
 pub mod canvas_view;
 pub mod motion;
+pub mod motion_protocol;
 pub mod motion_store;
 pub mod page_script;
 pub mod picks;

@@ -344,6 +344,9 @@ pub fn respond(served: &Served, method: &str, uri: &str) -> Response<Vec<u8>> {
     if method != "GET" {
         return not_found();
     }
+    if let Some(answer) = super::motion_protocol::respond_motion(served, uri) {
+        return answer;
+    }
     if let Some(url) = parse_canvas_url(uri) {
         return respond_canvas(served, url);
     }

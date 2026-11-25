@@ -402,12 +402,14 @@ pub fn list_sessions(artifacts: &ArtifactStore, session_ids: &[String]) -> Vec<S
             let canvases = artifacts.canvases(session_id);
             let motions = artifacts.motions(session_id);
             let videos = artifacts.videos(session_id);
+            // Any file unreadable: the answer says nothing about what is gone.
+            let failed =
+                listed.is_err() || canvases.is_err() || motions.is_err() || videos.is_err();
             SessionArtifacts {
                 motions: motions.unwrap_or_default(),
                 videos: videos.unwrap_or_default(),
                 session_id: session_id.clone(),
-                // Either file unreadable: the answer says nothing about what is gone.
-                failed: listed.is_err() || canvases.is_err(),
+                failed,
                 artifacts: listed.unwrap_or_default(),
                 canvases: canvases
                     .unwrap_or_default()

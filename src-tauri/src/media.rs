@@ -147,8 +147,18 @@ fn status_only(status: StatusCode) -> Response<Vec<u8>> {
         .unwrap_or_else(|_| Response::new(Vec::new()))
 }
 
-fn read_span(path: &Path, start: u64, end: u64) -> std::io::Result<Vec<u8>> {
-    let mut file = fs::File::open(path)?;
+/// Opens `path` for reading without following a link in its last part, and without blocking on a
+/// pipe.
+fn open_no_follow(path: &Path) -> Option<fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+        .ok()
+}
+
+fn read_span(file: &mut fs::File, start: u64, end: u64) -> std::io::Result<Vec<u8>> {
     file.seek(SeekFrom::Start(start))?;
     let mut bytes = Vec::new();
     file.take(end - start + 1).read_to_end(&mut bytes)?;
@@ -165,10 +175,16 @@ pub fn respond(tokens: &MediaTokens, request: &Request<Vec<u8>>) -> Response<Vec
     let Some((path, mime)) = tokens.target(token) else {
         return status_only(StatusCode::NOT_FOUND);
     };
-    let Ok(meta) = fs::metadata(&path) else {
+    // The file is judged again as it is now: a link put in its place since the token was made is
+    // not followed, and it must still have a video's header.
+    let Some(mut file) = open_no_follow(&path) else {
         return status_only(StatusCode::NOT_FOUND);
     };
-    if !meta.is_file() {
+    let Ok(meta) = file.metadata() else {
+        return status_only(StatusCode::NOT_FOUND);
+    };
+    let mut header = [0u8; 12];
+    if !meta.is_file() || file.read_exact(&mut header).is_err() || sniff_video(&header).is_none() {
         return status_only(StatusCode::NOT_FOUND);
     }
     let len = meta.len();
@@ -193,7 +209,7 @@ pub fn respond(tokens: &MediaTokens, request: &Request<Vec<u8>>) -> Response<Vec
     let body = if method == "HEAD" || len == 0 {
         Vec::new()
     } else {
-        match read_span(&path, start, end) {
+        match read_span(&mut file, start, end) {
             Ok(bytes) => bytes,
             Err(_) => return status_only(StatusCode::NOT_FOUND),
         }
@@ -263,6 +279,12 @@ pub fn media_url_for_render(
     let format = motion
         .format(&format)
         .ok_or_else(|| NOT_RENDERED.to_string())?;
+    // Zorvo writes `out/` itself and refuses a link there; one put there by hand is not followed.
+    let is_real_out = fs::symlink_metadata(root.join(crate::artifacts::motion::OUT_DIR))
+        .is_ok_and(|meta| meta.is_dir());
+    if !is_real_out {
+        return Err(NOT_RENDERED.to_string());
+    }
     let path = out_file(&root, &format.id);
     let mime = video_type(&path).ok_or_else(|| NOT_RENDERED.to_string())?;
     tokens.issue(path, mime)

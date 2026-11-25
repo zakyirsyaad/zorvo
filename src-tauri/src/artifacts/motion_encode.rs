@@ -60,6 +60,8 @@ fn dictionary(entries: &[(&NSString, &AnyObject)]) -> Retained<NSDictionary<NSSt
 
 /// An H.264 MP4 being written, one frame at a time.
 pub struct VideoWriter {
+    /// Set once `finish` ran: a writer dropped before that is cancelled, never left writing.
+    is_finished: bool,
     writer: Retained<AVAssetWriter>,
     input: Retained<AVAssetWriterInput>,
     adaptor: Retained<AVAssetWriterInputPixelBufferAdaptor>,
@@ -127,6 +129,7 @@ impl VideoWriter {
             }
             writer.startSessionAtSourceTime(kCMTimeZero);
             Ok(Self {
+                is_finished: false,
                 writer,
                 input,
                 adaptor,
@@ -197,7 +200,8 @@ impl VideoWriter {
     }
 
     /// Ends the file and waits for it to be written.
-    pub fn finish(self) -> Result<(), String> {
+    pub fn finish(mut self) -> Result<(), String> {
+        self.is_finished = true;
         let (sent, received) = mpsc::channel();
         let done = RcBlock::new(move || {
             let _ = sent.send(());
@@ -218,6 +222,20 @@ impl VideoWriter {
     }
 }
 
+impl Drop for VideoWriter {
+    fn drop(&mut self) {
+        if self.is_finished {
+            return;
+        }
+        // SAFETY: as in `new`; a writer still writing is cancelled before it is released.
+        unsafe {
+            if self.writer.status() == AVAssetWriterStatus::Writing {
+                self.writer.cancelWriting();
+            }
+        }
+    }
+}
+
 /// One audio track of a motion: its file, when it starts and its volume.
 pub struct Track {
     pub file: PathBuf,
@@ -230,10 +248,12 @@ fn seconds(value: f64) -> CMTime {
     unsafe { CMTime::with_seconds(value, AUDIO_TIMESCALE) }
 }
 
+/// The first track of `kind` in the file at `path`, with its asset, which must stay alive as long
+/// as the track is used: a track holds its asset weakly.
 fn first_track(
     path: &Path,
     kind: &objc2_av_foundation::AVMediaType,
-) -> Result<Retained<AVAssetTrack>, String> {
+) -> Result<(Retained<AVURLAsset>, Retained<AVAssetTrack>), String> {
     let (sent, received) = mpsc::channel();
     // SAFETY: the asset is used on this thread; the block copies the first track out of the
     // array AVFoundation hands it (or nothing) and sends it, which is all it does.
@@ -249,9 +269,7 @@ fn first_track(
         let track = received
             .recv_timeout(EXPORT_TIMEOUT)
             .map_err(|_| failed())?;
-        // The asset must outlive its track's use; keep it alive until the track is taken.
-        drop(asset);
-        track.map(|track| track.0).ok_or_else(failed)
+        track.map(|track| (asset, track.0)).ok_or_else(failed)
     }
 }
 
@@ -288,8 +306,10 @@ pub fn mix_audio(tracks: &[Track], duration: f64, out: &Path) -> Result<(), Stri
         let audio = AVMediaTypeAudio.ok_or_else(failed)?;
         let composition = AVMutableComposition::composition();
         let mut parameters: Vec<Retained<AVAudioMixInputParameters>> = Vec::new();
+        // Each source and its asset are kept until the export has read them.
+        let mut sources = Vec::new();
         for track in tracks {
-            let source = first_track(&track.file, audio)?;
+            let (asset, source) = first_track(&track.file, audio)?;
             let length = (duration - track.start).max(0.0);
             let available = source.timeRange().duration;
             let wanted = seconds(length);
@@ -312,6 +332,7 @@ pub fn mix_audio(tracks: &[Track], duration: f64, out: &Path) -> Result<(), Stri
                 AVMutableAudioMixInputParameters::audioMixInputParametersWithTrack(Some(&target));
             input.setVolume_atTime(track.volume as f32, kCMTimeZero);
             parameters.push(Retained::into_super(input));
+            sources.push((asset, source));
         }
         let mix = AVMutableAudioMix::audioMix();
         mix.setInputParameters(&NSArray::from_retained_slice(&parameters));
@@ -324,7 +345,9 @@ pub fn mix_audio(tracks: &[Track], duration: f64, out: &Path) -> Result<(), Stri
         session.setOutputFileType(Some(AVFileTypeAppleM4A.ok_or_else(failed)?));
         session.setAudioMix(Some(&mix));
         session.setTimeRange(CMTimeRange::new(kCMTimeZero, seconds(duration)));
-        export(&session)
+        let exported = export(&session);
+        drop(sources);
+        exported
     }
 }
 
@@ -335,8 +358,8 @@ pub fn join(video: &Path, audio: &Path, duration: f64, out: &Path) -> Result<(),
     unsafe {
         let video_kind = AVMediaTypeVideo.ok_or_else(failed)?;
         let audio_kind = AVMediaTypeAudio.ok_or_else(failed)?;
-        let picture = first_track(video, video_kind)?;
-        let sound = first_track(audio, audio_kind)?;
+        let (_video_asset, picture) = first_track(video, video_kind)?;
+        let (_audio_asset, sound) = first_track(audio, audio_kind)?;
         let composition = AVMutableComposition::composition();
         let range = CMTimeRange::new(kCMTimeZero, picture.timeRange().duration);
         composition

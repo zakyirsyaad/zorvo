@@ -6,7 +6,8 @@ export interface FileVideoProps {
   rootPath: string;
   relativePath: string;
   size: number;
-  /** Moves when the folder's changes are read again; the file is asked for again then. */
+  /** Moves when the folder's changes are read again. Not followed: a playing video would restart on
+   * every window focus. A token stays good for the file however it changes. */
   version: number;
 }
 
@@ -15,7 +16,7 @@ export interface FileVideoProps {
  * inside it; the backend checks both and the file's header and hands back a `zorvo-media` token,
  * which it then serves in byte ranges.
  */
-export function FileVideo({ rootPath, relativePath, size, version }: FileVideoProps) {
+export function FileVideo({ rootPath, relativePath, size }: FileVideoProps) {
   const [url, setUrl] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   useEffect(() => {
@@ -31,7 +32,7 @@ export function FileVideo({ rootPath, relativePath, size, version }: FileVideoPr
     return () => {
       isGone = true;
     };
-  }, [rootPath, relativePath, version]);
+  }, [rootPath, relativePath]);
   const name = relativePath.slice(relativePath.lastIndexOf("/") + 1);
   if (failure) {
     return (

@@ -116,7 +116,10 @@ fn is_relative_file_with(file: &str, extensions: &[&str]) -> bool {
         && file
             .split('/')
             .all(|part| !part.is_empty() && part != "." && part != "..")
-        && file.split('/').next() != Some(OUT_DIR)
+        && !file
+            .split('/')
+            .next()
+            .is_some_and(|first| first.eq_ignore_ascii_case(OUT_DIR))
 }
 
 fn number(fields: &Fields, name: &str, path: &str) -> Result<Option<f64>, String> {

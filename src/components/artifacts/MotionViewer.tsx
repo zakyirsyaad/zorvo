@@ -34,10 +34,26 @@ function renderState(format: FormatState): string {
 }
 
 /** A format's rendered MP4, played in Zorvo's own document through `zorvo-media`. */
-function RenderedVideo({ sessionId, motionKey, format, title, onError }: { sessionId: string; motionKey: string; format: string; title: string; onError: (message: string) => void }) {
+function RenderedVideo({
+  sessionId,
+  motionKey,
+  format,
+  title,
+  revision,
+  onError,
+}: {
+  sessionId: string;
+  motionKey: string;
+  format: string;
+  title: string;
+  /** Moves when the render may have changed (a new render landed): the file is asked for again. */
+  revision: string;
+  onError: (message: string) => void;
+}) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     let isGone = false;
+    setUrl(null);
     invoke<string>("media_url_for_render", { sessionId, key: motionKey, format })
       .then((answer) => {
         if (!isGone && typeof answer === "string") setUrl(answer);
@@ -46,7 +62,7 @@ function RenderedVideo({ sessionId, motionKey, format, title, onError }: { sessi
     return () => {
       isGone = true;
     };
-  }, [sessionId, motionKey, format, onError]);
+  }, [sessionId, motionKey, format, revision, onError]);
   return (
     <div className="flex min-h-0 flex-1 items-center justify-center bg-surface-2 p-2.5">
       {url && <video key={url} src={url} controls aria-label={`${title}, ${format}`} className="max-h-full max-w-full rounded-md" />}
@@ -175,7 +191,14 @@ export function MotionViewer({ sessionId, motionKey, title, turnsEnded, onBack, 
           {shown.kind === "preview" ? (
             <ArtifactPageBox target={{ kind: "motion", sessionId, key: motionKey, format: current }} title={name} isCovered={open !== null} onError={onError} />
           ) : (
-            <RenderedVideo sessionId={sessionId} motionKey={motionKey} format={shown.format} title={name} onError={onError} />
+            <RenderedVideo
+              sessionId={sessionId}
+              motionKey={motionKey}
+              format={shown.format}
+              title={name}
+              revision={`${jobs.filter((job) => job.state === "done").length}:${formats.find((listed) => listed.id === shown.format)?.isUpToDate ?? false}`}
+              onError={onError}
+            />
           )}
           {shown.kind === "preview" && (
             <div className="flex shrink-0 items-center gap-2 border-t border-border px-2.5 py-1.5">

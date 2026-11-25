@@ -82,6 +82,8 @@ pub struct JobView {
 
 struct Job {
     view: JobView,
+    /// Order of creation, for pruning ended jobs oldest first.
+    seq: u64,
     root: PathBuf,
     destination: Destination,
     cancelled: bool,
@@ -107,6 +109,7 @@ pub struct Stills {
 
 #[derive(Default)]
 struct Queue {
+    next_seq: u64,
     jobs: HashMap<String, Job>,
     waiting: VecDeque<String>,
     stills: VecDeque<StillsRequest>,
@@ -155,6 +158,43 @@ pub fn chosen_formats(motion: &Motion, wanted: &[String]) -> Result<Vec<MotionFo
         .filter(|f| wanted.contains(&f.id))
         .cloned()
         .collect())
+}
+
+/// How many ended jobs are kept, so their last state can still be read.
+const KEPT_ENDED_JOBS: usize = 50;
+
+/// Drops the oldest ended jobs past `KEPT_ENDED_JOBS`.
+fn prune(queue: &mut Queue) {
+    let mut ended: Vec<(String, u64)> = queue
+        .jobs
+        .iter()
+        .filter(|(_, job)| !matches!(job.view.state, JobState::Queued | JobState::Rendering))
+        .map(|(id, job)| (id.clone(), job.seq))
+        .collect();
+    if ended.len() <= KEPT_ENDED_JOBS {
+        return;
+    }
+    ended.sort_by_key(|(_, seq)| *seq);
+    let extra = ended.len() - KEPT_ENDED_JOBS;
+    for (id, _) in ended.into_iter().take(extra) {
+        queue.jobs.remove(&id);
+    }
+}
+
+/// Writes a file Zorvo owns in `out/`: whatever is at the path (a link put there included) is
+/// removed first, and the new file is created, never opened through a link.
+fn write_fresh(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    let refused = || super::motion::OUT_NOT_A_FOLDER.to_string();
+    if fs::symlink_metadata(path).is_ok() {
+        fs::remove_file(path).map_err(|_| refused())?;
+    }
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .and_then(|mut file| file.write_all(bytes))
+        .map_err(|_| refused())
 }
 
 /// The keys `out/render.json` recorded for each rendered format.
@@ -264,11 +304,14 @@ impl MotionRenderer {
             })
             .cloned()
             .collect();
+        let mut ended = Vec::new();
         for id in &replaced {
             if let Some(job) = queue.jobs.get_mut(id) {
                 job.view.state = JobState::Cancelled;
+                ended.push(job.view.clone());
             }
         }
+        prune(&mut queue);
         queue.waiting.retain(|id| !replaced.contains(id));
         let waiting = queue
             .waiting
@@ -302,10 +345,13 @@ impl MotionRenderer {
             saved: 0,
         };
         queue.waiting.push_back(view.job.clone());
+        queue.next_seq += 1;
+        let seq = queue.next_seq;
         queue.jobs.insert(
             view.job.clone(),
             Job {
                 view: view.clone(),
+                seq,
                 root,
                 destination,
                 cancelled: false,
@@ -313,6 +359,9 @@ impl MotionRenderer {
         );
         drop(queue);
         self.wake.notify_all();
+        for replaced in &ended {
+            self.announce(replaced);
+        }
         self.announce(&view);
         Ok(view)
     }
@@ -407,10 +456,11 @@ impl MotionRenderer {
                     queue = self.wake.wait(queue).unwrap_or_else(|e| e.into_inner());
                 }
             };
-            match next {
+            // A panic in one request ends that request, never the worker every later one waits on.
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| match next {
                 Err(request) => self.answer_stills(request),
                 Ok(job) => self.run_job(&job),
-            }
+            }));
         }
     }
 
@@ -479,8 +529,7 @@ impl MotionRenderer {
                 let name = still_name(&format.id, t);
                 let png = png_of(rgba.clone(), format.width, format.height)
                     .ok_or_else(|| super::motion_capture::CAPTURE_FAILED.to_string())?;
-                fs::write(frames.join(&name), png)
-                    .map_err(|_| super::motion::OUT_NOT_A_FOLDER.to_string())?;
+                write_fresh(&frames.join(&name), &png)?;
                 written.push((format.id.clone(), t, format!("{OUT_DIR}/frames/{name}")));
                 cells.push(SheetCell {
                     row,
@@ -492,8 +541,7 @@ impl MotionRenderer {
         }
         let sheet = contact_sheet(cells)
             .ok_or_else(|| super::motion_capture::CAPTURE_FAILED.to_string())?;
-        fs::write(frames.join("sheet.jpg"), &sheet)
-            .map_err(|_| super::motion::OUT_NOT_A_FOLDER.to_string())?;
+        write_fresh(&frames.join("sheet.jpg"), &sheet)?;
         Ok(Stills {
             title: motion.title,
             frames: written,

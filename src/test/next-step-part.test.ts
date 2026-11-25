@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { withNextStep } from '../lib/next-step-part';
+import { withAnswerUndone, withNextStep } from '../lib/next-step-part';
 import type { AcpReducerContext } from '../lib/acp-events';
 import type { ChatMessage } from '../types';
 
@@ -28,5 +28,25 @@ describe('withNextStep', () => {
   it('leaves the messages alone when the user spoke last', () => {
     const messages = [open, user];
     expect(withNextStep(messages, { recap: 'Done.' }, ctx)).toBe(messages);
+  });
+});
+
+describe('withAnswerUndone', () => {
+  const sent: ChatMessage = { id: 'u2', role: 'user', content: 'Commit these changes.', timestamp: 10 };
+  const answered: ChatMessage = { ...open, isComplete: true, endedNormally: true, nextStep: { recap: 'Done.', answered: { label: 'Commit', at: 11 } } };
+
+  it('clears the answer a refused message recorded, keeping the step', () => {
+    const next = withAnswerUndone([user, answered], sent);
+    expect(next[1].nextStep).toEqual({ recap: 'Done.' });
+  });
+
+  it('leaves an answer recorded before the refused message alone', () => {
+    const earlier = { ...answered, nextStep: { recap: 'Done.', answered: { label: 'Commit', at: 5 } } };
+    expect(withAnswerUndone([user, earlier], sent)[1].nextStep?.answered?.label).toBe('Commit');
+  });
+
+  it('drops an answer-only step entirely', () => {
+    const only = { ...answered, nextStep: { answered: { label: 'Commit', at: 11 } } };
+    expect(withAnswerUndone([user, only], sent)[1]).not.toHaveProperty('nextStep');
   });
 });

@@ -4,6 +4,7 @@ import { Button } from "../ui/Button";
 import { ZorvoSymbol } from "../ui/ZorvoSymbol";
 import { ACTION_LABELS, buttonsOf, type NextStepButton, type NextStepFacts } from "../../lib/next-step";
 import type { NextStep } from "../../types";
+import { escapeVisible, escapeVisibleLines } from "../../lib/visible-text";
 
 /** What the main window hands the box under the newest finished turn. */
 export interface NextStepView {
@@ -84,7 +85,7 @@ export function NextStepBox({ step, agentName, view }: NextStepBoxProps) {
         <ZorvoSymbol className="size-3.5" strokeWidth={4.2} />
         {source}
       </div>
-      {step?.recap && <p className="whitespace-pre-wrap break-words text-ui text-fg-secondary">{step.recap}</p>}
+      {step?.recap && <p className="whitespace-pre-wrap break-words text-ui text-fg-secondary">{escapeVisibleLines(step.recap)}</p>}
       {chips.length > 0 && (
         <ul aria-label="What Zorvo sees" className="flex flex-wrap gap-1.5">
           {facts.branch && (
@@ -100,7 +101,7 @@ export function NextStepBox({ step, agentName, view }: NextStepBoxProps) {
           ))}
         </ul>
       )}
-      {step?.ask && <p className="text-ui font-semibold text-fg">{step.ask}</p>}
+      {step?.ask && <p className="break-words text-ui font-semibold text-fg">{escapeVisible(step.ask)}</p>}
       {isActive && buttons.length > 0 && (
         <div className="flex flex-wrap items-center gap-2">
           {buttons.map((button, index) => (
@@ -113,7 +114,7 @@ export function NextStepBox({ step, agentName, view }: NextStepBoxProps) {
               aria-describedby={index === 0 && pick ? pickId : undefined}
               onClick={() => view.onPress(button)}
             >
-              {button.label}
+              {button.kind === "reply" ? escapeVisible(button.label) : button.label}
             </Button>
           ))}
           {pick && (
@@ -127,10 +128,10 @@ export function NextStepBox({ step, agentName, view }: NextStepBoxProps) {
         <div className="flex flex-wrap items-center gap-2">
           {inertButtons(step).map((label) => (
             <Button key={label} variant="outline" size="sm" disabled>
-              {label}
+              {escapeVisible(label)}
             </Button>
           ))}
-          {step?.answered && <span className="ml-auto text-ui-sm text-fg-subtle">You answered {step.answered.label}</span>}
+          {step?.answered && <span className="ml-auto text-ui-sm text-fg-subtle">You answered {escapeVisible(step.answered.label)}</span>}
         </div>
       )}
       {isActive && view.blockedReason && <p className="text-ui-sm text-fg-muted">{view.blockedReason}</p>}

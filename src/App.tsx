@@ -1462,14 +1462,17 @@ export default function App() {
   };
 
   /** Sends what the composer held; a message the delegation pair blocks, or the agent did not take, goes back. */
-  /** Resolves true when the agent took the message; one it did not take goes back to the composer. */
-  const sendFromComposer = (sessionId: string, message: FirstMessage): Promise<boolean> => {
+  /**
+   * Resolves true when the agent took the message. One it did not take goes back to the composer,
+   * unless `giveBack` is false: a next-step press stays a press, and the draft in the box is left alone.
+   */
+  const sendFromComposer = (sessionId: string, message: FirstMessage, giveBack = true): Promise<boolean> => {
     if (delegation.sendBlockedReason(sessionId) !== null) {
-      giveBackMessage(sessionId, message.text, message.attachments);
+      if (giveBack) giveBackMessage(sessionId, message.text, message.attachments);
       return Promise.resolve(false);
     }
     return sendTo(sessionId, message).then((isTaken) => {
-      if (!isTaken) giveBackMessage(sessionId, message.text, message.attachments);
+      if (!isTaken && giveBack) giveBackMessage(sessionId, message.text, message.attachments);
       return isTaken;
     });
   };
@@ -1969,7 +1972,7 @@ export default function App() {
     blockedReason: isComposerSendBlocked ? composerNoteText ?? "You can't send right now." : undefined,
     pullRequest: activeSession ? pullRequestOf(activeSession) : null,
     tasks: backgroundTasks.tasks,
-    send: (sessionId, text) => sendFromComposer(sessionId, { text }),
+    send: (sessionId, text) => sendFromComposer(sessionId, { text }, false),
     updateMessages,
     openUrl: openPullRequest,
     openPreview: requestBrowserOpen,

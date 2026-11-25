@@ -15,3 +15,18 @@ export function withNextStep(messages: readonly ChatMessage[], step: NextStep, _
   if (last?.role !== 'agent') return messages as ChatMessage[];
   return messages.map((message, index) => (index === lastIndex ? { ...message, nextStep: step } : message));
 }
+
+/**
+ * Undoes what a refused message recorded: the agent never took `refused` (a sign-in or a private
+ * credit refusal arrives after the prompt was written), so a box answer recorded at or after it is
+ * cleared, and an answer-only step goes away with it.
+ */
+export function withAnswerUndone(messages: readonly ChatMessage[], refused: ChatMessage): ChatMessage[] {
+  return messages.map((message) => {
+    const answered = message.nextStep?.answered;
+    if (message.role !== 'agent' || !answered || answered.at < refused.timestamp) return message;
+    const { answered: _undone, ...step } = message.nextStep ?? {};
+    const { nextStep: _old, ...rest } = message;
+    return Object.keys(step).length > 0 ? { ...rest, nextStep: step } : (rest as ChatMessage);
+  });
+}

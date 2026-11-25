@@ -21,6 +21,7 @@ beforeEach(() => {
   });
 });
 
+let lastArgs: NextStepArgs | undefined;
 function setup(over: Partial<NextStepArgs> = {}) {
   let messages: ChatMessage[] = over.messages ? [...over.messages] : [USER, REPLY];
   let resolveSend: (taken: boolean) => void = () => undefined;
@@ -42,6 +43,7 @@ function setup(over: Partial<NextStepArgs> = {}) {
     openPreview,
     ...over,
   };
+  lastArgs = args;
   const hook = renderHook((props: NextStepArgs) => useNextStep(props), { initialProps: args });
   return { hook, send, openUrl, openPreview, resolve: (taken: boolean) => resolveSend(taken), messages: () => messages };
 }
@@ -101,5 +103,13 @@ describe("useNextStep", () => {
     const { hook } = setup({ blockedReason: "Sign in to Claude Code to send." });
     await waitFor(() => expect(hook.result.current).not.toBeNull());
     expect(hook.result.current?.blockedReason).toBe("Sign in to Claude Code to send.");
+  });
+
+  it("returns the same view across renders while nothing changed", async () => {
+    const { hook } = setup();
+    await waitFor(() => expect(hook.result.current?.facts.changes).toBeDefined());
+    const first = hook.result.current;
+    hook.rerender({ ...lastArgs!, send: vi.fn(), openUrl: vi.fn() });
+    expect(hook.result.current).toBe(first);
   });
 });

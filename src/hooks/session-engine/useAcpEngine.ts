@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { withAnswerUndone } from '../../lib/next-step-part';
 import {
   applyAcpUpdate,
   applyPermissionRequest,
@@ -362,7 +363,8 @@ export function useAcpEngine({
     failedPromptRef.current.delete(sessionId);
     const message = refused?.message;
     // The turn end before this one lands first; the message goes back at once.
-    if (message) updateNow(sessionId, (prev) => withoutMessage(prev, message.id));
+    // A next-step press that sent it is undone too: the agent never took the answer.
+    if (message) updateNow(sessionId, (prev) => withAnswerUndone(withoutMessage(prev, message.id), message));
     if (refused?.context) unsentContextRef.current.set(sessionId, refused.context);
     if (!message) return undefined;
     return message.attachments ? { text: message.content, attachments: message.attachments } : { text: message.content };

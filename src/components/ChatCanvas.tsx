@@ -292,7 +292,8 @@ export function ChatCanvas({
           agentProfileId={agentProfileId}
           visualSessionId={visualSessionId}
           isLast={msg === lastMessage}
-          nextStep={nextStep}
+          // Only the row the box belongs to gets the view, so the others keep their memo.
+          nextStep={nextStep === undefined ? undefined : nextStep?.messageId === msg.id ? nextStep : null}
           isCurrentTurn={msg.role === "agent" && index >= currentTurnStartsAt}
           showActions={msg.role !== "user" && index < runningTurnStartsAt}
           copied={copiedMessageId === msg.id}

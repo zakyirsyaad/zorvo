@@ -82,4 +82,13 @@ describe("NextStepBox", () => {
     expect(screen.getByText("PR #326 · Open")).toBeTruthy();
     expect(screen.getByText("4 of 9 checks done")).toBeTruthy();
   });
+
+  it("spells out control and bidi characters and keeps line breaks", () => {
+    const { view } = active();
+    render(<NextStepBox step={{ recap: "Line one\nLine \u202e two", ask: "Ok \u202e?", replies: ["No \u202e"] }} agentName="Claude Code" view={view} />);
+    const box = screen.getByRole("region", { name: "Next step" });
+    expect(box.textContent).not.toContain("\u202e");
+    expect(box.textContent).toContain("Line one\nLine");
+    expect(box.textContent).toContain("\\u202E");
+  });
 });

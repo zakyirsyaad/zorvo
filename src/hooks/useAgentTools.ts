@@ -534,7 +534,6 @@ export function useAgentTools(deps: AgentToolsDeps): {
   /**
    * `wrap_up`: the agent's recap, question, pick and replies go on its turn's last reply, where the
    * next-step box reads them. No card and no grant: it only adds words under the agent's own reply.
-   * Each string is spelled out the way the chat shows agent text in Zorvo's own interface.
    */
   const handleWrapUp = useCallback(
     (session: Session, call: AgentToolCall) => {
@@ -543,11 +542,12 @@ export function useAgentTools(deps: AgentToolsDeps): {
         respond(call.callId, false, FAILED);
         return;
       }
+      // Kept as the agent sent them, so the limits hold again on reload; the box spells them out as it draws.
       const shown = {
-        recap: escapeVisible(step.recap),
-        ...(step.ask ? { ask: escapeVisible(step.ask) } : {}),
+        recap: step.recap,
+        ...(step.ask ? { ask: step.ask } : {}),
         ...(step.pick ? { pick: step.pick } : {}),
-        ...(step.replies ? { replies: step.replies.map((reply) => escapeVisible(reply)) } : {}),
+        ...(step.replies ? { replies: step.replies } : {}),
       };
       // The reply's own text may still wait for its frame: it was sent before this call, so it lands first.
       latest.current.flushUpdates?.();

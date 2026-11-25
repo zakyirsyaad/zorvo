@@ -19,7 +19,8 @@ pub struct BranchState {
     pub branch: Option<String>,
     /// The upstream as git names it (`origin/main`), `None` when the branch tracks nothing.
     pub upstream: Option<String>,
-    /// Commits on the branch that its upstream does not have; 0 without an upstream.
+    /// Commits on the branch that its upstream does not have; without an upstream, the commits no
+    /// remote has; 0 in a repository with no remote.
     pub ahead: u32,
     pub is_default_branch: bool,
 }
@@ -43,12 +44,19 @@ pub fn read_branch_state(git: &Path, dir: &Path) -> Result<BranchState, String> 
     .ok()
     .map(|out| out.trim().to_string())
     .filter(|name| !name.is_empty() && branch.is_some());
-    let ahead = match &upstream {
-        Some(_) => run_git(git, dir, &["rev-list", "--count", "@{upstream}..HEAD"])?
-            .trim()
-            .parse::<u32>()
-            .unwrap_or(0),
-        None => 0,
+    let ahead = match (&upstream, &branch) {
+        (Some(_), _) => count(run_git(
+            git,
+            dir,
+            &["rev-list", "--count", "@{upstream}..HEAD"],
+        )?),
+        // A branch never pushed: the commits no remote has. Without any remote there is nowhere to push.
+        (None, Some(_)) if has_remote(git, dir) => count(run_git(
+            git,
+            dir,
+            &["rev-list", "--count", "HEAD", "--not", "--remotes"],
+        )?),
+        _ => 0,
     };
     let default = default_branch(git, dir);
     let is_default_branch = match (&branch, &default) {
@@ -62,6 +70,15 @@ pub fn read_branch_state(git: &Path, dir: &Path) -> Result<BranchState, String> 
         ahead,
         is_default_branch,
     })
+}
+
+fn count(out: String) -> u32 {
+    out.trim().parse::<u32>().unwrap_or(0)
+}
+
+/// True when the repository has at least one remote.
+fn has_remote(git: &Path, dir: &Path) -> bool {
+    run_git(git, dir, &["remote"]).is_ok_and(|out| !out.trim().is_empty())
 }
 
 /// The branch `origin/HEAD` points at, when the clone recorded one.

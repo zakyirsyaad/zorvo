@@ -93,11 +93,11 @@ describe("wrap_up", () => {
     expect(messages["s-1"][1].nextStep).toEqual({ recap: "Second." });
   });
 
-  it("shows control and bidi characters spelled out", async () => {
+  it("keeps the agent's words as sent, so they survive a reload within their limits", async () => {
     const { call, messages } = setup(() => null);
-    await call("c-1", "wrap_up", { recap: "Done \u202e reversed" });
-    expect(messages["s-1"][1].nextStep?.recap).not.toContain("\u202e");
-    expect(messages["s-1"][1].nextStep?.recap).toContain("Done");
+    const recap = "Line one\nLine \u202e two".padEnd(300, ".");
+    await call("c-1", "wrap_up", { recap });
+    expect(messages["s-1"][1].nextStep?.recap).toBe(recap);
   });
 
   it("tells a session with no coordinator role it cannot use the tool", async () => {

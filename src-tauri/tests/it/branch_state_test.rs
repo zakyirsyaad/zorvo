@@ -97,3 +97,26 @@ fn detached_head_has_no_branch() {
     assert_eq!(state.branch, None);
     assert!(!state.is_default_branch);
 }
+
+#[test]
+fn a_branch_never_pushed_counts_the_commits_no_remote_has() {
+    let dir = repo("unpushed");
+    let remote = scratch("unpushed-remote");
+    git(&remote, &["init", "-q", "--bare"]);
+    git(&dir, &["remote", "add", "origin", remote.to_str().unwrap()]);
+    git(&dir, &["push", "-q", "origin", "main"]);
+    git(&dir, &["switch", "-q", "-c", "feat/new"]);
+    commit(&dir, "b.txt", "b");
+    commit(&dir, "c.txt", "c");
+    let state = read(&dir);
+    assert_eq!(state.upstream, None);
+    assert_eq!(state.ahead, 2);
+}
+
+#[test]
+fn a_repository_with_no_remote_has_nothing_to_push() {
+    let dir = repo("noremote");
+    git(&dir, &["switch", "-q", "-c", "feat/local"]);
+    commit(&dir, "b.txt", "b");
+    assert_eq!(read(&dir).ahead, 0);
+}

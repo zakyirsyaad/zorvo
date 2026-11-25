@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { BackgroundTask } from '../lib/background-tasks';
 import type { NextStepFacts } from '../lib/next-step';
@@ -88,6 +88,20 @@ export function useNextStepFacts({ session, isActive, pullRequest, tasks }: Fact
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive, sessionId, cwd]);
 
+  const facts = factsOf(isActive, session, read, pullRequest, tasks);
+  // The same facts keep the same object, so a box that did not change does not redraw the chat.
+  const key = JSON.stringify(facts);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(() => facts, [key]);
+}
+
+function factsOf(
+  isActive: boolean,
+  session: Session | null,
+  read: ReadFacts | null,
+  pullRequest: PullRequestStatus | null,
+  tasks: readonly BackgroundTask[],
+): NextStepFacts {
   if (!isActive || session === null) return {};
   const own = read?.sessionId === session.id ? read : null;
   const ports = tasks

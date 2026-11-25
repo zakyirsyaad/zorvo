@@ -1,9 +1,10 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { NextStepView } from '../components/chat/NextStepBox';
 import type { BackgroundTask } from '../lib/background-tasks';
 import type { NextStepButton } from '../lib/next-step';
 import type { ChatMessage, Session } from '../types';
 import type { PullRequestStatus } from './usePullRequest';
+import { useLatest } from './useLatest';
 import { useNextStepFacts } from './useNextStepFacts';
 
 export interface NextStepArgs {
@@ -18,7 +19,7 @@ export interface NextStepArgs {
   blockedReason: string | undefined;
   pullRequest: PullRequestStatus | null;
   tasks: readonly BackgroundTask[];
-  /** The composer's own Send for `text`; resolves true when the agent took it. */
+  /** The composer's own Send for `text`, without giving a refused text back into the composer; resolves true when the agent took it. */
   send: (sessionId: string, text: string) => Promise<boolean>;
   updateMessages: (sessionId: string, update: (messages: ChatMessage[]) => ChatMessage[]) => void;
   /** Opens a pull request in the user's browser. */
@@ -53,34 +54,41 @@ export function useNextStep(args: NextStepArgs): NextStepView | null {
   const [isSending, setIsSending] = useState(false);
   const sending = useRef(false);
 
+  // Read at press time, so a new callback from the parent does not make a new view for every row.
+  const latest = useLatest({ session, reply, facts, send, updateMessages, openUrl, openPreview });
   const onPress = useCallback(
     (button: NextStepButton) => {
-      if (session === null || reply === undefined) return;
+      const { session: current, reply: shown, facts: known } = latest.current;
+      if (current === null || shown === undefined) return;
       if (button.kind === 'action' && button.action === 'open_pr') {
-        if (facts.pr) openUrl(facts.pr.url);
+        if (known.pr) latest.current.openUrl(known.pr.url);
         return;
       }
       if (button.kind === 'action' && button.action === 'open_preview') {
-        if (facts.preview) openPreview(`http://localhost:${facts.preview.port}`);
+        if (known.preview) latest.current.openPreview(`http://localhost:${known.preview.port}`);
         return;
       }
       if (button.message === undefined || sending.current) return;
       sending.current = true;
       setIsSending(true);
-      const sessionId = session.id;
-      const messageId = reply.id;
-      void send(sessionId, button.message)
+      const sessionId = current.id;
+      const messageId = shown.id;
+      void latest.current
+        .send(sessionId, button.message)
         .then((isTaken) => {
-          if (isTaken) updateMessages(sessionId, (prev) => withAnswer(prev, messageId, button.label, Date.now()));
+          if (isTaken) latest.current.updateMessages(sessionId, (prev) => withAnswer(prev, messageId, button.label, Date.now()));
         })
         .finally(() => {
           sending.current = false;
           setIsSending(false);
         });
     },
-    [session, reply, facts.pr, facts.preview, send, updateMessages, openUrl, openPreview],
+    [latest],
   );
 
-  if (!isActive || reply === undefined) return null;
-  return { messageId: reply.id, facts, ...(blockedReason ? { blockedReason } : {}), isSending, onPress };
+  const replyId = isActive ? reply?.id : undefined;
+  return useMemo(
+    () => (replyId === undefined ? null : { messageId: replyId, facts, ...(blockedReason ? { blockedReason } : {}), isSending, onPress }),
+    [replyId, facts, blockedReason, isSending, onPress],
+  );
 }

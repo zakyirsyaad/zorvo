@@ -4,6 +4,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-25
+
 ### Added
 
 - **A next-step box at the end of a turn.** Under an agent's last reply, Zorvo shows what changed in the repository, and the agent's short recap and question. Its buttons send your answer as a message, so Commit, Create PR or Merge is one click.
@@ -520,7 +522,8 @@ Tagged but never published; its fix shipped in 0.11.2.
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.15.0...v0.16.0

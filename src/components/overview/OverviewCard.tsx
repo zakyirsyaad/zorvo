@@ -381,11 +381,12 @@ export function OverviewCard({
       <section
         aria-label="Session overview"
         onKeyDown={closeOnEscape}
-        className={`max-h-[calc(100%-2rem)] w-80 shrink-0 flex-col self-start overflow-y-auto rounded-xl border border-border bg-surface-2 ${
-          // Floating only while the sheet is narrow: widened again, the open card docks beside the chat.
+        className={`w-72 shrink-0 flex-col overflow-y-auto @min-[900px]:self-stretch @min-[900px]:border-l @min-[900px]:border-border ${
+          // Docked, it is a full-height panel with a hairline beside the chat, so the chat sits centred in its own pane.
+          // Floating only while the sheet is narrow, as a card over the chat; widened again, it docks.
           isFloating
-            ? "flex @min-[900px]:mt-4 @min-[900px]:mr-4 @max-[900px]:absolute @max-[900px]:top-4 @max-[900px]:right-4 @max-[900px]:z-30 @max-[900px]:shadow-popover"
-            : "mt-4 mr-4 hidden @min-[900px]:flex"
+            ? "flex @max-[900px]:absolute @max-[900px]:top-4 @max-[900px]:right-4 @max-[900px]:z-30 @max-[900px]:max-h-[calc(100%-2rem)] @max-[900px]:self-start @max-[900px]:rounded-xl @max-[900px]:border @max-[900px]:border-border @max-[900px]:bg-surface-2 @max-[900px]:shadow-popover"
+            : "hidden @min-[900px]:flex"
         }`}
       >
         <Section

@@ -4,9 +4,21 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+
+- **A button to jump back to the newest message.** Scroll up to read an earlier part of a chat and a round arrow appears above the composer; press it to return to the latest output, which the chat then follows again.
+
 ### Changed
 
+- **The session overview is a panel beside the chat.** It runs the full height of the window behind a thin divider and is narrower, so the chat sits in the middle of its own space. On a narrow window it still opens as a card over the chat.
 - **The Zorvo logo over a new session is larger**, and so is the line under it. The logo and the card now sit together in the middle of the window.
+- **The Browser tab can take the whole window.** Expand, beside the browser tools, gives the page the room the chat had; Shrink or Escape brings the chat back, and the page keeps what it holds. Dragged by its edge, the Browser tab now widens as far as the window allows instead of stopping at 720px, and remembers its own width.
+
+### Fixed
+
+- **The chat keeps following an agent's reply.** It no longer stops following when part of the chat shrinks, such as a notice going away, and it now follows what grows without a new message, such as the next-step box or a picture that loads late.
+- **Choose File works in the Browser tab.** A page's file button now opens the file picker; before, clicking it did nothing.
+- **An agent can upload a file to a page you are signed in to.** After you approve the files and the site on a one-time card, the agent fills the page's file field in the Browser tab itself, where before it could only use a separate Chromium window without your sign-in. The files must be in the session's folder.
 
 ## [0.19.0] - 2026-11-25
 

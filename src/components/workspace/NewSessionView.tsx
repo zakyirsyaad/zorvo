@@ -5,17 +5,19 @@ import { Wordmark } from "../onboarding/Wordmark";
 export const NEW_SESSION_LINE = "Every coding agent. One desktop.";
 
 /**
- * Above the draft's card: the room that, matched by the room under it (`NewSessionBelow`), puts the card in the
- * middle of the column. At its foot, centred over the card, the Zorvo lockup and the welcome screen's line, as a
- * paragraph: the top bar's breadcrumb is the page's title (New session). A line shows only when something stops a
- * session from starting, right above the card.
+ * Above the draft's card: the room whose empty part, matched by the room under the card (`NewSessionBelow`), puts
+ * the lockup and the card together in the middle of the column. It grows from the lockup's own height
+ * (`flex-auto`) while the room under the card grows from nothing, so both get the same share of what is left. At
+ * its foot, centred over the card, the Zorvo lockup and the welcome screen's line, as a paragraph: the top bar's
+ * breadcrumb is the page's title (New session). A line shows only when something stops a session from starting,
+ * right above the card.
  */
 export function NewSessionAbove({ unavailableReason }: { unavailableReason?: string }) {
   return (
-    <div data-new-session-above="" className="flex min-h-6 flex-1 flex-col justify-end px-6 pb-4">
-      <div className="mx-auto flex w-full max-w-draft flex-col items-center gap-3 pb-6">
-        <Wordmark />
-        <p className="text-ui text-fg-muted">{NEW_SESSION_LINE}</p>
+    <div data-new-session-above="" className="flex min-h-6 flex-auto flex-col justify-end px-6 pb-4">
+      <div className="mx-auto flex w-full max-w-draft flex-col items-center gap-5 pb-10">
+        <Wordmark size="lg" />
+        <p className="text-[18px] leading-7 text-fg-muted">{NEW_SESSION_LINE}</p>
       </div>
       {unavailableReason && <p className="mx-auto w-full max-w-draft text-ui text-fg-muted">{unavailableReason}</p>}
     </div>

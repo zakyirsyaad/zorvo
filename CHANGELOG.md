@@ -4,6 +4,14 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+
+- **A button to jump back to the newest message.** Scroll up to read an earlier part of a chat and a round arrow appears above the composer; press it to return to the latest output, which the chat then follows again.
+
+### Fixed
+
+- **The chat keeps following an agent's reply.** It no longer stops following when part of the chat shrinks, such as a notice going away, and it now follows what grows without a new message, such as the next-step box or a picture that loads late.
+
 ## [0.19.0] - 2026-11-25
 
 ### Added

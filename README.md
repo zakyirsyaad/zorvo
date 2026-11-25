@@ -34,13 +34,13 @@
   <img src="docs/assets/zorvo-reel.gif" alt="A short tour of Zorvo: one prompt sent to four agents, keeping the best result, handing a task to another agent, and reviewing a diff line by line." width="600">
 </p>
 
-**New in 0.16:** an agent can put a diagram or a mockup inside its reply,
-between the paragraphs of its answer. You can copy it as an image or save it
-as SVG, HTML or PNG. 0.15 added a browser beside the chat, a canvas for
-several screens side by side, and agents that can look at apps on your Mac
-when you let them. From 0.14.1, Zorvo is signed and notarized by Apple, so
-macOS opens it like any other app you download. The [changelog](CHANGELOG.md)
-has the rest.
+**New in 0.20:** the Browser tab can take the whole window, and an agent can
+upload a file to a page you are signed in to, once you approve the files and
+the site. A round arrow over the message box brings you back to the newest
+message. 0.19 added a box under a finished turn with the agent's recap and
+buttons for the next step, such as Commit or Create PR. From 0.14.1, Zorvo is
+signed and notarized by Apple, so macOS opens it like any other app you
+download. The [changelog](CHANGELOG.md) has the rest.
 
 > **NEAR hackathon judges:** start with [docs/hackathon/README.md](docs/hackathon/README.md). The
 > submitted state is the tag
@@ -180,13 +180,27 @@ Private mode is off until you turn it on, and works with Qwen Code.
   so git keeps it and deleting the session keeps it.
 - **Reply to part of a reply.** Select text in the chat to copy it, or press
   **Reply** to quote it in your next message.
-- **A session overview beside the chat.** A card at the top right of the chat
+- **Read back without losing your place.** The chat follows the agent's reply
+  while you are at the bottom. Scroll up and it stays where you are; the round
+  arrow over the message box takes you back to the newest message.
+- **A next step when a turn ends.** Under the agent's last reply, a box shows
+  what changed in the repository, the agent's short recap and its question,
+  with buttons such as **Commit**, **Create PR** or **Merge**. A button sends
+  its words as your message, so the agent does the work with its own tools.
+- **A session overview beside the chat.** A panel on the right of the chat
   says where the session works (its changes, its folder, its branch), what is
   running, the files you attached, and the pages and files the agent made. A
-  click opens the matching tab, and the card folds to a pill.
+  click opens the matching tab, and the panel folds to a pill.
 - **One inspector beside the chat.** The top bar's **Inspector** button opens a
-  panel with five tabs: Changes, Activity, Files, Artifacts and Terminal. Drag its
-  edge to resize it; Zorvo remembers the width.
+  panel with six tabs: Changes, Activity, Files, Artifacts, Browser and
+  Terminal. Drag its edge to resize it; Zorvo remembers the width.
+- **A browser in the session.** The **Browser** tab opens the pages you or the
+  agent choose, in a WebKit view of its own. **Expand** gives it the whole
+  window and **Shrink** brings the chat back, with the page as you left it;
+  its edge drags as wide as the window allows. **Choose File** on a page opens
+  the macOS file picker. An agent can upload a file from the session's folder
+  to a page you are signed in to: a card first names the files and the site,
+  and nothing is sent until you allow it.
 - **See what an agent did.** The Activity tab lists, turn by turn, the files it
   reported, the commands it ran and the permissions you answered, and shows
   files git says changed that it did not report. It is the agent's own report,
@@ -208,7 +222,7 @@ Private mode is off until you turn it on, and works with Qwen Code.
   sent nothing for a minute, Zorvo says so under **Working…**, with a Stop
   button. If the agent has not stopped ten seconds after **Stop**, **End
   agent** ends its process.
-- **Follow your pull request.** The session's card and its row in the sidebar
+- **Follow your pull request.** The session's overview and its row in the sidebar
   show the branch's pull request and how its checks stand, read with your own
   `gh`.
 - **Connect to GitHub.** **Settings → GitHub** shows whether your
@@ -448,7 +462,7 @@ before it edits files or runs commands. Pick another mode in the composer.
   the artboards on this Mac, and removes a picture no canvas has used for 30
   days.
 - **No telemetry.** Zorvo sends nothing about you or your work anywhere.
-- **Browser pages.** The Browser inspector loads the HTTP(S) pages you or your agent choose, and their subresources, in a separate WebKit view. Submitted address-bar search text goes to Google. The chat's own webview keeps its network restrictions. Each session has an in-memory browser store; different sessions do not share it. Agents need a browser session grant, and file uploads need a separate destination/files approval. Chromium debug opens an isolated Chrome or Brave window; its tabs and cookies are separate from WebKit. Optional Lighthouse tools are installed from npm with a pinned integrity lockfile after you click Install audit tools; an audit uses a fresh Chromium profile and a temporary loopback debugging endpoint.
+- **Browser pages.** The Browser inspector loads the HTTP(S) pages you or your agent choose, and their subresources, in a separate WebKit view. Submitted address-bar search text goes to Google. The chat's own webview keeps its network restrictions. Each session has an in-memory browser store; different sessions do not share it. Agents need a browser session grant. An agent's file upload needs a separate approval that names the files and the receiving site; the files must be in the session's folder, and Zorvo sends a private copy of them, never more than 5 MB at once. Chromium debug opens an isolated Chrome or Brave window; its tabs and cookies are separate from WebKit. Optional Lighthouse tools are installed from npm with a pinned integrity lockfile after you click Install audit tools; an audit uses a fresh Chromium profile and a temporary loopback debugging endpoint.
 - **Other connections, all named.** Outside the browser pages, Zorvo itself contacts only:
   - the ACP registry (`cdn.agentclientprotocol.com`), to list agents, their
     versions and their logos;

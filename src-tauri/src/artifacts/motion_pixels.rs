@@ -75,7 +75,9 @@ impl Accumulator {
 
 /// RGBA bytes as BGRA, the pixel format the video encoder takes.
 pub fn rgba_to_bgra(rgba: &[u8], bgra: &mut [u8]) {
-    for (from, to) in rgba.chunks_exact(4).zip(bgra.chunks_exact_mut(4)) {
+    let (from_pixels, _) = rgba.as_chunks::<4>();
+    let (to_pixels, _) = bgra.as_chunks_mut::<4>();
+    for (from, to) in from_pixels.iter().zip(to_pixels.iter_mut()) {
         to[0] = from[2];
         to[1] = from[1];
         to[2] = from[0];

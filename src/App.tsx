@@ -15,12 +15,7 @@ import { agentNameOr } from "./lib/agent-name";
 import { FilesPanel } from "./components/FilesPanel";
 import { ArtifactsPanel } from "./components/artifacts/ArtifactsPanel";
 import { ArtifactGallery } from "./components/artifacts/ArtifactGallery";
-import { useArtifactComments, useArtifactCommentSweep } from "./hooks/useArtifactComments";
-import { canvasBoardsNow } from "./hooks/useCanvas";
-import { useArtifacts } from "./hooks/useArtifacts";
-import { useVisualSweep } from "./hooks/useVisualSweep";
-import { useArtifactOpening } from "./hooks/useArtifactOpening";
-import { galleryRows, hasVersion, newestVersion, shownArtifactOf, shownCanvasOf } from "./lib/artifacts";
+import { useArtifactsWiring } from "./hooks/useArtifactsWiring";
 import { markersOf } from "./lib/file-markers";
 import { EmptyFolderState, FileDropOverlay } from "./components/AppPlaceholders";
 import { Toast, ToastStack } from "./components/ui/Toast";
@@ -48,16 +43,12 @@ import { useReviewWiring } from "./hooks/useReviewWiring";
 import type { ReviewSlot } from "./hooks/useReviewMessage";
 import { useSecretGuard } from "./hooks/useSecretGuard";
 import { useTurnsEnded } from "./hooks/useTurnsEnded";
-import { usePullRequest } from "./hooks/usePullRequest";
-import { useWorkspacePullRequests } from "./hooks/useWorkspacePullRequests";
-import { createdFilesOf } from "./lib/created-files";
+import { usePullRequestsWiring } from "./hooks/usePullRequestsWiring";
 import { overviewOf } from "./lib/session-overview";
 import { useOverviewCollapse } from "./hooks/useOverviewCollapse";
 import { OverviewCard } from "./components/overview/OverviewCard";
 import { useAgentWork } from "./hooks/useAgentWork";
-import { newestSessionInFolder, pullRequestOfWork, pullRequestOnBranch, sessionPullRequestOf } from "./lib/pull-request-look";
 import { currentPlan } from "./lib/plan";
-import { useRepoPullRequests } from "./hooks/useRepoPullRequests";
 import { useAgentSignIn } from "./hooks/useAgentSignIn";
 import { useAgentSignInStatus } from "./hooks/useAgentSignInStatus";
 import { useDraftAgentCheck } from "./hooks/useDraftAgentCheck";
@@ -80,7 +71,6 @@ import {
 import { isAwaitingUser } from "./lib/acp-elicitation";
 import {
   folderNameOf,
-  isArchived,
   isListed,
   isAutoName,
   workspacePathOf,
@@ -106,7 +96,7 @@ import { isTopupActive } from "./lib/private-flow";
 import { usePrivateLowBalanceNotice } from "./hooks/usePrivateLowBalanceNotice";
 import { usePrivateUsage } from "./hooks/usePrivateUsage";
 import { usePrivateVerification } from "./hooks/usePrivateVerification";
-import { actionError, lowBalanceNote } from "./lib/private-credits";
+import { lowBalanceNote } from "./lib/private-credits";
 import { useAgentProfiles, useSuggestedFolders } from "./hooks/useDiscovery";
 import { useAutoInstall } from "./hooks/useAutoInstall";
 import { usedAgentIds } from "./lib/agent-catalog";
@@ -203,7 +193,7 @@ import {
   type AgentOptions,
   type ProbedOptions,
 } from "./lib/acp-draft";
-import type { AgentProfile, ArtifactCard, ArtifactComment, ReviewComment, DelegationLink, Session, SessionWorktree, Settings, WorkerTurnEnd } from "./types";
+import type { AgentProfile, ArtifactComment, ReviewComment, DelegationLink, Session, SessionWorktree, Settings, WorkerTurnEnd } from "./types";
 import { replyBlockedReason } from "./lib/reply-quote";
 
 const NO_FOLDER_NOTICE = "Open a project folder first: choose one from the folder chip by the message box.";
@@ -231,7 +221,6 @@ export default function App() {
   /** Whether the next new session runs in its own worktree (a git repository only). */
   const [isWorktreeOn, setIsWorktreeOn] = useState(false);
   const [isCreatingWorktree, setIsCreatingWorktree] = useState(false);
-  const [isRaisingPrivateCap, setIsRaisingPrivateCap] = useState(false);
   /** Bumped after each of the active agent's turns, so its folder's branch is read again. */
   const [branchCheck, setBranchCheck] = useState(0);
   const [acpChoices, setAcpChoices] = useState<AcpChoices>(NO_CHOICES);
@@ -777,17 +766,7 @@ export default function App() {
   const isDraggingFiles = useFileDrop(handleDroppedFiles, reportError);
 
   const turnsEnded = useTurnsEnded(Boolean(activeSessionId) && isSessionBusy(activeSessionId));
-  // The pages each session's agent showed; the backend owns them and says when they change.
-  const artifacts = useArtifacts(useMemo(() => sessions.map((session) => session.id), [sessions]));
-  const sessionArtifacts = useMemo(() => (activeSession ? artifacts.bySession.get(activeSession.id) ?? [] : []), [artifacts.bySession, activeSession]);
-  const sessionCanvases = useMemo(
-    () => (activeSession ? artifacts.canvasesBySession.get(activeSession.id) ?? [] : []),
-    [artifacts.canvasesBySession, activeSession],
-  );
-  // The files the agent created in this session, listed in the Artifacts tab under its pages.
   const activeTranscript = activeSessionId ? transcripts[activeSessionId] : undefined;
-  const activeCwd = activeSession?.cwd;
-  const createdFiles = useMemo(() => createdFilesOf(activeTranscript ?? [], activeCwd), [activeTranscript, activeCwd]);
   const backgroundTasks = useBackgroundTasks({
     sessions,
     transcripts,
@@ -829,13 +808,44 @@ export default function App() {
       if (tab === "terminal" && filesFolder) terminalDrawer.ensureShell(filesFolder.path);
     },
   });
-  const openArtifact = useArtifactOpening({
-    activeSessionId: activeSession?.id ?? null,
-    viewed: inspector.viewedArtifact,
-    showTab: () => inspector.show("artifacts"),
-    view: inspector.viewArtifact,
+  // Memoized: the stats object only changes when they are read again.
+  const fileMarkers = useMemo(() => markersOf(inspector.headStats, inspector.filesPrefix), [inspector.headStats, inspector.filesPrefix]);
+  // A tab that no longer applies (another folder, a draft) does not show.
+  const inspectorTab = inspector.tab && inspectorTabs.includes(inspector.tab) ? inspector.tab : null;
+  // The Browser tab's Expand: the inspector takes the whole stage, the main sheet hidden, and the page's native view
+  // only moves (its box grows), so the page keeps what it holds.
+  const isBrowserExpanded = inspector.isBrowserExpanded && inspectorTab === "browser" && activeSession !== undefined;
+  // The review wiring is built further down; its `forget` reaches the comments through this ref.
+  const forgetReviewRef = useRef<((ids: readonly string[]) => void) | null>(null);
+  const forgetInMessage = useCallback((ids: readonly string[]) => forgetReviewRef.current?.(ids), []);
+  const {
+    sessionArtifacts,
+    sessionCanvases,
+    createdFiles,
+    onArtifactShown,
+    gallery,
+    isGalleryShown,
+    openFromGallery,
+    openCanvasFromGallery,
+    artifactIds,
+    openArtifactCard,
+    isArtifactExpanded,
+    artifactComments,
+    expandArtifact,
+  } = useArtifactsWiring({
+    sessions,
+    activeSession,
+    activeSessionId,
+    activeTranscript,
+    agents,
+    inspector,
+    inspectorTab,
+    isGalleryOpen,
+    onSelectSession: (sessionId) => handleSelectSession(sessionId),
+    updateArtifactComments,
+    forgetInMessage,
+    onError: reportError,
   });
-  const onArtifactShown = openArtifact;
   useBrowserOpening({ sessionId: activeSession?.id ?? null, show: () => inspector.show("browser"), onError: reportError, onArtifactShown });
   useFileLinkOpening({
     folder: filesFolder?.path,
@@ -845,88 +855,7 @@ export default function App() {
     },
     onError: reportError,
   });
-  const gallery = useMemo(
-    () =>
-      galleryRows(sessions, artifacts.bySession, (profileId) => agentNameOr(agents.find((agent) => agent.id === profileId)), artifacts.canvasesBySession),
-    [sessions, artifacts.bySession, artifacts.canvasesBySession, agents],
-  );
-  // The last artifact may go while the gallery is open: then there is nothing to show, and the chat is back.
-  const isGalleryShown = isGalleryOpen && gallery.length > 0;
-  const openFromGallery = (sessionId: string, artifactId: string) => {
-    handleSelectSession(sessionId);
-    // For the session about to show, whose id is its view: the one on screen now may be another.
-    inspector.viewArtifact({ artifactId, version: null }, sessionId);
-    inspector.show("artifacts");
-  };
-  const openCanvasFromGallery = (sessionId: string, canvasKey: string) => {
-    handleSelectSession(sessionId);
-    inspector.viewArtifact({ canvasKey }, sessionId);
-    inspector.show("artifacts");
-  };
-  // Artifact ids and canvas keys never look alike, so one set tells a card whether its output is still listed.
-  const artifactIds = useMemo(
-    () => new Set([...sessionArtifacts.map((artifact) => artifact.id), ...sessionCanvases.map((canvas) => canvas.key)]),
-    [sessionArtifacts, sessionCanvases],
-  );
-  /** A chat card's Open: the version it marks, in the Artifacts tab (the newest is followed, not pinned), or the canvas. */
-  const openArtifactCard = (card: ArtifactCard) => {
-    if (card.kind === "canvas") {
-      if (!sessionCanvases.some((canvas) => canvas.key === card.canvasKey)) return;
-      inspector.viewArtifact({ canvasKey: card.canvasKey });
-      inspector.show("artifacts");
-      return;
-    }
-    const artifact = sessionArtifacts.find((candidate) => candidate.id === card.artifactId);
-    if (!artifact) return;
-    inspector.viewArtifact({ artifactId: card.artifactId, version: card.version === newestVersion(artifact) ? null : card.version });
-    inspector.show("artifacts");
-  };
-  // Memoized: the stats object only changes when they are read again.
-  const fileMarkers = useMemo(() => markersOf(inspector.headStats, inspector.filesPrefix), [inspector.headStats, inspector.filesPrefix]);
-  // A tab that no longer applies (another folder, a draft) does not show.
-  const inspectorTab = inspector.tab && inspectorTabs.includes(inspector.tab) ? inspector.tab : null;
-  // The open artifact's page takes the chat's place: only on the Artifacts tab of a session that still has one.
-  const isArtifactExpanded = inspector.isArtifactExpanded && inspectorTab === "artifacts" && sessionArtifacts.length + sessionCanvases.length > 0;
-  // The Browser tab's Expand: the inspector takes the whole stage, the main sheet hidden, and the page's native view
-  // only moves (its box grows), so the page keeps what it holds.
-  const isBrowserExpanded = inspector.isBrowserExpanded && inspectorTab === "browser" && activeSession !== undefined;
-  // The artifact page on screen, for its comments: the Artifacts tab's viewer shows it, expanded or not.
-  const shownArtifact = inspectorTab === "artifacts" ? shownArtifactOf(sessionArtifacts, inspector.viewedArtifact, createdFiles.length + sessionCanvases.length) : undefined;
-  const viewedVersion = inspector.viewedArtifact?.artifactId === shownArtifact?.id ? inspector.viewedArtifact?.version : null;
-  const shownVersion = shownArtifact ? (viewedVersion ?? newestVersion(shownArtifact)) : 0;
-  const shownPage =
-    activeSession && shownArtifact && hasVersion(shownArtifact, shownVersion)
-      ? { sessionId: activeSession.id, artifactId: shownArtifact.id, version: shownVersion }
-      : null;
-  // The canvas on screen, for its comments, chosen as the Artifacts tab's viewer chooses it.
-  const shownCanvasEntry =
-    inspectorTab === "artifacts" && !shownArtifact
-      ? shownCanvasOf(sessionCanvases, inspector.viewedArtifact, sessionArtifacts.length + createdFiles.length)
-      : undefined;
-  const shownCanvas = useMemo(
-    () => {
-      if (!activeSession || !shownCanvasEntry) return null;
-      const { key } = shownCanvasEntry;
-      const sessionId = activeSession.id;
-      return { sessionId, key, boardsNow: () => canvasBoardsNow(sessionId, key) };
-    },
-    [activeSession, shownCanvasEntry],
-  );
-  // The review wiring is built further down; its `forget` reaches the comments through this ref.
-  const forgetReviewRef = useRef<((ids: readonly string[]) => void) | null>(null);
-  const forgetInMessage = useCallback((ids: readonly string[]) => forgetReviewRef.current?.(ids), []);
-  const artifactComments = useArtifactComments({
-    sessionId: activeSession?.id,
-    comments: activeSession?.artifactComments,
-    update: updateArtifactComments,
-    shownPage,
-    shownCanvas,
-    forget: forgetInMessage,
-    onError: reportError,
-  });
   useAgentWork(sessions, transcripts, patchSession);
-  useVisualSweep(activeSessionId, activeSessionId ? (transcripts[activeSessionId] ?? null) : null);
-  useArtifactCommentSweep(sessions, artifacts.bySession, artifacts.canvasesBySession, artifacts.readSessions, updateArtifactComments, forgetInMessage);
   /** Shows a subagent's or a shell command's task in the inspector, beside its session's chat. */
   const openTask = (sessionId: string, tab: TaskTab) => {
     taskTabs.open(sessionId, tab);
@@ -943,46 +872,20 @@ export default function App() {
   const [chatJump, setChatJump] = useState<{ messageId: string; nonce: number } | null>(null);
   // The diff view shows beside the chat, or in its place once expanded.
   const isDiffOpen = inspector.isDiffOpen && Boolean(filesFolder) && isRepository;
-  // Every session folder's pull requests, one gh call per folder, for the sidebar and the top bar.
-  const listedFolders = useMemo(
-    () => [...new Set(sessions.filter((session) => !isArchived(session)).map(workspacePathOf))],
-    [sessions],
-  );
-  const busyFolders = sessions.filter((session) => isSessionBusy(session.id)).map(workspacePathOf);
-  const folderPullRequests = useWorkspacePullRequests(listedFolders, github.status?.state === "signed-in", busyFolders, {
-    liveFolder: activeSession ? workspacePathOf(activeSession) : undefined,
+  const { pullRequest, pullRequestOf, repoPullRequests, openPullRequest } = usePullRequestsWiring({
+    sessions,
+    activeSession,
+    isSessionBusy,
+    isGithubSignedIn: github.status?.state === "signed-in",
+    isRepository,
+    shownFolderPath,
+    branch: workspaceDetails?.branch,
+    changesFolderPath: inspectorTab === "changes" ? filesFolder?.path : undefined,
+    turnsEnded,
+    suppressRepoError: Boolean(githubProblem),
+    reportError,
+    setNotice,
   });
-  const newestInFolder = useMemo(() => newestSessionInFolder(sessions), [sessions]);
-  const pullRequestOf = useCallback(
-    (session: Session) => {
-      const folder = folderPullRequests.get(workspacePathOf(session));
-      return folder ? sessionPullRequestOf(session, folder, newestInFolder) : null;
-    },
-    [folderPullRequests, newestInFolder],
-  );
-  // The top bar reads the same list; its own call is only for a branch outside the 100 newest.
-  const shownFolder = activeSession ? folderPullRequests.get(workspacePathOf(activeSession)) : undefined;
-  // A session in the folder's own checkout first shows the pull request its agent made, often from a worktree of its own.
-  const workPullRequest =
-    shownFolder && activeSession && !activeSession.worktree ? pullRequestOfWork(shownFolder, activeSession.agentWork) : null;
-  const listedPullRequest =
-    workPullRequest ?? (shownFolder ? pullRequestOnBranch(shownFolder, workspaceDetails?.branch ?? null) : null);
-  const ownPullRequest = usePullRequest(
-    isRepository && !listedPullRequest ? shownFolderPath : undefined,
-    workspaceDetails?.branch ?? undefined,
-    turnsEnded,
-  );
-  const pullRequest = listedPullRequest ?? ownPullRequest;
-  // Read only while the Changes panel shows them.
-  const repoPullRequests = useRepoPullRequests(
-    inspectorTab === "changes" ? filesFolder?.path : undefined,
-    turnsEnded,
-    // The panel already says gh is missing or signed out and points to Settings; gh's own error would only repeat it.
-    githubProblem ? () => {} : reportError,
-  );
-  const openPullRequest = (url: string) => {
-    invoke("open_external_url", { url }).catch((error) => setNotice(`Could not open the pull request: ${String(error)}`));
-  };
   const openLink = (url: string) => {
     invoke("open_external_url", { url }).catch((error) => setNotice(`Could not open the link: ${String(error)}`));
   };
@@ -1180,79 +1083,30 @@ export default function App() {
     onNotice: setNotice,
   });
 
-  const { creditsOutReason, creditsOutNote, continueAgents, continueWithAgent } = usePrivateContinue({
+  const {
+    creditsOutReason,
+    creditsOutNote,
+    continueAgents,
+    continueWithAgent,
+    isRaisingCap,
+    raiseCap,
+    startUncappedSession,
+    switchToCredits,
+  } = usePrivateContinue({
     credits: privateCredits,
     activeSession,
+    sessions,
     agents,
     agentsInUse,
     transcripts,
     agentOptions: state.agentOptions,
     openNewSession,
     forkSession,
+    patchSession,
+    startSession,
+    updateSettings: (patch) => updateSettings(patch),
+    setNotice,
   });
-
-  const handleRaisePrivateCap = async () => {
-    const session = activeSession;
-    const cap = session?.privateMode?.sessionCap;
-    if (!session?.privateMode || cap === undefined || isRaisingPrivateCap) return;
-    setIsRaisingPrivateCap(true);
-    try {
-      const raised = await invoke<number>("private_raise_session_cap", {
-        sessionId: session.id,
-        credits: cap * 2,
-      });
-      patchSession(session.id, {
-        privateMode: { ...session.privateMode, sessionCap: raised },
-      });
-      privateCredits.clearCreditsOut(session.id);
-    } catch (error) {
-      setNotice(actionError("raise", String(error)), "warning");
-    } finally {
-      setIsRaisingPrivateCap(false);
-    }
-  };
-
-  /** Starts a fresh private session from this one, with no cap. */
-  const handleNewPrivateSession = () => {
-    if (!activeSession?.privateMode) return;
-    const last = (transcripts[activeSession.id] ?? []).at(-1);
-    if (last) {
-      void forkSession(last.id, { uncappedPrivate: true });
-      return;
-    }
-    const agent = agents.find((candidate) => candidate.id === activeSession.profileId);
-    if (!agent) return;
-    startSession({
-      agent,
-      cwd: activeSession.cwd,
-      name: nextSessionName(sessions),
-      privateMode: { modelId: activeSession.privateMode.modelId },
-    });
-  };
-
-  /**
-   * Switches this Mac to Zorvo credits and starts a fresh credits session from this one: the running
-   * agent holds an own-key proxy token, so only a new process can pay with credits.
-   */
-  const handleSwitchToCredits = () => {
-    updateSettings({ paymentSource: "credits" });
-    const session = activeSession;
-    if (!session?.privateMode) return;
-    privateCredits.clearCreditsOut(session.id);
-    const last = (transcripts[session.id] ?? []).at(-1);
-    if (last) {
-      void forkSession(last.id, { creditsPrivate: true });
-      return;
-    }
-    const agent = agents.find((candidate) => candidate.id === session.profileId);
-    if (!agent) return;
-    startSession({
-      agent,
-      cwd: session.cwd,
-      name: nextSessionName(sessions),
-      privateMode: { modelId: session.privateMode.modelId },
-    });
-  };
 
   const handleSelectSession = (sessionId: string) => {
     setGalleryOpen(false);
@@ -2364,12 +2218,12 @@ export default function App() {
                         agents={continueAgents.map((agent) => ({ id: agent.id, name: agent.name }))}
                         onOpenSettings={() => settingsPage.open("private")}
                         onContinue={continueWithAgent}
-                        onNewSession={handleNewPrivateSession}
-                        onRaise={() => void handleRaisePrivateCap()}
-                        isRaising={isRaisingPrivateCap}
+                        onNewSession={startUncappedSession}
+                        onRaise={() => void raiseCap()}
+                        isRaising={isRaisingCap}
                         paymentSource={activeIsOwnKey ? "ownKey" : "credits"}
                         ownKeySaved={ownKeySaved}
-                        onSwitchToCredits={handleSwitchToCredits}
+                        onSwitchToCredits={switchToCredits}
                         onOpenDashboard={() => openLink("https://cloud.near.ai/")}
                       />
                       {installPanelAgent
@@ -2714,16 +2568,7 @@ export default function App() {
                   viewed={inspector.viewedArtifact}
                   onView={inspector.viewArtifact}
                   isExpanded={false}
-                  onToggleExpanded={() => {
-                    // A page that opened by itself is pinned when it takes the chat's place: a file the agent
-                    // makes meanwhile would otherwise turn the tab back into a list under the expanded page,
-                    // and comments would lose the page they are on.
-                    if (!inspector.viewedArtifact && shownArtifact) inspector.viewArtifact({ artifactId: shownArtifact.id, version: null });
-                    // So is a canvas that opened by itself, being the only thing listed.
-                    const onlyCanvas = sessionCanvases.length === 1 && sessionArtifacts.length === 0 && createdFiles.length === 0 ? sessionCanvases[0] : undefined;
-                    if (!inspector.viewedArtifact && onlyCanvas) inspector.viewArtifact({ canvasKey: onlyCanvas.key });
-                    inspector.setArtifactExpanded(true);
-                  }}
+                  onToggleExpanded={expandArtifact}
                   onError={reportError}
                   onNotice={setNotice}
                   comments={artifactComments}
@@ -2798,8 +2643,6 @@ export default function App() {
         onShowRecoveryCode={recoveryDialog.show}
         onRestoringChange={recoveryDialog.setIsRestoring}
         onOpenUrl={openLink}
-        // Development builds only until agents get the computer-use tools (the plan's Tasks 9 to 12):
-        // a release must not ship a switch that asks macOS for permissions and then does nothing.
         computerUse={computerUseSetting}
       />
       <RecoveryCodeLayer

@@ -4,7 +4,7 @@ import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist", "src-tauri", "node_modules", ".claude", "site/.next", "site/out", "site/next-env.d.ts", "site/public/motion.js", "server"] },
+  { ignores: ["dist", "src-tauri", "node_modules", ".claude", ".qwen", "site/.next", "site/out", "site/next-env.d.ts", "site/public/motion.js", "server"] },
   {
     // Config and tooling scripts, run by Node.
     files: ["**/*.{js,mjs}"],
@@ -21,6 +21,9 @@ export default tseslint.config(
     languageOptions: {
       ecmaVersion: 2022,
       globals: globals.browser,
+      parserOptions: {
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
     plugins: { "react-hooks": reactHooks },
     rules: {

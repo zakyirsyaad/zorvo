@@ -503,6 +503,22 @@ export interface ChatMessage {
   verification?: MessageVerification;
   /** Marks where the agent showed a page: Zorvo's own row, with the version shown then. */
   artifactCard?: ArtifactCard;
+  /** The agent's `wrap_up` for this turn, and the user's answer from the box under it. */
+  nextStep?: NextStep;
+  /** Set on a turn's last reply when the turn ended with `end_turn`: only those get a next-step box. */
+  endedNormally?: true;
+}
+
+/** An action a next-step box can offer; the agent may pick one of them in `wrap_up`. */
+export type NextStepAction = 'commit' | 'create_pr' | 'merge' | 'auto_merge' | 'open_preview' | 'open_pr';
+
+/** What an agent's `wrap_up` left on its reply, and what the user pressed in the box. */
+export interface NextStep {
+  recap?: string;
+  ask?: string;
+  pick?: NextStepAction;
+  replies?: string[];
+  answered?: { label: string; at: number };
 }
 
 /** One stored copy of an artifact's page. */

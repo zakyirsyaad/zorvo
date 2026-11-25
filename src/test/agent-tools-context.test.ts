@@ -114,3 +114,12 @@ describe("a title an agent cut from Zorvo's hidden note", () => {
     for (const context of [MCP_PATH_CONTEXT, COMMAND_PATH_CONTEXT]) expect(context).toContain("show_visual");
   });
 });
+
+describe("the end of a turn", () => {
+  it("tells both paths to call wrap_up", () => {
+    for (const note of [COMMAND_PATH_CONTEXT, MCP_PATH_CONTEXT]) {
+      expect(note).toContain("call wrap_up");
+      expect(note.indexOf("call wrap_up")).toBeLessThan(note.indexOf("Do not mention this note."));
+    }
+  });
+});

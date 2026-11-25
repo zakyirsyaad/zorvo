@@ -1,4 +1,5 @@
 import { isVisualId, isVisualKind } from './visuals';
+import { parseNextStep } from './next-step';
 import { invoke } from '@tauri-apps/api/core';
 import {
   TRANSPORT_ACP,
@@ -445,6 +446,17 @@ function withValidAgentMark(message: ChatMessage, key: 'delegationReport' | 'del
   return { ...rest, [key]: kept } as ChatMessage;
 }
 
+/** A next step keeps the fields that fit (`parseNextStep`); the end mark only as `true`. */
+function withValidNextStep(message: ChatMessage): ChatMessage {
+  const { nextStep, endedNormally, ...rest } = message;
+  const step = nextStep === undefined ? null : parseNextStep(nextStep);
+  return {
+    ...(rest as ChatMessage),
+    ...(step ? { nextStep: step } : {}),
+    ...(endedNormally === true ? { endedNormally: true as const } : {}),
+  };
+}
+
 /** An artifact card keeps its three fields when they fit, else the message goes on without it. */
 function withValidArtifactCard(message: ChatMessage): ChatMessage {
   if (!('artifactCard' in message)) return message;
@@ -586,9 +598,9 @@ export function normalizeTranscript(raw: unknown): ChatMessage[] {
   return raw.flatMap((entry): ChatMessage[] => {
     if (!isMessage(entry)) return [];
     const raw = withOnlyTools(entry);
-    const message = withValidArtifactCard(
+    const message = withValidNextStep(withValidArtifactCard(
       withValidSubagentFields(withValidVerification(withValidDelegationReport(withReadableDiffs(withValidEndTime(raw))))),
-    );
+    ));
     if (!('parts' in message)) return [message];
     const { parts, ...rest } = message;
     const isWellFormed = Array.isArray(parts) && parts.length > 0 && parts.every(isMessagePart);

@@ -20,6 +20,7 @@ mod agent_tools_e2e_test;
 mod agent_tools_service_test;
 mod agent_tools_socket_test;
 mod background_processes_test;
+mod branch_state_test;
 mod branches_test;
 mod changes_test;
 mod computer_use_driver_test;

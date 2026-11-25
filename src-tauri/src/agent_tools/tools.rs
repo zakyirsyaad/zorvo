@@ -8,7 +8,7 @@ use crate::artifacts::visuals::{
     MAX_VISUAL_BYTES, NEEDS_TITLE_VISUAL, VISUAL_EMPTY, VISUAL_ONE_SOURCE, VISUAL_TOO_LARGE,
 };
 
-pub const TOOL_NAMES: [&str; 11] = [
+pub const TOOL_NAMES: [&str; 12] = [
     "list_agents",
     "start_worker",
     "send",
@@ -20,6 +20,7 @@ pub const TOOL_NAMES: [&str; 11] = [
     "show_visual",
     "browser",
     "browser_guide",
+    "wrap_up",
 ];
 /// The only tool a worker's token lists or calls. Not in `TOOL_NAMES`: a coordinator never sees it.
 pub const WORKER_TOOL_NAMES: [&str; 1] = ["done"];
@@ -27,6 +28,19 @@ pub const MAX_TEXT_CHARS: usize = 20_000;
 pub const MAX_TITLE_CHARS: usize = 60;
 pub const MAX_SUMMARY_CHARS: usize = 2_000;
 pub const MAX_FILES: usize = 50;
+/// `wrap_up`'s limits, in characters, and the actions an agent may pick.
+pub const MAX_RECAP_CHARS: usize = 300;
+pub const MAX_ASK_CHARS: usize = 100;
+pub const MAX_REPLIES: usize = 2;
+pub const MAX_REPLY_CHARS: usize = 24;
+pub const WRAP_UP_ACTIONS: [&str; 6] = [
+    "commit",
+    "create_pr",
+    "merge",
+    "auto_merge",
+    "open_preview",
+    "open_pr",
+];
 const MAX_NAME_CHARS: usize = 200;
 const MAX_FOLDER_CHARS: usize = 4096;
 const MAX_PATH_CHARS: usize = 4096;
@@ -156,6 +170,21 @@ pub fn tool_list() -> Value {
         json!({"name":"browser", "description":"Operate Zorvo's browser. Open a page with operation tabs.open and url. Scroll the current WebKit page with operation scroll and deltaY (positive is down), without listing tabs first. Omit tabID to use the active WebKit tab; Chromium requires tabID from tabs.open or tabs.list. WebKit is the native in-app view; engine chromium opens an isolated installed Chromium window for advanced diagnostics. Requires the user's session browser grant. File transfers need separate approval. Read browser_guide for advanced operation details.",
             "inputSchema":browser_input_schema()}),
         json!({"name":"browser_guide","description":"List browser operations, parameters, engine limits and permission rules.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}),
+        json!({
+            "name": "wrap_up",
+            "description": "Call once at the end of a turn that changed files or leaves the user a decision. recap: two or three short sentences on what is now true and what is not done. ask: the one decision that is the user's, as a question. pick: the action you recommend, if Zorvo offers it. replies: up to two short answers the user may give. Then end your turn.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "recap": { "type": "string", "maxLength": MAX_RECAP_CHARS },
+                    "ask": { "type": "string", "maxLength": MAX_ASK_CHARS },
+                    "pick": { "type": "string", "enum": WRAP_UP_ACTIONS },
+                    "replies": { "type": "array", "maxItems": MAX_REPLIES, "items": { "type": "string", "maxLength": MAX_REPLY_CHARS } }
+                },
+                "required": ["recap"],
+                "additionalProperties": false
+            }
+        }),
     ]);
     tools
 }
@@ -247,6 +276,7 @@ pub fn validate(tool: &str, args: &Value) -> Result<Value, String> {
         "read_session" => &["handle", "max_chars"],
         "stop_session" => &["handle"],
         "done" => &["outcome", "summary", "files"],
+        "wrap_up" => &["recap", "ask", "pick", "replies"],
         _ => return Err("That tool does not exist.".to_string()),
     };
     if object.keys().any(|key| !allowed.contains(&key.as_str())) {
@@ -294,6 +324,12 @@ pub fn validate(tool: &str, args: &Value) -> Result<Value, String> {
             put_kind(&mut clean, object, false)?;
         }
         "artifact_guide" => put_kind(&mut clean, object, true)?,
+        "wrap_up" => {
+            put_bounded(&mut clean, object, "recap", MAX_RECAP_CHARS, true)?;
+            put_bounded(&mut clean, object, "ask", MAX_ASK_CHARS, false)?;
+            put_pick(&mut clean, object)?;
+            put_replies(&mut clean, object)?;
+        }
         "show_visual" => {
             put_visual_source(&mut clean, object)?;
             put_title(&mut clean, object)?;
@@ -404,6 +440,69 @@ fn put_summary(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Res
         return Err(format!("summary is over {MAX_SUMMARY_CHARS} characters."));
     }
     out.insert("summary".to_string(), json!(text));
+    Ok(())
+}
+
+/// A trimmed string of at most `max` characters; an empty one counts as missing.
+fn put_bounded(
+    out: &mut Map<String, Value>,
+    object: &Map<String, Value>,
+    key: &str,
+    max: usize,
+    required: bool,
+) -> Result<(), String> {
+    let text = string_of(object, key, required)?.map_or("", str::trim);
+    if text.is_empty() {
+        return if required {
+            Err(format!("{key} must not be empty."))
+        } else {
+            Ok(())
+        };
+    }
+    if text.chars().count() > max {
+        return Err(format!("{key} is over {max} characters."));
+    }
+    out.insert(key.to_string(), json!(text));
+    Ok(())
+}
+
+fn put_pick(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Result<(), String> {
+    let Some(pick) = string_of(object, "pick", false)? else {
+        return Ok(());
+    };
+    if !WRAP_UP_ACTIONS.contains(&pick) {
+        return Err(format!(
+            "pick must be one of: {}.",
+            WRAP_UP_ACTIONS.join(", ")
+        ));
+    }
+    out.insert("pick".to_string(), json!(pick));
+    Ok(())
+}
+
+fn put_replies(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Result<(), String> {
+    let list = match object.get("replies") {
+        None | Some(Value::Null) => return Ok(()),
+        Some(Value::Array(list)) => list,
+        Some(_) => return Err("replies must be a list of short answers.".to_string()),
+    };
+    if list.len() > MAX_REPLIES {
+        return Err(format!("replies has more than {MAX_REPLIES} answers."));
+    }
+    let mut replies = Vec::with_capacity(list.len());
+    for reply in list {
+        let text = reply.as_str().map(str::trim).unwrap_or("");
+        if text.is_empty() {
+            return Err("Each reply must be a non-empty string.".to_string());
+        }
+        if text.chars().count() > MAX_REPLY_CHARS {
+            return Err(format!(
+                "Each reply is at most {MAX_REPLY_CHARS} characters."
+            ));
+        }
+        replies.push(text.to_string());
+    }
+    out.insert("replies".to_string(), json!(replies));
     Ok(())
 }
 
@@ -698,7 +797,8 @@ mod tests {
                 "artifact_guide",
                 "show_visual",
                 "browser",
-                "browser_guide"
+                "browser_guide",
+                "wrap_up"
             ]
         );
         for tool in tools {
@@ -1003,9 +1103,62 @@ mod tests {
     }
 
     #[test]
-    fn there_are_eleven_tools_and_show_visual_is_one() {
-        assert_eq!(TOOL_NAMES.len(), 11);
+    fn there_are_twelve_tools_and_wrap_up_is_one() {
+        assert_eq!(TOOL_NAMES.len(), 12);
         assert!(TOOL_NAMES.contains(&"show_visual"));
+        assert!(TOOL_NAMES.contains(&"wrap_up"));
+        let listed: Vec<String> = tool_list()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap().to_string())
+            .collect();
+        assert!(listed.contains(&"wrap_up".to_string()));
+        assert!(worker_tool_list()
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|tool| tool["name"] != "wrap_up"));
+    }
+
+    #[test]
+    fn wrap_up_needs_a_recap() {
+        assert!(validate("wrap_up", &json!({})).is_err());
+        assert!(validate("wrap_up", &json!({"recap": "  "})).is_err());
+    }
+
+    #[test]
+    fn wrap_up_caps_each_field() {
+        let cases = [
+            json!({"recap": "r".repeat(301)}),
+            json!({"recap": "Done.", "ask": "a".repeat(101)}),
+            json!({"recap": "Done.", "replies": ["a", "b", "c"]}),
+            json!({"recap": "Done.", "replies": ["x".repeat(25)]}),
+            json!({"recap": "Done.", "pick": "deploy"}),
+        ];
+        for case in cases {
+            let error = validate("wrap_up", &case).unwrap_err();
+            assert!(
+                !error.contains("rrrr")
+                    && !error.contains("aaaa")
+                    && !error.contains("xxxx")
+                    && !error.contains("deploy"),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn wrap_up_trims_and_keeps_its_fields() {
+        let clean = validate(
+            "wrap_up",
+            &json!({"recap": " Done. ", "ask": "Merge?", "pick": "merge", "replies": ["Not yet"]}),
+        )
+        .unwrap();
+        assert_eq!(clean["recap"], "Done.");
+        assert_eq!(clean["ask"], "Merge?");
+        assert_eq!(clean["pick"], "merge");
+        assert_eq!(clean["replies"], json!(["Not yet"]));
     }
     #[test]
     fn show_visual_takes_exactly_one_source() {

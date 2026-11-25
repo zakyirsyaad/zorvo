@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+
+- **A next-step box at the end of a turn.** Under an agent's last reply, Zorvo shows what changed in the repository, and the agent's short recap and question. Its buttons send your answer as a message, so Commit, Create PR or Merge is one click.
+
 ## [0.18.0] - 2026-11-25
 
 ### Changed

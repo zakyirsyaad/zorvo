@@ -44,6 +44,8 @@ import { ARTIFACT_GUIDE, ARTIFACT_REFUSALS, parseShown, shownResultText, type Sh
 import { withArtifactCard, withCanvasCard } from '../lib/artifact-card';
 import { VISUAL_GUIDE, VISUAL_REFUSALS, VISUAL_SHOWN_TEXT, parseVisualEntry } from '../lib/visuals';
 import { withVisualPart } from '../lib/visual-part';
+import { parseNextStep } from '../lib/next-step';
+import { WRAP_UP_SHOWN_TEXT, withNextStep } from '../lib/next-step-part';
 import { escapeVisible } from '../lib/visible-text';
 import type { AgentProfile, ChatMessage, Session } from '../types';
 import type { GiveTaskResult } from './useDelegation';
@@ -530,6 +532,32 @@ export function useAgentTools(deps: AgentToolsDeps): {
   );
 
   /**
+   * `wrap_up`: the agent's recap, question, pick and replies go on its turn's last reply, where the
+   * next-step box reads them. No card and no grant: it only adds words under the agent's own reply.
+   */
+  const handleWrapUp = useCallback(
+    (session: Session, call: AgentToolCall) => {
+      const step = parseNextStep(call.args);
+      if (step === null || step.recap === undefined) {
+        respond(call.callId, false, FAILED);
+        return;
+      }
+      // Kept as the agent sent them, so the limits hold again on reload; the box spells them out as it draws.
+      const shown = {
+        recap: step.recap,
+        ...(step.ask ? { ask: step.ask } : {}),
+        ...(step.pick ? { pick: step.pick } : {}),
+        ...(step.replies ? { replies: step.replies } : {}),
+      };
+      // The reply's own text may still wait for its frame: it was sent before this call, so it lands first.
+      latest.current.flushUpdates?.();
+      latest.current.updateMessages(session.id, (prev) => withNextStep(prev, shown, { sessionId: session.id, now: Date.now(), createId }));
+      respond(call.callId, true, WRAP_UP_SHOWN_TEXT);
+    },
+    [latest],
+  );
+
+  /**
    * `show_visual`: the backend cleans and keeps the markup, and the reply gets a part that names
    * it. No card and no grant, like a page: nothing in a visual runs, and it only reaches the user
    * who is already here.
@@ -706,12 +734,16 @@ export function useAgentTools(deps: AgentToolsDeps): {
           void handleShowVisual(session, call);
           return;
         }
+        if (call.tool === 'wrap_up') {
+          handleWrapUp(session, call);
+          return;
+        }
         respond(call.callId, false, FAILED);
       } catch {
         respond(call.callId, false, FAILED);
       }
     },
-    [latest, handleDone, handleStartWorker, handleSend, handleStartSession, handleOwned, handleShowArtifact, handleShowVisual],
+    [latest, handleDone, handleStartWorker, handleSend, handleStartSession, handleOwned, handleShowArtifact, handleShowVisual, handleWrapUp],
   );
 
   /** A call ended without our answer (timeout, cancel, session stop): it no longer waits. */

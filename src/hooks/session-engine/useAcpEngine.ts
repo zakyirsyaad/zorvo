@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { withAnswerUndone } from '../../lib/next-step-part';
 import {
   applyAcpUpdate,
   applyPermissionRequest,
@@ -263,7 +264,7 @@ export function useAcpEngine({
       unsettledTurn.current.delete(sessionId);
       agentFailures.clear(sessionId);
       forgetStopAsked(sessionId);
-      updateNow(sessionId, closeTurn);
+      updateNow(sessionId, (prev) => closeTurn(prev, Date.now(), error ? undefined : stopReason));
       saveSoon?.(sessionId);
       if (isPrivateSession(sessionId)) onPrivateTurnEnd?.(sessionId);
       // Only a private session's agent is launched to report credits; an ordinary one's text is its own.
@@ -362,7 +363,8 @@ export function useAcpEngine({
     failedPromptRef.current.delete(sessionId);
     const message = refused?.message;
     // The turn end before this one lands first; the message goes back at once.
-    if (message) updateNow(sessionId, (prev) => withoutMessage(prev, message.id));
+    // A next-step press that sent it is undone too: the agent never took the answer.
+    if (message) updateNow(sessionId, (prev) => withAnswerUndone(withoutMessage(prev, message.id), message));
     if (refused?.context) unsentContextRef.current.set(sessionId, refused.context);
     if (!message) return undefined;
     return message.attachments ? { text: message.content, attachments: message.attachments } : { text: message.content };

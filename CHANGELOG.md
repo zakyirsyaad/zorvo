@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Changed
+
+- **The Zorvo logo over a new session is larger**, and so is the line under it. The logo and the card now sit together in the middle of the window.
+
 ## [0.19.0] - 2026-11-25
 
 ### Added

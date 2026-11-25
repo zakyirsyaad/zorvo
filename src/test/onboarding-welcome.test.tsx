@@ -3,6 +3,7 @@ import { useState } from "react";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { Wordmark } from "../components/onboarding/Wordmark";
+import { NEW_SESSION_LINE, NewSessionAbove } from "../components/workspace/NewSessionView";
 import { AgentChoices, type AgentChoicesProps } from "../components/onboarding/AgentChoices";
 import { FolderChoice } from "../components/onboarding/FolderChoice";
 import { resetAgentInstalls, startInstall, startUpdate } from "../lib/agent-installs";
@@ -40,6 +41,13 @@ describe("the wordmark", () => {
     expect(mark.querySelectorAll("svg path")).toHaveLength(3);
     expect(mark.querySelector("svg")).toHaveAttribute("stroke", "currentColor");
     expect(screen.getByText("zorvo")).toHaveClass("font-semibold", "tracking-[-0.04em]");
+  });
+
+  it("is drawn larger over a new session, with a larger line", () => {
+    render(<NewSessionAbove />);
+    expect(screen.getByRole("img", { name: "Zorvo" }).querySelector("svg")).toHaveClass("size-14");
+    expect(screen.getByText("zorvo")).toHaveClass("text-[56px]");
+    expect(screen.getByText(NEW_SESSION_LINE)).toHaveClass("text-[18px]");
   });
 });
 

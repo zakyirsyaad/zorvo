@@ -11,6 +11,8 @@ export interface PullRequestStatus {
   state: 'open' | 'merged' | 'closed' | string;
   isDraft: boolean;
   checks: { passing: number; failing: number; pending: number };
+  /** GitHub's `mergeStateStatus` (`CLEAN`, `BLOCKED`, `DIRTY`, …), when gh gave one. */
+  mergeState?: string;
 }
 
 /** How often an open session's pull request is read again while the window shows it. */

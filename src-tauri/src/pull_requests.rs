@@ -26,6 +26,13 @@ pub struct CheckCounts {
     pub pending: u32,
 }
 
+/// The fields `session_pull_request` asks gh for.
+const SESSION_PULL_REQUEST_FIELDS: &str =
+    "number,title,url,state,isDraft,statusCheckRollup,mergeStateStatus";
+/// The fields `workspace_pull_requests` asks gh for.
+const WORKSPACE_PULL_REQUEST_FIELDS: &str =
+    "number,title,url,state,isDraft,headRefName,statusCheckRollup,mergeStateStatus";
+
 /// A branch's pull request as the UI shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -39,6 +46,9 @@ pub struct PullRequestStatus {
     pub state: String,
     pub is_draft: bool,
     pub checks: CheckCounts,
+    /// GitHub's `mergeStateStatus` (`CLEAN`, `BLOCKED`, `DIRTY`, …), when gh gave one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub merge_state: Option<String>,
 }
 
 /// Where one check stands: a CheckRun has a status and a conclusion, a
@@ -102,6 +112,11 @@ fn pull_request_of(pr: &Value, branch: &str) -> PullRequestStatus {
         state: text("state").to_ascii_lowercase(),
         is_draft: pr.get("isDraft").and_then(Value::as_bool).unwrap_or(false),
         checks,
+        merge_state: pr
+            .get("mergeStateStatus")
+            .and_then(Value::as_str)
+            .filter(|state| !state.is_empty())
+            .map(str::to_string),
     }
 }
 
@@ -293,7 +308,7 @@ pub fn branch_pull_request(
         "1",
         &format!("--head={branch}"),
         "--json",
-        "number,title,url,state,isDraft,statusCheckRollup",
+        SESSION_PULL_REQUEST_FIELDS,
     ]
     .map(String::from);
     match run_gh(gh, dir, &args)? {
@@ -405,7 +420,7 @@ pub const WORKSPACE_PULL_REQUEST_ARGS: [&str; 8] = [
     "--limit",
     "100",
     "--json",
-    "number,title,url,state,isDraft,headRefName,statusCheckRollup",
+    WORKSPACE_PULL_REQUEST_FIELDS,
 ];
 
 /// A folder's pull requests for the sidebar, with the branch the folder has
@@ -609,10 +624,34 @@ mod tests {
                 "--limit",
                 "100",
                 "--json",
-                "number,title,url,state,isDraft,headRefName,statusCheckRollup",
+                "number,title,url,state,isDraft,headRefName,statusCheckRollup,mergeStateStatus",
             ]
         );
         assert!(listed.pull_requests.is_empty());
+    }
+
+    #[test]
+    fn keeps_the_merge_state_gh_reports() {
+        let listed = r#"[
+            {"number":1,"title":"A","url":"u","state":"OPEN","isDraft":false,"headRefName":"a","mergeStateStatus":"CLEAN"},
+            {"number":2,"title":"B","url":"u","state":"OPEN","isDraft":false,"headRefName":"b"}]"#;
+
+        let list = parse_workspace_pull_requests(listed).expect("parse");
+
+        assert_eq!(list[0].merge_state.as_deref(), Some("CLEAN"));
+        assert_eq!(list[1].merge_state, None);
+        let json = serde_json::to_value(&list[0]).unwrap();
+        assert_eq!(json["mergeState"], "CLEAN");
+        assert!(serde_json::to_value(&list[1])
+            .unwrap()
+            .get("mergeState")
+            .is_none());
+    }
+
+    #[test]
+    fn asks_gh_for_the_merge_state() {
+        assert!(WORKSPACE_PULL_REQUEST_FIELDS.contains("mergeStateStatus"));
+        assert!(SESSION_PULL_REQUEST_FIELDS.contains("mergeStateStatus"));
     }
 
     #[test]

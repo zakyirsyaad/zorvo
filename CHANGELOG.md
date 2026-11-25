@@ -4,6 +4,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-11-25
+
 ### Added
 
 - **A button to jump back to the newest message.** Scroll up to read an earlier part of a chat and a round arrow appears above the composer; press it to return to the latest output, which the chat then follows again.
@@ -538,7 +540,8 @@ Tagged but never published; its fix shipped in 0.11.2.
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.16.0...v0.17.0

@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Changed
+
+- **The session overview is a panel beside the chat.** It runs the full height of the window behind a thin divider and is narrower, so the chat sits in the middle of its own space. On a narrow window it still opens as a card over the chat.
+
 ## [0.19.0] - 2026-11-25
 
 ### Added

@@ -887,6 +887,9 @@ export default function App() {
   const inspectorTab = inspector.tab && inspectorTabs.includes(inspector.tab) ? inspector.tab : null;
   // The open artifact's page takes the chat's place: only on the Artifacts tab of a session that still has one.
   const isArtifactExpanded = inspector.isArtifactExpanded && inspectorTab === "artifacts" && sessionArtifacts.length + sessionCanvases.length > 0;
+  // The Browser tab's Expand: the inspector takes the whole stage, the main sheet hidden, and the page's native view
+  // only moves (its box grows), so the page keeps what it holds.
+  const isBrowserExpanded = inspector.isBrowserExpanded && inspectorTab === "browser" && activeSession !== undefined;
   // The artifact page on screen, for its comments: the Artifacts tab's viewer shows it, expanded or not.
   const shownArtifact = inspectorTab === "artifacts" ? shownArtifactOf(sessionArtifacts, inspector.viewedArtifact, createdFiles.length + sessionCanvases.length) : undefined;
   const viewedVersion = inspector.viewedArtifact?.artifactId === shownArtifact?.id ? inspector.viewedArtifact?.version : null;
@@ -2090,7 +2093,7 @@ export default function App() {
             />
           )}
           {/* Hidden, not unmounted, under the gallery: the composer keeps its text. */}
-          <div data-sheet="main" className={`${isGalleryShown ? "hidden" : "flex"} min-w-0 flex-1 flex-col overflow-hidden rounded-panel border border-border bg-sheet`}>
+          <div data-sheet="main" className={`${isGalleryShown || isBrowserExpanded ? "hidden" : "flex"} min-w-0 flex-1 flex-col overflow-hidden rounded-panel border border-border bg-sheet`}>
             <TopBar
               onShowSidebar={isSidebarHidden ? () => setSidebarHidden(false) : undefined}
               hasTrafficLights={isSidebarHidden}
@@ -2604,12 +2607,13 @@ export default function App() {
             <Inspector
               tab={inspectorTab}
               tabs={inspectorTabs}
-              width={inspector.width}
+              width={inspectorTab === "browser" ? inspector.browserWidth : inspector.width}
               maxWidth={maxInspectorWidth(windowWidth, !isSidebarHidden)}
+              isExpanded={isBrowserExpanded}
               counts={{ changes: inspector.changes.changes?.length, artifacts: sessionArtifacts.length + createdFiles.length || undefined, tasks: taskTabs.tabs.length || undefined }}
               isViewingFile={inspectorTab === "files" && inspector.viewedFile !== null}
               onSelect={inspector.show}
-              onResize={inspector.setWidth}
+              onResize={inspectorTab === "browser" ? inspector.setBrowserWidth : inspector.setWidth}
               onClose={() => {
                 inspector.close();
                 inspectorButtonRef.current?.focus();
@@ -2750,6 +2754,8 @@ export default function App() {
               {inspectorTab === "browser" && activeSession && <BrowserPanel
                 key={activeSession.id}
                 sessionId={activeSession.id}
+                isExpanded={isBrowserExpanded}
+                onToggleExpanded={() => inspector.setBrowserExpanded(!isBrowserExpanded)}
                 onError={reportError}
                 onAddContext={replyBlockedReason({ isComposerHidden, isComposerDisabled, isHeldElsewhere: review.isHeldFor(activeSessionId) })
                   ? undefined

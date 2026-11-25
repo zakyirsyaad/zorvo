@@ -15,9 +15,20 @@ export const STAGE_INSET = 8;
 export const MIN_CHAT_WIDTH = 536;
 
 /** A width the inspector may take: rounded, within its bounds, the initial width when not a number. */
-export function clampInspectorWidth(px: number): number {
-  if (!Number.isFinite(px)) return INSPECTOR_WIDTH.initial;
-  return Math.min(INSPECTOR_WIDTH.max, Math.max(INSPECTOR_WIDTH.min, Math.round(px)));
+export function clampInspectorWidth(px: number, max: number = INSPECTOR_WIDTH.max, fallback: number = INSPECTOR_WIDTH.initial): number {
+  if (!Number.isFinite(px)) return fallback;
+  return Math.min(max, Math.max(INSPECTOR_WIDTH.min, Math.round(px)));
+}
+
+/**
+ * The widest the Browser tab's remembered width may be. A page needs the room a browser window has, so it is
+ * not held to `INSPECTOR_WIDTH.max`; what shows is still capped by the window (`maxInspectorWidth`).
+ */
+export const BROWSER_MAX_WIDTH = 4000;
+
+/** How far a drag or an arrow key may widen this tab: the Browser tab up to the window's room, the rest to 720. */
+export function maxResizeWidth(tab: InspectorTab, maxWidth: number): number {
+  return tab === "browser" ? maxWidth : Math.min(INSPECTOR_WIDTH.max, maxWidth);
 }
 
 /**

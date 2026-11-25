@@ -14,7 +14,17 @@ import { BrowserTools } from "./BrowserTools";
 import { BrowserToolbar, BROWSER_PANELS, type BrowserPanelId, type BrowserOverlay } from "./BrowserToolbar";
 import { invoke } from "@tauri-apps/api/core";
 
-export function BrowserPanel({ sessionId, onError, onAddContext }: { sessionId: string; onError: (message: string) => void; onAddContext?: (text: string) => void }) {
+interface BrowserPanelProps {
+  sessionId: string;
+  onError: (message: string) => void;
+  onAddContext?: (text: string) => void;
+  /** The browser takes the whole stage, over the chat. */
+  isExpanded?: boolean;
+  /** Expands the browser over the chat, or shrinks it back. */
+  onToggleExpanded?: () => void;
+}
+
+export function BrowserPanel({ sessionId, onError, onAddContext, isExpanded = false, onToggleExpanded }: BrowserPanelProps) {
   const [engine, setEngine] = useState<BrowserEngine>("webkit");
   const [panel, setPanel] = useState<BrowserPanelId>("page");
   const [overlay, setOverlay] = useState<BrowserOverlay>(null);
@@ -62,7 +72,9 @@ export function BrowserPanel({ sessionId, onError, onAddContext }: { sessionId: 
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col" aria-label="Browser">
+    <div className="flex min-h-0 flex-1 flex-col" aria-label="Browser"
+      // Escape shrinks an expanded browser; while one of the toolbar's menus is open, it closes only the menu.
+      onKeyDown={event => { if (event.key === "Escape" && isExpanded && overlay === null && !event.defaultPrevented && onToggleExpanded) onToggleExpanded(); }}>
       <BrowserToolbar tabs={browser.state.tabs} active={active} engine={engine} panel={panel} busy={browser.busy}
         zoomFactor={active?.zoomFactor ?? 1} hasHistory={(history.visits.length > 0 || history.failed) && !history.busy}
         onNewTab={() => {
@@ -75,6 +87,7 @@ export function BrowserPanel({ sessionId, onError, onAddContext }: { sessionId: 
         onCopyLink={copyLink}
         onOpenExternal={() => { if (!blank) void invoke("open_external_url", { url: active.url }).catch(error => setLocalError(String(error))); }}
         onClearHistory={() => { void history.clear(); }}
+        isExpanded={isExpanded} onToggleExpanded={onToggleExpanded}
         site={site.site} siteBusy={site.busy} onClearSite={() => void site.clear()}
         overlay={overlay} onOverlay={setOverlay} onNavigate={navigate} onAction={run}
         onEngine={next => { setEngine(next); setPanel("page"); }} onPanel={setPanel}

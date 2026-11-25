@@ -24,6 +24,7 @@ const server = http.createServer((request, response) => {
       <label>Statement <input type="file" multiple aria-label="Statement file"></label>
       <button type="button" aria-label="Plain button">Plain</button><output id="upload-ready">Ready</output>
       <script>document.querySelector('input[type=file]').addEventListener('change', async event => {
+        window.changes = (window.changes || 0) + 1;
         const files = [...event.target.files];
         window.uploaded = await Promise.all(files.map(async file => ({ name: file.name, size: file.size, text: await file.text() })));
       });</script>`);

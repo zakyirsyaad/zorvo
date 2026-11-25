@@ -166,8 +166,9 @@ Additional explicit cases:
   the page's own file chooser after the helper clicks the input and reads `taken` (the page reads
   back both files' names and contents); a click that opens no chooser reads `waiting`, then
   `expired` once the arm's lifetime ends, never `taken`; withdrawing needs no call grant; and no
-  upload is armed for an origin other than the page's. The system open panel for a person's own
-  click is not driven here.
+  upload is armed for an origin other than the page's. A click with nothing armed opens the system
+  open panel (found among the app's windows, shown for 1.5 s, then cancelled), and cancelling it
+  leaves the input as it was.
 - `forms`: nested open-shadow refs, a strict-CSP page, awaited expressions,
   exactly-once runtime errors, the legacy script alias, and an actual React
   controlled long form. React is bundled from the checkout into an in-memory

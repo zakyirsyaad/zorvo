@@ -59,6 +59,50 @@ async fn wait_state(app: &AppHandle, args: &Value, wanted: &str) -> Result<(), S
     Err(format!("The upload never became {wanted}."))
 }
 
+/// The system open panels on screen, read on the main thread; with `cancel`, each is cancelled.
+async fn open_panels(app: &AppHandle, cancel: bool) -> Result<usize, String> {
+    let (send, receive) = tokio::sync::oneshot::channel();
+    app.run_on_main_thread(move || {
+        let Some(mtm) = objc2_foundation::MainThreadMarker::new() else {
+            let _ = send.send(0);
+            return;
+        };
+        let mut count = 0;
+        for window in objc2_app_kit::NSApplication::sharedApplication(mtm)
+            .windows()
+            .iter()
+        {
+            let Ok(panel) = window.downcast::<objc2_app_kit::NSOpenPanel>() else {
+                continue;
+            };
+            if panel.isVisible() {
+                count += 1;
+                if cancel {
+                    // SAFETY: the panel's own cancel action, sent on the main thread.
+                    unsafe { panel.cancel(None) };
+                }
+            }
+        }
+        let _ = send.send(count);
+    })
+    .map_err(|_| "The main thread is unavailable.")?;
+    receive
+        .await
+        .map_err(|_| "The panel check was cancelled.".to_string())
+}
+
+async fn wait_panels(app: &AppHandle, wanted: impl Fn(usize) -> bool) -> Result<usize, String> {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        let count = open_panels(app, false).await?;
+        if wanted(count) {
+            return Ok(count);
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    Err("The system open panel did not appear or close in time.".into())
+}
+
 pub(super) async fn smoke(app: &AppHandle, base: &url::Url) -> Result<Value, String> {
     let scratch = std::env::temp_dir().join(format!("zorvo-upload-smoke-{}", std::process::id()));
     let result = async {
@@ -157,12 +201,38 @@ pub(super) async fn smoke(app: &AppHandle, base: &url::Url) -> Result<Value, Str
             return Err("An upload was armed for another origin than the page's.".into());
         }
 
+        // Nothing armed: the click is answered as a person's, with the system open panel. It shows,
+        // and cancelling it leaves the input as it was, with no change event.
+        let before = open_panels(app, false).await?;
+        execute(
+            app,
+            SESSION.into(),
+            json!({"operation":"click","tabId":tab,"ref":input}),
+        )
+        .await?;
+        let shown = wait_panels(app, |count| count > before).await?;
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        open_panels(app, true).await?;
+        wait_panels(app, |count| count == before).await?;
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let after = evaluate(
+            app,
+            &tab,
+            "({changes: window.changes, files: document.querySelector('input[type=file]').files.length})",
+        )
+        .await?;
+        if after != json!({"changes":1,"files":2}) {
+            return Err(format!("Cancelling the open panel changed the input: {after}"));
+        }
+
         Ok::<_, String>(json!({
             "received": names,
             "refChecked": true,
             "plainClickExpired": true,
             "disarmed": true,
             "otherOriginRefused": true,
+            "systemPanelShown": shown > before,
+            "panelCancelLeftInput": true,
         }))
     }
     .await;

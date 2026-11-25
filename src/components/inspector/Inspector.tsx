@@ -3,7 +3,7 @@ import { X } from "lucide-react";
 import { IconButton } from "../ui/IconButton";
 import { Tabs, tabIds, type TabItem } from "../ui/Tabs";
 import { useLatest } from "../../hooks/useLatest";
-import { clampInspectorWidth, INSPECTOR_WIDTH, minInspectorWidth, shownInspectorWidth, type InspectorTab } from "../../lib/inspector";
+import { INSPECTOR_WIDTH, maxResizeWidth, minInspectorWidth, shownInspectorWidth, type InspectorTab } from "../../lib/inspector";
 
 const LABELS: Record<InspectorTab, string> = {
   changes: "Changes",
@@ -30,6 +30,8 @@ export interface InspectorProps {
   isViewingFile?: boolean;
   /** The most the window leaves room for (`maxInspectorWidth`); it wins over the minimums and the remembered width. */
   maxWidth?: number;
+  /** It takes the whole stage, the main sheet hidden (the Browser tab's Expand): no edge to drag. */
+  isExpanded?: boolean;
   onSelect: (tab: InspectorTab) => void;
   onResize: (px: number) => void;
   onClose: () => void;
@@ -38,7 +40,7 @@ export interface InspectorProps {
 }
 
 /** The right-hand inspector: one tab of the session's changes, activity, files or terminal, with an edge that drags. */
-export function Inspector({ tab, tabs, width, counts, isViewingFile = false, maxWidth = Number.POSITIVE_INFINITY, onSelect, onResize, onClose, children }: InspectorProps) {
+export function Inspector({ tab, tabs, width, counts, isViewingFile = false, maxWidth = Number.POSITIVE_INFINITY, isExpanded = false, onSelect, onResize, onClose, children }: InspectorProps) {
   const onResizeRef = useLatest(onResize);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const stopDragRef = useRef<() => void>(() => {});
@@ -58,8 +60,8 @@ export function Inspector({ tab, tabs, width, counts, isViewingFile = false, max
   // and never goes below the tab's own minimum, so every step changes what you see.
   const shown = shownInspectorWidth(tab, width, isViewingFile, maxWidth);
   const min = Math.min(minInspectorWidth(tab, isViewingFile), maxWidth);
-  const max = Math.min(INSPECTOR_WIDTH.max, maxWidth);
-  const widthFor = (px: number) => Math.min(max, Math.max(min, clampInspectorWidth(px)));
+  const max = maxResizeWidth(tab, maxWidth);
+  const widthFor = (px: number) => Math.min(max, Math.max(min, Math.round(px)));
 
   const startDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
     // Only the main button drags: a right-click's menu would swallow the pointerup that ends it.
@@ -104,12 +106,12 @@ export function Inspector({ tab, tabs, width, counts, isViewingFile = false, max
   return (
     <section
       aria-label="Inspector"
-      style={{ width: shown }}
+      style={isExpanded ? undefined : { width: shown }}
       // It fades in when it opens (the panel token). Only opacity: a slide would move the box the artifact's
       // native view is placed by while the animation runs.
-      className="relative flex shrink-0 text-ui text-fg motion-safe:animate-panel-in"
+      className={`relative flex text-ui text-fg motion-safe:animate-panel-in ${isExpanded ? "min-w-0 flex-1" : "shrink-0"}`}
     >
-      <div
+      {!isExpanded && <div
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize inspector"
@@ -131,7 +133,7 @@ export function Inspector({ tab, tabs, width, counts, isViewingFile = false, max
           aria-hidden="true"
           className="absolute top-1/2 left-0.5 -mt-[18px] h-9 w-2.5 rounded-[5px] bg-border-strong opacity-0 transition-opacity group-hover:opacity-100 group-data-[dragging]:opacity-100"
         />
-      </div>
+      </div>}
       <div data-sheet="inspector" className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-panel border border-border bg-sheet">
         <div className="flex h-12 shrink-0 items-stretch justify-between border-b border-border pr-2 pl-3">
           {/* Five tabs need about 370px: tighter tabs fit the default width, and a narrower track scrolls, so no tab is cut. */}

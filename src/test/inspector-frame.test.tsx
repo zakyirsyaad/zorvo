@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { Inspector } from "../components/inspector/Inspector";
@@ -10,6 +10,31 @@ function renderInspector() {
     </Inspector>,
   );
 }
+
+describe("the Browser tab's room", () => {
+  it("widens past 720px by keyboard when the window has room", () => {
+    const onResize = vi.fn();
+    render(
+      <Inspector tab="browser" tabs={["browser"]} width={712} maxWidth={1400} onSelect={() => {}} onResize={onResize} onClose={() => {}}>
+        <p>page</p>
+      </Inspector>,
+    );
+    fireEvent.keyDown(screen.getByRole("separator", { name: "Resize inspector" }), { key: "ArrowLeft" });
+    expect(onResize).toHaveBeenCalledWith(728);
+  });
+
+  it("fills the stage with no resize edge while expanded", () => {
+    render(
+      <Inspector tab="browser" tabs={["browser"]} width={560} isExpanded onSelect={() => {}} onResize={() => {}} onClose={() => {}}>
+        <p>page</p>
+      </Inspector>,
+    );
+    const inspector = screen.getByRole("region", { name: "Inspector" });
+    expect(inspector).toHaveClass("flex-1");
+    expect(inspector.style.width).toBe("");
+    expect(screen.queryByRole("separator", { name: "Resize inspector" })).toBeNull();
+  });
+});
 
 describe("the inspector's frame as drawn", () => {
   it("the tab strip is 48px with the canvas padding", () => {

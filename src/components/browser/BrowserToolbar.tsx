@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
-import { ArrowLeft, ArrowRight, Cookie, Globe, LockKeyhole, MoreHorizontal, PanelRight, RefreshCw, ShieldOff, SlidersHorizontal, SquareMousePointer, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Cookie, Globe, LockKeyhole, Maximize2, Minimize2, MoreHorizontal, PanelRight, RefreshCw, ShieldOff, SlidersHorizontal, SquareMousePointer, X } from "lucide-react";
 import type { BrowserEngine, BrowserTab } from "../../lib/browser";
 import { IconButton } from "../ui/IconButton";
 import { Button } from "../ui/Button";
@@ -48,6 +48,10 @@ interface BrowserToolbarProps {
   onOpenExternal: () => void;
   onClearHistory: () => void;
   hasHistory: boolean;
+  /** The browser takes the whole stage, over the chat. */
+  isExpanded?: boolean;
+  /** Expands the browser over the chat, or shrinks it back; absent, there is no Expand. */
+  onToggleExpanded?: () => void;
 }
 
 function menuKeys(event: KeyboardEvent<HTMLDivElement>) {
@@ -62,7 +66,7 @@ function menuKeys(event: KeyboardEvent<HTMLDivElement>) {
 }
 
 /** Page tabs sit above navigation; the page menu and diagnostic tools have separate controls. */
-export function BrowserToolbar({ tabs, active, engine, panel, busy, overlay, onOverlay, onNavigate, onAction, onEngine, onPanel, onRevoke, onSelectElement, selectingElement, site, siteBusy, onClearSite, onNewTab, zoomFactor, onZoom, onCopyLink, onOpenExternal, onClearHistory, hasHistory }: BrowserToolbarProps) {
+export function BrowserToolbar({ tabs, active, engine, panel, busy, overlay, onOverlay, onNavigate, onAction, onEngine, onPanel, onRevoke, onSelectElement, selectingElement, site, siteBusy, onClearSite, onNewTab, zoomFactor, onZoom, onCopyLink, onOpenExternal, onClearHistory, hasHistory, isExpanded = false, onToggleExpanded }: BrowserToolbarProps) {
   const menu = useRef<HTMLDivElement>(null);
   const tools = useRef<HTMLDivElement>(null);
   const choose = (action: () => void) => { onOverlay(null); action(); };
@@ -80,7 +84,11 @@ export function BrowserToolbar({ tabs, active, engine, panel, busy, overlay, onO
       onSelect={id => onAction({ operation: "tabs.focus", tabId: id })}
       onClose={id => onAction({ operation: "tabs.close", tabId: id })}
       onNewTab={() => choose(onNewTab)}
-      trailing={<Popover isOpen={overlay === "tools"} onClose={() => onOverlay(null)} align="end" label="Browser tools" className="w-56"
+      trailing={<div className="flex items-center gap-0.5">
+        {onToggleExpanded && <IconButton label={isExpanded ? "Shrink browser" : "Expand browser"} size="sm" onClick={onToggleExpanded}>
+          {isExpanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+        </IconButton>}
+        <Popover isOpen={overlay === "tools"} onClose={() => onOverlay(null)} align="end" label="Browser tools" className="w-56"
         trigger={<IconButton label="Browser tools" size="sm" aria-haspopup="menu" aria-expanded={overlay === "tools"} onClick={() => onOverlay(overlay === "tools" ? null : "tools")}
           onKeyDown={event => {
             if (event.key !== "ArrowDown") return;
@@ -97,7 +105,8 @@ export function BrowserToolbar({ tabs, active, engine, panel, busy, overlay, onO
           <div role="separator" className="my-1 border-t border-border" />
           <PopoverOption onSelect={() => choose(onRevoke)}>Revoke browser access</PopoverOption>
         </div>
-      </Popover>} />
+      </Popover>
+      </div>} />
     <div role="toolbar" aria-label="Browser navigation" className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-3 [&_svg]:stroke-1">
     <div className="flex shrink-0 items-center">
       <IconButton label="Navigate back" size="md" disabled={busy || !active?.canGoBack} onClick={() => onAction({ operation: "back", tabId: active?.id })}><ArrowLeft size={16} /></IconButton>

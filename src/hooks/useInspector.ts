@@ -31,6 +31,12 @@ export interface InspectorState {
   /** The remembered width, clamped to its bounds. */
   width: number;
   setWidth: (px: number) => void;
+  /** The Browser tab's own remembered width, which may pass the other tabs' 720px cap. */
+  browserWidth: number;
+  setBrowserWidth: (px: number) => void;
+  /** The Browser tab takes the whole stage, the chat hidden; it ends when another tab shows or the inspector closes. */
+  isBrowserExpanded: boolean;
+  setBrowserExpanded: (isExpanded: boolean) => void;
   /** The uncommitted changes in the session's repository, for the Changes tab and its count. */
   changes: SessionChanges;
   /** Per-file line counts against HEAD, for the diff-stat chip; null until the first read. */
@@ -98,6 +104,8 @@ export function useInspector(
   // The view whose chat the review takes the place of; any other view shows its chat, the diff beside it.
   const [expandedView, setExpandedView] = useState<string | null>(null);
   const [width, setWidth] = useInspectorWidth();
+  const [browserWidth, setBrowserWidth] = useInspectorWidth("browser");
+  const [isBrowserExpanded, setBrowserExpanded] = useState(false);
   const changes = useSessionChanges(folderPath, isRepository, turnsEnded, onError);
   const { stats: headStats, hasFailed: headStatsFailed } = useDiffStats(folderPath, isRepository, "head", changes.version, onError);
   const { targets, hasFailed: targetsFailed } = useDiffTargets(folderPath, isRepository, changes.version, onError);
@@ -151,10 +159,11 @@ export function useInspector(
   const show = (next: InspectorTab) => {
     // The list may be stale while its tab is not shown (an agent mid-turn): showing it reads it afresh.
     if ((next === "changes" || next === "activity") && shownTab !== next) changes.reload();
-    makeRoom(shownInspectorWidth(next, width, next === "files" && isViewingFile));
+    makeRoom(shownInspectorWidth(next, next === "browser" ? browserWidth : width, next === "files" && isViewingFile));
     // The diff and the inspector share the room beside the chat: one shows at a time.
     closeDiff();
     if (next !== "artifacts") setArtifactExpanded(false);
+    if (next !== "browser") setBrowserExpanded(false);
     setTab(next);
     setLastTab(next);
     layout.onShow?.(next);
@@ -163,6 +172,7 @@ export function useInspector(
   const toggle = (offered: readonly InspectorTab[]) => {
     if (shownTab !== null && offered.includes(shownTab)) {
       setTab(null);
+      setBrowserExpanded(false);
       return;
     }
     const next =
@@ -179,6 +189,7 @@ export function useInspector(
     // The full review opens in the chat's place; Shrink, or Add to message, brings it beside the chat.
     setExpandedView(forView ?? layout.view);
     setArtifactExpanded(false);
+    setBrowserExpanded(false);
     setTab(null);
   };
 
@@ -188,7 +199,10 @@ export function useInspector(
     tab,
     show,
     toggle,
-    close: () => setTab(null),
+    close: () => {
+      setTab(null);
+      setBrowserExpanded(false);
+    },
     isDiffOpen,
     isDiffExpanded: isDiffOpen && isExpandedHere,
     openDiff,
@@ -197,6 +211,10 @@ export function useInspector(
     collapseDiff: () => setExpandedView(null),
     width,
     setWidth,
+    browserWidth,
+    setBrowserWidth,
+    isBrowserExpanded,
+    setBrowserExpanded,
     changes,
     headStats,
     headStatsFailed,

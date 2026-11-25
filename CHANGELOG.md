@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Changed
+
+- **The Browser tab can take the whole window.** Expand, beside the browser tools, gives the page the room the chat had; Shrink or Escape brings the chat back, and the page keeps what it holds. Dragged by its edge, the Browser tab now widens as far as the window allows instead of stopping at 720px, and remembers its own width.
+
 ## [0.19.0] - 2026-11-25
 
 ### Added

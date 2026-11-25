@@ -263,7 +263,7 @@ export function useAcpEngine({
       unsettledTurn.current.delete(sessionId);
       agentFailures.clear(sessionId);
       forgetStopAsked(sessionId);
-      updateNow(sessionId, closeTurn);
+      updateNow(sessionId, (prev) => closeTurn(prev, Date.now(), error ? undefined : stopReason));
       saveSoon?.(sessionId);
       if (isPrivateSession(sessionId)) onPrivateTurnEnd?.(sessionId);
       // Only a private session's agent is launched to report credits; an ordinary one's text is its own.

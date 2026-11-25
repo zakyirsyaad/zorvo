@@ -4,6 +4,11 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+
+- **Agents can make videos.** Ask any agent for a video or motion graphics and it writes a composition (a page that moves, with a `motion.json`), shows it beside the chat with a play head, checks stills with motion blur, and renders MP4s of every format you asked for, with sound only when you ask. Zorvo renders with WebKit and AVFoundation on your Mac: nothing is downloaded, and the preview is the same engine as the video. Export saves one format or all of them.
+- **Videos play in Zorvo.** An MP4 or MOV an agent shows (a Remotion render, say) gets a card in the chat and a player in Output, and the Files viewer plays videos in your project.
+
 ## [0.20.1] - 2026-11-25
 
 ### Fixed

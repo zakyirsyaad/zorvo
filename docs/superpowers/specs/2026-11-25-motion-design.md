@@ -1,6 +1,6 @@
 # Motion and video: agents make videos that Zorvo plays and renders
 
-Date: 2026-11-25. Status: design and implementation on `feat/motion-video`.
+Date: 2026-11-25. Status: built on `feat/motion-video`.
 Parts 1 and 2 were agreed in chat. Parts 3 to 5 were decided in the same session from the review
 and the spike below, and are open to correction in review.
 
@@ -156,9 +156,8 @@ promo/
 
 ## Part 4: screens
 
-- **Chat.** A motion or video card: poster, title, duration and formats, and a Play button. A video
-  plays in place through `zorvo-media`. A motion plays its newest up-to-date render, else Open
-  shows its preview in Output. A running render shows its progress. Nothing autoplays.
+- **Chat.** A motion or video card: title, length and formats, and Open, which shows it in Output
+  (as Claude Code desktop's file card opens in its side panel). Nothing autoplays.
 - **Output.** Rows for motions (duration, formats, rendered or not) and videos.
 - **Motion viewer.** Header: title, format switch, play and pause, time, a scrubber, Export (this
   format, all formats) and ⋯. The preview in the native view, letterboxed. Under it: "Preview has
@@ -183,4 +182,5 @@ promo/
 ## Not in this version
 
 Comments on motion, `<video>` inside a composition, virtual time, loudness normalization, HEVC,
-ProRes or GIF, running Remotion, a timeline editor, playback in a popout.
+ProRes or GIF, running Remotion, a timeline editor, playback in a popout, motions and videos in the
+gallery, a poster picture on the chat card, playing in place in the chat.

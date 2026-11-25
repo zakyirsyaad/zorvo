@@ -23,6 +23,14 @@ describe("the chat column, as drawn", () => {
     expect(screen.getByTestId("chat-message-m-1")).toHaveClass("max-w-chat");
   });
 
+  it("keeps what is absolutely placed in the chat, like its screen-reader lines, inside its own scroll", () => {
+    render(<ChatCanvas messages={[reply]} footer={<p className="sr-only">live</p>} />);
+    const canvas = screen.getByTestId("chat-canvas-container");
+    // The scroll is their containing block: placed by the frame around it instead, they made the
+    // main column as tall as the whole chat, with a second scrollbar.
+    expect(canvas).toHaveClass("relative");
+  });
+
   it("keeps every part of the column 720px wide", () => {
     const files = [
       "components/ChatCanvas.tsx",

@@ -1,6 +1,8 @@
 import {
   useCallback,
+  useEffect,
   useRef,
+  useState,
   type KeyboardEvent,
   type RefObject,
   type TouchEvent,
@@ -10,10 +12,15 @@ import {
 /** How close to the bottom still counts as following new output. */
 export const STICK_TO_BOTTOM_PX = 80;
 
+/** How far above the bottom the view must be before a jump back down is offered: a few lines, not a nudge. */
+export const OFFER_JUMP_PX = 240;
+
 const KEYS_THAT_MOVE_UP = new Set(["PageUp", "ArrowUp", "Home"]);
 
 export interface StickToBottom {
   containerRef: RefObject<HTMLDivElement | null>;
+  /** The element that holds the content, watched for size changes no new message announces. */
+  contentRef: RefObject<HTMLDivElement | null>;
   onScroll: () => void;
   onWheel: (event: WheelEvent<HTMLDivElement>) => void;
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
@@ -25,6 +32,8 @@ export interface StickToBottom {
   followNewContent: () => void;
   /** Leaves the bottom, for a jump to an earlier message. */
   stopFollowing: () => void;
+  /** The user scrolled more than {@link OFFER_JUMP_PX} above the newest output. */
+  isAwayFromBottom: boolean;
 }
 
 /**
@@ -35,11 +44,14 @@ export interface StickToBottom {
  */
 export function useStickToBottom(): StickToBottom {
   const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const isFollowingRef = useRef(true);
   // The scrollTop this hook set itself: its scroll event is not the user's.
   const ownScrollTopRef = useRef<number | null>(null);
   const lastScrollTopRef = useRef(0);
   const lastTouchYRef = useRef<number | null>(null);
+  // State, unlike the rest: the jump button shows and hides with it. Set only when it changes.
+  const [isAwayFromBottom, setIsAwayFromBottom] = useState(false);
 
   const scrollToBottom = useCallback(() => {
     const el = containerRef.current;
@@ -48,6 +60,7 @@ export function useStickToBottom(): StickToBottom {
     el.scrollTop = el.scrollHeight;
     ownScrollTopRef.current = el.scrollTop;
     lastScrollTopRef.current = el.scrollTop;
+    setIsAwayFromBottom(false);
   }, []);
 
   const followNewContent = useCallback(() => {
@@ -63,6 +76,21 @@ export function useStickToBottom(): StickToBottom {
     isFollowingRef.current = false;
   }, []);
 
+  // A late image, a box under the reply, a reflow when a panel opens or a taller composer change the
+  // size without a new message: follow them too, and say again whether the view is away.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      followNewContent();
+      const el = containerRef.current;
+      if (el) setIsAwayFromBottom(el.scrollHeight - el.scrollTop - el.clientHeight > OFFER_JUMP_PX);
+    });
+    observer.observe(container);
+    if (contentRef.current) observer.observe(contentRef.current);
+    return () => observer.disconnect();
+  }, [followNewContent]);
+
   const onScroll = useCallback(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -75,9 +103,13 @@ export function useStickToBottom(): StickToBottom {
       return;
     }
     ownScrollTopRef.current = null;
-    if (top < lastScrollTopRef.current) isFollowingRef.current = false;
-    else if (el.scrollHeight - top - el.clientHeight <= STICK_TO_BOTTOM_PX) isFollowingRef.current = true;
+    const distance = el.scrollHeight - top - el.clientHeight;
+    // Content that shrinks makes the browser pull the view up to the new end, which also fires a
+    // scroll: that move ends at the bottom, so only a move up that leaves the bottom is the user's.
+    if (top < lastScrollTopRef.current && distance > STICK_TO_BOTTOM_PX) isFollowingRef.current = false;
+    else if (distance <= STICK_TO_BOTTOM_PX) isFollowingRef.current = true;
     lastScrollTopRef.current = top;
+    setIsAwayFromBottom(distance > OFFER_JUMP_PX);
   }, []);
 
   /** An upward signal only leaves the bottom when the view can actually move up. */
@@ -121,6 +153,7 @@ export function useStickToBottom(): StickToBottom {
 
   return {
     containerRef,
+    contentRef,
     onScroll,
     onWheel,
     onKeyDown,
@@ -129,5 +162,6 @@ export function useStickToBottom(): StickToBottom {
     scrollToBottom,
     followNewContent,
     stopFollowing,
+    isAwayFromBottom,
   };
 }

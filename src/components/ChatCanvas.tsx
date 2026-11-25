@@ -1,6 +1,7 @@
 import type { ModelPrice } from "../lib/private-credits";
 import type { NextStepView } from "./chat/NextStepBox";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ArrowDown } from "lucide-react";
 import { useArrivedKeys } from "../hooks/useArrivedKeys";
 import { MessageRow } from "./chat/MessageRow";
 import { WorkingIndicator } from "./chat/ReplyExtras";
@@ -268,77 +269,95 @@ export function ChatCanvas({
   const workStartedAt = workingSince !== null && sentAt !== undefined ? Math.max(sentAt, workingSince) : (workingSince ?? sentAt);
 
   return (
-    <div
-      ref={stickToBottom.containerRef}
-      onScroll={(event) => {
-        stickToBottom.onScroll();
-        chatSelection.onScroll(event.currentTarget);
-      }}
-      onMouseUp={(event) => chatSelection.onMouseUp(event.currentTarget)}
-      onWheel={stickToBottom.onWheel}
-      onKeyDown={stickToBottom.onKeyDown}
-      onTouchStart={stickToBottom.onTouchStart}
-      onTouchMove={stickToBottom.onTouchMove}
-      data-testid="chat-canvas-container"
-      className="flex-1 overflow-y-auto pt-9 px-8 pb-4 space-y-8"
-    >
-      {header && <div className="mx-auto w-full max-w-chat">{header}</div>}
-      {delegatedFrom && <div className="mx-auto w-full max-w-chat">{delegatedFrom}</div>}
-      {visibleMessages.map((msg, index) => (
-        <MessageRow
-          key={msg.id}
-          message={msg}
-          agentName={agentName}
-          agentProfileId={agentProfileId}
-          visualSessionId={visualSessionId}
-          isLast={msg === lastMessage}
-          // Only the row the box belongs to gets the view, so the others keep their memo.
-          nextStep={nextStep === undefined ? undefined : nextStep?.messageId === msg.id ? nextStep : null}
-          isCurrentTurn={msg.role === "agent" && index >= currentTurnStartsAt}
-          showActions={msg.role !== "user" && index < runningTurnStartsAt}
-          copied={copiedMessageId === msg.id}
-          speaking={readAloud.speakingMessageId === msg.id}
-          readAloudSupported={readAloud.supported}
-          onCopy={handleCopyMessage}
-          onFork={onForkBranch ? handleFork : undefined}
-          onRewind={onRewind ? handleRewind : undefined}
-          onToggleReadAloud={handleToggleReadAloud}
-          onChooseOption={onChooseOption ? handleChooseOption : undefined}
-          onAnswerElicitation={onAnswerElicitation ? handleAnswerElicitation : undefined}
-          onReopenElicitationUrl={onReopenElicitationUrl ? handleReopenElicitationUrl : undefined}
-          artifactIds={artifactIds}
-          onOpenArtifact={onOpenArtifact ? handleOpenArtifact : undefined}
-          onOpenUrl={onOpenUrl}
-          privateModelId={privateModelId}
-          privateModel={privateModel}
-          showSubagentSteps={showSubagentSteps}
-          appears={arrived.has(msg.id)}
-          cardAppears={!arrived.has(msg.id) && arrived.has(cardKeyOf(msg) ?? "")}
-        />
-      ))}
-      {delegationStatus}
-      {computerUseStatus}
-      {isWorking && <WorkingIndicator agentName={shownAgentName} since={workStartedAt} />}
-      {isWorking && (
-        <AgentStallNotice
-          agentName={shownAgentName}
-          messages={messages}
-          failures={failures}
-          onStop={onStop}
-          stopAskedAt={stopAskedAt}
-          onEndAgent={onEndAgent}
-        />
-      )}
-      {!isTurnOpen && agentTasks && (
-        <BackgroundAgentsNotice
-          agentName={agentName === DEFAULT_AGENT_NAME ? undefined : agentName}
-          tasks={visibleAgentTasks(agentTasks.tasks, messages)}
-          asOf={agentTasks.asOf}
-        />
-      )}
-      {footer && <div className="mx-auto w-full max-w-chat">{footer}</div>}
-      {chatSelection.selected && (
-        <SelectionToolbar selection={chatSelection.selected} blockedReason={replyBlockedReason} onReply={replyToSelection} />
+    // The frame the jump button floats in, so it stays put while the chat under it scrolls.
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        ref={stickToBottom.containerRef}
+        onScroll={(event) => {
+          stickToBottom.onScroll();
+          chatSelection.onScroll(event.currentTarget);
+        }}
+        onMouseUp={(event) => chatSelection.onMouseUp(event.currentTarget)}
+        onWheel={stickToBottom.onWheel}
+        onKeyDown={stickToBottom.onKeyDown}
+        onTouchStart={stickToBottom.onTouchStart}
+        onTouchMove={stickToBottom.onTouchMove}
+        data-testid="chat-canvas-container"
+        className="flex-1 overflow-y-auto pt-9 px-8 pb-4"
+      >
+        {/* The content alone, so its growth can be watched apart from the frame's own size. */}
+        <div ref={stickToBottom.contentRef} className="space-y-8">
+          {header && <div className="mx-auto w-full max-w-chat">{header}</div>}
+          {delegatedFrom && <div className="mx-auto w-full max-w-chat">{delegatedFrom}</div>}
+          {visibleMessages.map((msg, index) => (
+            <MessageRow
+              key={msg.id}
+              message={msg}
+              agentName={agentName}
+              agentProfileId={agentProfileId}
+              visualSessionId={visualSessionId}
+              isLast={msg === lastMessage}
+              // Only the row the box belongs to gets the view, so the others keep their memo.
+              nextStep={nextStep === undefined ? undefined : nextStep?.messageId === msg.id ? nextStep : null}
+              isCurrentTurn={msg.role === "agent" && index >= currentTurnStartsAt}
+              showActions={msg.role !== "user" && index < runningTurnStartsAt}
+              copied={copiedMessageId === msg.id}
+              speaking={readAloud.speakingMessageId === msg.id}
+              readAloudSupported={readAloud.supported}
+              onCopy={handleCopyMessage}
+              onFork={onForkBranch ? handleFork : undefined}
+              onRewind={onRewind ? handleRewind : undefined}
+              onToggleReadAloud={handleToggleReadAloud}
+              onChooseOption={onChooseOption ? handleChooseOption : undefined}
+              onAnswerElicitation={onAnswerElicitation ? handleAnswerElicitation : undefined}
+              onReopenElicitationUrl={onReopenElicitationUrl ? handleReopenElicitationUrl : undefined}
+              artifactIds={artifactIds}
+              onOpenArtifact={onOpenArtifact ? handleOpenArtifact : undefined}
+              onOpenUrl={onOpenUrl}
+              privateModelId={privateModelId}
+              privateModel={privateModel}
+              showSubagentSteps={showSubagentSteps}
+              appears={arrived.has(msg.id)}
+              cardAppears={!arrived.has(msg.id) && arrived.has(cardKeyOf(msg) ?? "")}
+            />
+          ))}
+          {delegationStatus}
+          {computerUseStatus}
+          {isWorking && <WorkingIndicator agentName={shownAgentName} since={workStartedAt} />}
+          {isWorking && (
+            <AgentStallNotice
+              agentName={shownAgentName}
+              messages={messages}
+              failures={failures}
+              onStop={onStop}
+              stopAskedAt={stopAskedAt}
+              onEndAgent={onEndAgent}
+            />
+          )}
+          {!isTurnOpen && agentTasks && (
+            <BackgroundAgentsNotice
+              agentName={agentName === DEFAULT_AGENT_NAME ? undefined : agentName}
+              tasks={visibleAgentTasks(agentTasks.tasks, messages)}
+              asOf={agentTasks.asOf}
+            />
+          )}
+          {footer && <div className="mx-auto w-full max-w-chat">{footer}</div>}
+          {chatSelection.selected && (
+            <SelectionToolbar selection={chatSelection.selected} blockedReason={replyBlockedReason} onReply={replyToSelection} />
+          )}
+        </div>
+      </div>
+      {stickToBottom.isAwayFromBottom && (
+        <button
+          type="button"
+          aria-label="Jump to the newest message"
+          title="Jump to the newest message"
+          onClick={stickToBottom.scrollToBottom}
+          // Round and raised, since it floats over the messages; none of IconButton's sizes is one to aim at over text.
+          className="focus-ring absolute bottom-4 left-1/2 z-10 flex size-9 -translate-x-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-surface-2 text-fg-secondary shadow-popover transition-colors hover:bg-surface-hover hover:text-fg active:bg-surface-3 motion-safe:animate-appear"
+        >
+          <ArrowDown size={16} aria-hidden="true" />
+        </button>
       )}
     </div>
   );

@@ -10,11 +10,10 @@ import { ChatCanvas } from "./components/ChatCanvas";
 import { HistoryElsewhereNote } from "./components/chat/HistoryElsewhereNote";
 import { ComposerDock, type ComposerHandle } from "./components/ComposerDock";
 import { RemovedAgentPanel } from "./components/RemovedAgentPanel";
-import { ActivityPanel } from "./components/activity/ActivityPanel";
 import { agentNameOr } from "./lib/agent-name";
-import { FilesPanel } from "./components/FilesPanel";
 import { ArtifactsPanel } from "./components/artifacts/ArtifactsPanel";
 import { ArtifactGallery } from "./components/artifacts/ArtifactGallery";
+import { AppInspectorPane } from "./components/AppInspectorPane";
 import { useArtifactsWiring } from "./hooks/useArtifactsWiring";
 import { markersOf } from "./lib/file-markers";
 import { EmptyFolderState, FileDropOverlay } from "./components/AppPlaceholders";
@@ -25,19 +24,16 @@ import { SignInLayer } from "./components/SignInLayer";
 import { RecoveryCodeLayer } from "./components/private/RecoveryCodeLayer";
 import { SecretGuardDialog } from "./components/private/SecretGuardDialog";
 import { PrivateCreditsOutLayer } from "./components/private/PrivateCreditsOut";
-import { PrivateInspector } from "./components/private/PrivateInspector";
 import { PrivateLowBalanceRow } from "./components/private/PrivateLowBalanceRow";
 import { AgentInstallPanel } from "./components/AgentInstallPanel";
 import { installPanelAgentOf } from "./lib/install-panel";
 import { NewSessionAbove, NewSessionBelow } from "./components/workspace/NewSessionView";
-import { ChangesPanel } from "./components/changes/ChangesPanel";
 import { DiffView } from "./components/changes/DiffView";
 import { totalsOf } from "./lib/diff-stats";
 import { useInspector } from "./hooks/useInspector";
 import { useWindowWidth } from "./hooks/useWindowWidth";
 import { useNotice } from "./hooks/useNotice";
-import { Inspector } from "./components/inspector/Inspector";
-import { maxInspectorWidth, offeredTabs } from "./lib/inspector";
+import { offeredTabs } from "./lib/inspector";
 import { useReviewComments } from "./hooks/useReviewComments";
 import { useReviewWiring } from "./hooks/useReviewWiring";
 import type { ReviewSlot } from "./hooks/useReviewMessage";
@@ -56,22 +52,14 @@ import { useSettingsSignIn } from "./hooks/useSettingsSignIn";
 import { useLatest } from "./hooks/useLatest";
 import { useUnsentMessages } from "./hooks/useUnsentMessages";
 import { QueuedMessages } from "./components/composer/QueuedMessages";
-import { attachmentsFor, createSessionWorktree } from "./lib/session-worktree";
 import { sweepOrphans } from "./lib/orphan-sweep";
-import {
-  isWaitingForAnswer,
-  newSessionRecord,
-  namingFor,
-  type SessionSpec,
-  type StartSessionOptions,
-} from "./lib/session-start";
+import { isWaitingForAnswer } from "./lib/session-start";
 import { isAwaitingUser } from "./lib/acp-elicitation";
 import {
   folderNameOf,
   isListed,
   workspacePathOf,
   mostRecentSessionId,
-  nextSessionName,
   patchSessionIn,
 } from "./lib/session-helpers";
 import { useAppearance } from "./hooks/useAppearance";
@@ -82,7 +70,6 @@ import { useNextStep } from "./hooks/useNextStep";
 import { requestBrowserOpen } from "./lib/browser";
 import { useSessionTaskTabs } from "./hooks/useSessionTaskTabs";
 import type { TaskTab } from "./hooks/useTaskTabs";
-import { TasksPanel } from "./components/tasks/TasksPanel";
 import { useTranscripts } from "./hooks/useTranscripts";
 import { PrivateTopupRequestCard } from "./components/private/PrivateTopupRequestCard";
 import { TopupProgress } from "./components/private/TopupProgress";
@@ -114,7 +101,6 @@ import { ComputerUseStatusLine } from "./components/chat/ComputerUseStatusLine";
 import { useBrowserAgentTools } from "./hooks/useBrowserAgentTools";
 import { useBrowserOpening } from "./hooks/useBrowserOpening";
 import { useFileLinkOpening } from "./hooks/useFileLinkOpening";
-import { BrowserPanel } from "./components/browser/BrowserPanel";
 import { BrowserPermissionLayer } from "./components/browser/BrowserPermissionLayer";
 import { useOpenedSessions } from "./hooks/useOpenedSessions";
 import { createStartPlaces } from "./lib/start-places";
@@ -130,15 +116,12 @@ import { usePopoutHost } from "./hooks/usePopoutHost";
 import { useSessionActions } from "./hooks/useSessionActions";
 import { useWorkspaceTerminals } from "./hooks/useWorkspaceTerminals";
 import { useTerminalDrawer } from "./hooks/useTerminalDrawer";
-import { TerminalDrawer } from "./components/terminal/TerminalDrawer";
 import { useDraftSessionList } from "./hooks/useDraftSessionList";
-import type { OpenNewSessionOptions } from "./hooks/useSessionImport";
 import { useSessionFork } from "./hooks/useSessionFork";
 import { useSessionRewind } from "./hooks/useSessionRewind";
+import { useSessionStartWiring } from "./hooks/useSessionStartWiring";
 import { useUnreadMarks } from "./hooks/useUnreadMarks";
 import { useAcpEngine, type AttentionReason, type FirstMessage } from "./hooks/session-engine/useAcpEngine";
-import { ContextPanel } from "./components/context/ContextPanel";
-import { compactCommandOf } from "./lib/context-usage";
 import type { AcpConfigOption } from "./hooks/useAcpSessions";
 import { attentionBody, notifyIfAway } from "./lib/notify";
 import { pickFiles } from "./lib/file-picker";
@@ -172,7 +155,7 @@ import {
   type AgentOptions,
   type ProbedOptions,
 } from "./lib/acp-draft";
-import type { ArtifactComment, ReviewComment, DelegationLink, Session, SessionWorktree, Settings, WorkerTurnEnd } from "./types";
+import type { ArtifactComment, ReviewComment, DelegationLink, Session, Settings, WorkerTurnEnd } from "./types";
 import { replyBlockedReason } from "./lib/reply-quote";
 
 const NO_FOLDER_NOTICE = "Open a project folder first: choose one from the folder chip by the message box.";
@@ -890,110 +873,44 @@ export default function App() {
     isWaitingForAnswer(sessionById(sessionId), transcripts[sessionId] ?? [], () => isSessionBusy(sessionId));
   const browserAgentTools = useBrowserAgentTools({ sessions, agents: agentsInUse, onAttention: (sessionId, reason) => notifyAttention(sessionId, reason), onError: reportError });
 
-  /** Records a new session and shows it, unless `focus` is false; the agent is started by its engine. */
-  const recordSession = (spec: SessionSpec, options?: { focus?: boolean }): Session => {
-    const session = newSessionRecord(spec);
-    const { initialMessages } = spec;
-    updateState((prev) => ({ ...prev, sessions: [session, ...prev.sessions] }));
-    if (initialMessages) updateMessages(session.id, () => initialMessages);
-    if (options?.focus !== false) setActiveSessionId(session.id);
-    return session;
-  };
-
-  /**
-   * Starts a session. A compare run passes the `choices` of this session's own agent (the draft's belong to
-   * the draft agent) and clears the draft's once after the whole run, and `focus: false` to leave the view alone.
-   */
-  const startSession = (spec: SessionSpec, first?: FirstMessage, options?: StartSessionOptions) => {
-    const session = recordSession(spec, options);
-    void acp.start(session, first, options?.choices ?? startChoices).then((isTaken) => {
-      if (!isTaken && first) giveBackMessage(session.id, first.text, first.attachments);
-    });
-    // The picks went with the session; a later draft starts from the model picked last.
-    if (!options?.choices) setAcpChoices(NO_CHOICES);
-  };
-
-  /**
-   * Starts a session in the active workspace with the agent picked for it, in
-   * a new worktree of it when Worktree is on.
-   */
-  const handleNewSession = async (first?: FirstMessage) => {
-    // The backend rejects relative and missing cwds, so never spawn without a path.
-    if (!activeWorkspace) {
-      setNotice(NO_FOLDER_NOTICE, "warning");
-      return;
-    }
-    if (!newSessionAgent) {
-      setNotice(noAgentNotice(agentsInUse), "warning");
-      return;
-    }
-    rememberFolder(activeWorkspace);
-    // Read now: the draft, and its Private chip with it, is gone once the session starts.
-    const { privateMode } = privateDraft;
-    const sessionPrivateMode = privateMode
-      ? { ...privateMode, ...(state.settings.paymentSource === "ownKey" ? { ownKey: true } : {}) }
-      : undefined;
-    const naming = first
-      ? namingFor(first, { agentName: newSessionAgent.name, folderName: activeWorkspace.name })
-      : { name: nextSessionName(sessions) };
-    const { name } = naming;
-    let worktree: SessionWorktree | null = null;
-    let cwd = activeWorkspace.path;
-    let message = first;
-    // The composer stays busy until the worktree and its attachments are ready, so a second Send cannot start.
-    if (isWorktreeActive) setIsCreatingWorktree(true);
-    try {
-      if (isWorktreeActive) {
-        try {
-          ({ worktree, cwd } = await createSessionWorktree(activeWorkspace.path, name, branchPicker.baseBranch));
-        } catch (error) {
-          setNotice(`Could not create a worktree: ${String(error)}`);
-          // The user may have opened another session meanwhile: the message goes
-          // back into the new session it was written for, not that one's composer.
-          openNewSession(activeWorkspace.path, newSessionAgent.id);
-          if (first) composerRef.current?.restore(first.text, first.attachments);
-          return;
-        }
-      }
-      if (worktree && first?.attachments?.length) {
-        // The composer attached paths in the main folder: the agent gets its worktree's files instead.
-        try {
-          message = { ...first, attachments: await attachmentsFor(activeWorkspace.path, cwd, first.attachments) };
-        } catch (error) {
-          setNotice(`Could not point the attachments into the worktree: ${String(error)}`);
-        }
-      }
-    } finally {
-      setIsCreatingWorktree(false);
-    }
-    setPickedAgentId(null);
-    compare.reset();
-    startSession({ agent: newSessionAgent, cwd, ...naming, worktree, privateMode: sessionPrivateMode }, message);
-    // The base was this session's: the next draft starts from the folder's own branch.
-    if (worktree) branchPicker.reset();
-  };
-
-  /** Makes `path` the active workspace; a folder only old sessions still use is added back to the recents. */
-  const chooseFolder = (path: string) => {
-    if (workspaces.some((ws) => ws.path === path)) selectWorkspace(path);
-    else rememberFolder({ name: folderNameOf(path), path });
-  };
-
-  /**
-   * Shows a new, empty session: the folder and agent can still be changed in
-   * the composer, and the agent starts with the first message.
-   */
-  const openNewSession = (path?: string, agentId?: string, options?: OpenNewSessionOptions) => {
-    setGalleryOpen(false);
-    if (path) chooseFolder(path);
-    setPickedAgentId(agentId ?? null);
-    compare.reset();
-    // A fresh draft: picks left from an earlier one would override the model picked last.
-    // A failed import returns to the draft it started from, so its picks stay: it did not open.
-    if (!options?.keepChoices) setAcpChoices(NO_CHOICES);
-    setActiveSessionId("");
-    setActiveRunId(null);
-  };
+  const {
+    recordSession,
+    startSession,
+    handleNewSession,
+    chooseFolder,
+    openNewSession,
+    handleSelectSession,
+    openRun,
+    navigateTo,
+  } = useSessionStartWiring({
+    sessions,
+    workspaces,
+    activeWorkspace,
+    agentsInUse,
+    newSessionAgent,
+    privateDraftMode: privateDraft.privateMode,
+    paymentSource: state.settings.paymentSource,
+    isWorktreeActive,
+    baseBranch: branchPicker.baseBranch,
+    startChoices,
+    noFolderNotice: NO_FOLDER_NOTICE,
+    startAcp: acp.start,
+    updateState,
+    updateMessages,
+    setActiveSessionId,
+    setActiveRunId,
+    setPickedAgentId,
+    setGalleryOpen,
+    setAcpChoices,
+    setIsCreatingWorktree,
+    selectWorkspace,
+    rememberFolder,
+    resetCompare: compare.reset,
+    resetBranchPicker: branchPicker.reset,
+    giveBackMessage,
+    composerRef,
+    setNotice,
+  });
 
   const forkSession = useSessionFork({
     source: activeSession,
@@ -1029,17 +946,6 @@ export default function App() {
     updateSettings: (patch) => updateSettings(patch),
     setNotice,
   });
-
-  const handleSelectSession = (sessionId: string) => {
-    setGalleryOpen(false);
-    setActiveSessionId(sessionId);
-    // An agent picked for a new session that was never started is forgotten.
-    setPickedAgentId(null);
-    compare.reset();
-    const selected = sessionById(sessionId);
-    const workspacePath = selected && workspacePathOf(selected);
-    if (workspacePath && workspaces.some((ws) => ws.path === workspacePath)) selectWorkspace(workspacePath);
-  };
 
   const { delegation, endForArchived: endDelegationsForArchived } = useDelegationRuntime({
     sessions,
@@ -1089,27 +995,11 @@ export default function App() {
     endDelegationsForArchived(sessionId, latestSessions);
   };
 
-  /** Shows a run's panel in the chat's place; no session stays selected, or the panel would not show. */
-  const openRun = (runId: string) => {
-    setGalleryOpen(false);
-    setActiveSessionId("");
-    setPickedAgentId(null);
-    compare.reset();
-    setActiveRunId(runId);
-    const run = runOf(sessions, runId);
-    const workspacePath = run && workspacePathOf(run.sessions[0]);
-    if (workspacePath && workspaces.some((ws) => ws.path === workspacePath)) selectWorkspace(workspacePath);
-  };
-
   /** Stops the agent's current turn; the session stays open for the next message. */
   const handleInterrupt = (sessionId: string) => {
     // A rewound session's fresh agent has not started yet: only its start is called off.
     if (isRestarting(sessionId)) cancelRestart(sessionId);
     else acp.interrupt(sessionId, transcripts[sessionId]);
-  };
-
-  const navigateTo = (sessionId: string | null) => {
-    if (sessionId) handleSelectSession(sessionId);
   };
 
   const updateSettings = (patch: Partial<Settings>) =>
@@ -2106,166 +1996,61 @@ export default function App() {
             </div>
           </div>
           {inspectorTab && !isArtifactExpanded && !isGalleryShown && (
-            <Inspector
-              tab={inspectorTab}
-              tabs={inspectorTabs}
-              width={inspectorTab === "browser" ? inspector.browserWidth : inspector.width}
-              maxWidth={maxInspectorWidth(windowWidth, !isSidebarHidden)}
-              isExpanded={isBrowserExpanded}
-              counts={{ changes: inspector.changes.changes?.length, artifacts: sessionArtifacts.length + createdFiles.length || undefined, tasks: taskTabs.tabs.length || undefined }}
-              isViewingFile={inspectorTab === "files" && inspector.viewedFile !== null}
-              onSelect={inspector.show}
-              onResize={inspectorTab === "browser" ? inspector.setBrowserWidth : inspector.setWidth}
-              onClose={() => {
-                inspector.close();
-                inspectorButtonRef.current?.focus();
+            <AppInspectorPane
+              inspectorTab={inspectorTab}
+              inspectorTabs={inspectorTabs}
+              inspector={inspector}
+              windowWidth={windowWidth}
+              isSidebarHidden={isSidebarHidden}
+              isBrowserExpanded={isBrowserExpanded}
+              inspectorButtonRef={inspectorButtonRef}
+              filesFolder={filesFolder}
+              activeSession={activeSession}
+              activeSessionId={activeSessionId}
+              activeSessionIdRef={activeSessionIdRef}
+              activeAgent={activeAgent}
+              activeInfo={activeInfo}
+              isActiveRunning={isActiveRunning}
+              isRepository={isRepository}
+              turnsEnded={turnsEnded}
+              transcripts={transcripts}
+              transcriptStatus={transcriptStatus}
+              currentMessages={currentMessages}
+              isAcpBusy={acp.isBusy}
+              isSessionBusy={isSessionBusy}
+              repoPullRequests={repoPullRequests}
+              openPullRequest={openPullRequest}
+              githubProblem={githubProblem}
+              onOpenGithubSettings={() => settingsPage.open("github")}
+              onOpenPrivateSettings={() => settingsPage.open("private")}
+              diffStats={diffStats}
+              review={review}
+              taskTabs={taskTabs}
+              backgroundTasks={backgroundTasks}
+              onJumpToMessage={(messageId) => setChatJump((prev) => ({ messageId, nonce: (prev?.nonce ?? 0) + 1 }))}
+              onInsertPaths={(paths) => insertPaths(paths)}
+              onRevealFolder={(path) => shell.revealFolder(path)}
+              fileMarkers={fileMarkers}
+              isComposerHidden={isComposerHidden}
+              isComposerDisabled={isComposerDisabled}
+              composerRef={composerRef}
+              onSendFromComposer={(sessionId, text) => {
+                void sendFromComposer(sessionId, { text });
               }}
-            >
-              {inspectorTab === "changes" && filesFolder && (
-                <ChangesPanel
-                  key={filesFolder.path}
-                  rootPath={filesFolder.path}
-                  rootName={filesFolder.name}
-                  changes={inspector.changes.changes}
-                  version={inspector.changes.version}
-                  onReload={inspector.changes.reload}
-                  pullRequests={repoPullRequests}
-                  onOpenPullRequest={openPullRequest}
-                  githubProblem={githubProblem}
-                  onOpenGithubSettings={() => settingsPage.open("github")}
-                  diffStats={diffStats}
-                  onOpenDiff={() => inspector.openDiff()}
-                  stats={inspector.headStats ?? undefined}
-                  statsFailed={inspector.headStatsFailed}
-                  targets={inspector.targets}
-                  targetsFailed={inspector.targetsFailed}
-                  review={activeSession ? review.review : undefined}
-                  addReview={activeSession ? review.addReview : undefined}
-                />
-              )}
-              {inspectorTab === "tasks" && activeSession && (
-                <TasksPanel
-                  tabs={taskTabs}
-                  sessionId={activeSession.id}
-                  messages={transcripts[activeSession.id] ?? []}
-                  tasks={backgroundTasks.tasks}
-                  agentName={activeAgent?.name ?? "The agent"}
-                  isBusy={acp.isBusy(activeSession.id)}
-                  onStop={backgroundTasks.stop}
-                />
-              )}
-              {inspectorTab === "activity" && activeSession && (
-                <ActivityPanel
-                  key={activeSession.id}
-                  messages={transcripts[activeSession.id]}
-                  transcript={transcriptStatus[activeSession.id] ?? "loading"}
-                  session={activeSession}
-                  isRepository={isRepository}
-                  isBusy={isSessionBusy(activeSession.id)}
-                  version={inspector.changes.version}
-                  headStats={inspector.headStats}
-                  headStatsFailed={inspector.headStatsFailed}
-                  onJump={(messageId) => setChatJump((prev) => ({ messageId, nonce: (prev?.nonce ?? 0) + 1 }))}
-                  agentName={agentNameOr(activeAgent)}
-                  onShowChanges={() => inspector.show("changes")}
-                />
-              )}
-              {inspectorTab === "files" && filesFolder && (
-                <FilesPanel
-                  key={filesFolder.path}
-                  rootPath={filesFolder.path}
-                  rootName={filesFolder.name}
-                  onInsertPath={(path) => insertPaths([path])}
-                  onRevealRoot={() => filesFolder && shell.revealFolder(filesFolder.path)}
-                  markers={fileMarkers}
-                  viewedFile={inspector.viewedFile}
-                  onViewFile={inspector.viewFile}
-                  onCloseFile={inspector.closeFile}
-                  version={inspector.changes.version}
-                  filesPrefix={inspector.filesPrefix}
-                  // Lines go into the message box only when Reply could: shown, enabled, not holding another session's comments.
-                  onInsertText={
-                    replyBlockedReason({ isComposerHidden, isComposerDisabled, isHeldElsewhere: review.isHeldFor(activeSessionId) })
-                      ? undefined
-                      : (text) => composerRef.current?.insertText(text)
-                  }
-                />
-              )}
-              {inspectorTab === "context" && activeSession && activeInfo?.usage && (
-                <ContextPanel
-                  key={activeSession.id}
-                  sessionId={activeSession.id}
-                  agentId={activeSession.profileId}
-                  agentName={activeAgent?.name ?? "The agent"}
-                  cwd={activeSession.cwd}
-                  usage={activeInfo.usage}
-                  turnUsage={activeInfo.turnUsage ?? []}
-                  turnsEnded={activeInfo.turnsEnded ?? 0}
-                  messages={currentMessages}
-                  // An ended session's agent is gone: the command would go to a closed connection.
-                  compactCommand={isActiveRunning ? compactCommandOf(activeInfo.commands) : null}
-                  isBusy={acp.isBusy(activeSession.id)}
-                  onCompact={(command) => sendFromComposer(activeSession.id, { text: `/${command}` })}
-                />
-              )}
-              {inspectorTab === "artifacts" && activeSession && (
-                <ArtifactsPanel
-                  key={activeSession.id}
-                  sessionId={activeSession.id}
-                  artifacts={sessionArtifacts}
-                  viewed={inspector.viewedArtifact}
-                  onView={inspector.viewArtifact}
-                  isExpanded={false}
-                  onToggleExpanded={expandArtifact}
-                  onError={reportError}
-                  onNotice={setNotice}
-                  comments={artifactComments}
-                  addReview={review.addArtifactReview}
-                  cwd={activeSession.cwd}
-                  files={createdFiles}
-                  canvases={sessionCanvases}
-                  turnsEnded={turnsEnded}
-                  onInsertText={canvasInsertText}
-                  insertBlockedReason={canvasInsertBlockedReason}
-                  filesRoot={filesFolder?.path}
-                  agentName={activeAgent?.name}
-                  onOpenFile={(relative) => {
-                    inspector.viewFile(relative);
-                    inspector.show("files");
-                  }}
-                />
-              )}
-              {inspectorTab === "private" && activeSession?.privateMode && (
-                <PrivateInspector
-                  session={activeSession}
-                  credits={privateCredits}
-                  messages={currentMessages}
-                  onTopUp={() => settingsPage.open("private")}
-                  onOpenUrl={openLink}
-                />
-              )}
-              {inspectorTab === "browser" && activeSession && <BrowserPanel
-                key={activeSession.id}
-                sessionId={activeSession.id}
-                isExpanded={isBrowserExpanded}
-                onToggleExpanded={() => inspector.setBrowserExpanded(!isBrowserExpanded)}
-                onError={reportError}
-                onAddContext={replyBlockedReason({ isComposerHidden, isComposerDisabled, isHeldElsewhere: review.isHeldFor(activeSessionId) })
-                  ? undefined
-                  : (text) => {
-                    if (activeSessionIdRef.current === activeSession.id) composerRef.current?.insertText(text);
-                  }}
-              />}
-              {inspectorTab === "terminal" && filesFolder && (
-                <TerminalDrawer
-                  folderPath={filesFolder.path}
-                  folderName={filesFolder.name}
-                  terminals={terminals}
-                  startingFor={terminalDrawer.startingFor}
-                  onStartShell={terminalDrawer.startShell}
-                />
-              )}
-            </Inspector>
+              sessionArtifacts={sessionArtifacts}
+              createdFiles={createdFiles}
+              sessionCanvases={sessionCanvases}
+              artifactComments={artifactComments}
+              onExpandArtifact={expandArtifact}
+              canvasInsertText={canvasInsertText}
+              canvasInsertBlockedReason={canvasInsertBlockedReason}
+              privateCredits={privateCredits}
+              onOpenUrl={openLink}
+              terminals={terminals}
+              terminalDrawer={terminalDrawer}
+              onError={reportError}
+              onNotice={setNotice}
+            />
           )}
         </div>
       </section>

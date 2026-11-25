@@ -323,13 +323,9 @@ pub fn motion_file(root: &Path, relative: &str) -> Option<(PathBuf, &'static str
     canvas_file(root, relative)
 }
 
-/// The rendered file of a format, and the one it is written to before the rename.
+/// The rendered file of a format.
 pub fn out_file(root: &Path, format_id: &str) -> PathBuf {
     root.join(OUT_DIR).join(format!("{format_id}.mp4"))
-}
-
-pub fn partial_file(root: &Path, format_id: &str) -> PathBuf {
-    root.join(OUT_DIR).join(format!(".{format_id}.mp4.partial"))
 }
 
 /// `out/` inside `root`, made when missing. A link or anything but a folder there is refused, so

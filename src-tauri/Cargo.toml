@@ -72,12 +72,19 @@ objc2 = "0.6"
 # wry already compiles.
 block2 = "=0.6.2"
 objc2-web-kit = { version = "=0.3.2", default-features = false, features = ["std", "block2", "objc2-app-kit", "objc2-core-foundation", "WKContentWorld", "WKFrameInfo", "WKHTTPCookieStore", "WKOpenPanelParameters", "WKPDFConfiguration", "WKPreferences", "WKScriptMessage", "WKScriptMessageHandler", "WKSecurityOrigin", "WKSnapshotConfiguration", "WKUIDelegate", "WKUserContentController", "WKUserScript", "WKWebView", "WKWebViewConfiguration", "WKWebsiteDataStore"] }
-objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "block2", "NSApplication", "NSBitmapImageRep", "NSGraphics", "NSImageRep", "NSImage", "NSOpenPanel", "NSPanel", "NSPasteboard", "NSResponder", "NSSavePanel", "NSWindow"] }
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "block2", "objc2-core-graphics", "NSApplication", "NSBitmapImageRep", "NSGraphics", "NSGraphicsContext", "NSImageRep", "NSImage", "NSOpenPanel", "NSPanel", "NSPasteboard", "NSResponder", "NSSavePanel", "NSWindow"] }
 # Keychain for the Zorvo Private device secret; the version the updater already compiles.
 security-framework = "=3.7.0"
 objc2-foundation = { version = "0.3", features = ["NSArray", "NSData", "NSDictionary", "NSGeometry", "NSString", "NSURL", "NSUserDefaults", "NSValue"] }
 # Joins exported artboards into one PDF (`artifacts/render.rs::join_pdfs`), same objc2 family.
 objc2-pdf-kit = { version = "=0.3.2", default-features = false, features = ["std", "PDFDocument", "PDFPage"] }
+# Motion renders: WebKit snapshots drawn into pixel buffers, encoded to H.264 and joined with their
+# audio by AVFoundation (`artifacts/motion_encode.rs`), same objc2 family.
+objc2-av-foundation = { version = "=0.3.2", default-features = false, features = ["std", "block2", "objc2-core-media", "objc2-core-video", "AVAsset", "AVAssetExportSession", "AVAssetTrack", "AVAssetWriter", "AVAssetWriterInput", "AVAudioMix", "AVComposition", "AVCompositionTrack", "AVMediaFormat", "AVVideoSettings"] }
+objc2-core-media = { version = "=0.3.2", default-features = false, features = ["std", "CMTime", "CMTimeRange"] }
+objc2-core-video = { version = "=0.3.2", default-features = false, features = ["std", "objc2", "CVBase", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVPixelBufferPool", "CVReturn"] }
+objc2-core-graphics = { version = "=0.3.2", default-features = false, features = ["std", "CGBitmapContext", "CGColorSpace", "CGContext", "CGImage"] }
+objc2-core-foundation = { version = "=0.3.2", default-features = false, features = ["std", "CFCGTypes", "CFDictionary", "CFString", "CFNumber"] }
 
 # Line numbers for our own code, no debug info for dependencies: keeps
 # target/ small in every checkout and on CI. Leave `incremental` to each

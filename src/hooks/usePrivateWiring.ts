@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import {
   CREDITS_MAY_BE_UPDATING,
@@ -9,14 +9,18 @@ import {
 import { NO_CHOICES, withPreferred, type AgentOptions } from '../lib/acp-draft';
 import { isAgentRunnable } from '../lib/agent-readiness';
 import { actionError, type PaymentSource } from '../lib/private-credits';
-import { nextSessionName } from '../lib/session-helpers';
+import { nextSessionName, patchSessionIn } from '../lib/session-helpers';
 import type { SessionSpec, StartSessionOptions } from '../lib/session-start';
-import type { AgentProfile, ChatMessage, Session, Settings } from '../types';
+import type { AgentProfile, ChatMessage, PersistedState, Session, Settings } from '../types';
 import type { FirstMessage } from './session-engine/useAcpEngine';
 import { usePrivateCredits } from './usePrivateCredits';
 import { usePrivateCreditedNotice } from './usePrivateCreditedNotice';
+import { usePrivateCreditsRefresh } from './usePrivateCreditsRefresh';
 import { usePrivateDraft } from './usePrivateDraft';
 import { usePrivateRecoveryDialog } from './usePrivateRecoveryDialog';
+import { usePrivateTopupRequests } from './usePrivateTopupRequests';
+import { usePrivateUsage } from './usePrivateUsage';
+import { usePrivateVerification } from './usePrivateVerification';
 import type { NoticeTone } from './useNotice';
 import type { ForkOptions } from './useSessionFork';
 import type { OpenNewSessionOptions } from './useSessionImport';
@@ -214,5 +218,99 @@ export function usePrivateContinue({
     raiseCap,
     startUncappedSession,
     switchToCredits,
+  };
+}
+
+export interface PrivateRuntimeDeps {
+  sessions: readonly Session[];
+  activeSession: Session | undefined;
+  credits: ReturnType<typeof usePrivateCredits>;
+  updateState: (updater: (prev: PersistedState) => PersistedState) => void;
+  updateMessages: (sessionId: string, change: (prev: ChatMessage[]) => ChatMessage[]) => void;
+  saveSoon: (sessionId: string) => void;
+  setNotice: (message: string, tone?: NoticeTone) => void;
+}
+
+/**
+ * Runtime tracking for active private sessions: per-turn usage, signature
+ * verification, agent top-up requests, balance refresh and model catalog load.
+ */
+export function usePrivateRuntime({
+  sessions,
+  activeSession,
+  credits,
+  updateState,
+  updateMessages,
+  saveSoon,
+  setNotice,
+}: PrivateRuntimeDeps) {
+  const updateSessionUsage = useCallback(
+    (sessionId: string, privateUsage: NonNullable<Session['privateUsage']>) => {
+      updateState((prev) => patchSessionIn(prev, sessionId, { privateUsage }));
+    },
+    [updateState],
+  );
+  const privateUsage = usePrivateUsage({ sessions, updateSession: updateSessionUsage });
+  const privateVerification = usePrivateVerification({
+    updateMessages,
+    saveSoon,
+    isKnownSession: (id) => sessions.some((session) => session.id === id),
+    onCheck: privateUsage.refresh,
+  });
+  const topupRequests = usePrivateTopupRequests();
+  const [chatTopupSession, setChatTopupSession] = useState<string | null>(null);
+  const [isAnsweringTopup, setIsAnsweringTopup] = useState(false);
+
+  /** The user's answer to an agent's ask; an approval starts the existing checkout flow. */
+  const answerTopupRequest = useCallback(
+    async (sessionId: string, requestId: string, approve: boolean) => {
+      const request = topupRequests.requests[sessionId];
+      if (!request || request.requestId !== requestId || isAnsweringTopup) return;
+      setIsAnsweringTopup(true);
+      const ok = await topupRequests.answer(sessionId, requestId, approve);
+      setIsAnsweringTopup(false);
+      if (!ok) {
+        setNotice('That top-up request is no longer waiting.', 'warning');
+        return;
+      }
+      if (approve) {
+        setChatTopupSession(sessionId);
+        void credits.buy(request.usd);
+      }
+    },
+    [isAnsweringTopup, credits, setNotice, topupRequests],
+  );
+
+  const isPrivateSessionId = useCallback(
+    (sessionId: string) => sessions.some((session) => session.id === sessionId && session.privateMode !== undefined),
+    [sessions],
+  );
+  const refreshPrivateCredits = usePrivateCreditsRefresh(credits.refresh, isPrivateSessionId);
+  const verifyPrivateTurn = privateVerification.verifyTurn;
+  const onPrivateTurnEnd = useCallback(
+    (sessionId: string) => {
+      verifyPrivateTurn(sessionId);
+      refreshPrivateCredits(sessionId);
+    },
+    [verifyPrivateTurn, refreshPrivateCredits],
+  );
+
+  // A private session's low-balance row needs its model's price, so the catalog loads when it opens.
+  const activePrivateModelId = activeSession?.privateMode?.modelId;
+  const privateModels = credits.models;
+  const loadPrivateCatalog = credits.loadCatalog;
+  useEffect(() => {
+    if (activePrivateModelId !== undefined && privateModels === null) {
+      void loadPrivateCatalog();
+    }
+  }, [activePrivateModelId, privateModels, loadPrivateCatalog]);
+
+  return {
+    topupRequests,
+    chatTopupSession,
+    setChatTopupSession,
+    isAnsweringTopup,
+    answerTopupRequest,
+    onPrivateTurnEnd,
   };
 }

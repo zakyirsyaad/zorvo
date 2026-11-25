@@ -88,14 +88,10 @@ import { useSessionTaskTabs } from "./hooks/useSessionTaskTabs";
 import type { TaskTab } from "./hooks/useTaskTabs";
 import { TasksPanel } from "./components/tasks/TasksPanel";
 import { useTranscripts } from "./hooks/useTranscripts";
-import { usePrivateCreditsRefresh } from "./hooks/usePrivateCreditsRefresh";
-import { usePrivateTopupRequests } from "./hooks/usePrivateTopupRequests";
 import { PrivateTopupRequestCard } from "./components/private/PrivateTopupRequestCard";
 import { TopupProgress } from "./components/private/TopupProgress";
 import { isTopupActive } from "./lib/private-flow";
 import { usePrivateLowBalanceNotice } from "./hooks/usePrivateLowBalanceNotice";
-import { usePrivateUsage } from "./hooks/usePrivateUsage";
-import { usePrivateVerification } from "./hooks/usePrivateVerification";
 import { lowBalanceNote } from "./lib/private-credits";
 import { useAgentProfiles, useSuggestedFolders } from "./hooks/useDiscovery";
 import { useAutoInstall } from "./hooks/useAutoInstall";
@@ -131,7 +127,7 @@ import { AgentsMenu } from "./components/sidebar/AgentsMenu";
 import { useNavigationHistory } from "./hooks/useNavigationHistory";
 import { useUserProfile } from "./hooks/useUserProfile";
 import { useGithubConnection } from "./hooks/useGithubConnection";
-import { usePrivateContinue, usePrivateWiring } from "./hooks/usePrivateWiring";
+import { usePrivateContinue, usePrivateRuntime, usePrivateWiring } from "./hooks/usePrivateWiring";
 import { useWorkspaceDetails } from "./hooks/useWorkspaceDetails";
 import { useBranchPicker } from "./hooks/useBranchPicker";
 import { usePopoutHost } from "./hooks/usePopoutHost";
@@ -156,8 +152,7 @@ import { isInUse, removedAgentName, removedAgentNameFor } from "./lib/enabled-ag
 import { isSetupOnly } from "./lib/acp-auth";
 import { recheckAgents } from "./lib/agent-recheck";
 import { useCompareDraft } from "./hooks/useCompareDraft";
-import { useCompareRun, useCompareRunRows } from "./hooks/useCompareRun";
-import { useCompareModelProbe } from "./hooks/useCompareModelProbe";
+import { useCompareRunWiring } from "./hooks/useCompareRunWiring";
 import { useDelegation } from "./hooks/useDelegation";
 import { useWorkerAutoClose } from "./hooks/useWorkerAutoClose";
 import { useWorkerStops } from "./hooks/useWorkerStops";
@@ -252,19 +247,6 @@ export default function App() {
   const { state, isLoaded, updateState, getState, saveNow } = usePersistedState(reportError);
   useAppearance(state.settings.appearance, isLoaded, reportError);
   const { transcripts, transcriptStatus, ensureLoaded, updateMessages, saveSoon, removeTranscript, flush: flushTranscripts } = useTranscripts(reportError);
-  const updateSessionUsage = useCallback(
-    (sessionId: string, privateUsage: NonNullable<Session["privateUsage"]>) => {
-      updateState((prev) => patchSessionIn(prev, sessionId, { privateUsage }));
-    },
-    [updateState],
-  );
-  const privateUsage = usePrivateUsage({ sessions: state.sessions, updateSession: updateSessionUsage });
-  const privateVerification = usePrivateVerification({
-    updateMessages,
-    saveSoon,
-    isKnownSession: (id) => state.sessions.some((session) => session.id === id),
-    onCheck: privateUsage.refresh,
-  });
   const {
     agents,
     isLoaded: areAgentsLoaded,
@@ -405,51 +387,22 @@ export default function App() {
       setPickedAgentId(privateAgentId);
     },
   });
-  const topupRequests = usePrivateTopupRequests();
-  const [chatTopupSession, setChatTopupSession] = useState<string | null>(null);
-  const [isAnsweringTopup, setIsAnsweringTopup] = useState(false);
-  /** The user's answer to an agent's ask; an approval starts the existing checkout flow. */
-  const answerTopupRequest = useCallback(
-    async (sessionId: string, requestId: string, approve: boolean) => {
-      const request = topupRequests.requests[sessionId];
-      if (!request || request.requestId !== requestId || isAnsweringTopup) return;
-      setIsAnsweringTopup(true);
-      const ok = await topupRequests.answer(sessionId, requestId, approve);
-      setIsAnsweringTopup(false);
-      if (!ok) {
-        setNotice("That top-up request is no longer waiting.", "warning");
-        return;
-      }
-      if (approve) {
-        setChatTopupSession(sessionId);
-        void privateCredits.buy(request.usd);
-      }
-    },
-    [isAnsweringTopup, privateCredits, setNotice, topupRequests],
-  );
-  const isPrivateSessionId = useCallback(
-    (sessionId: string) => sessions.some((session) => session.id === sessionId && session.privateMode !== undefined),
-    [sessions],
-  );
-  // A private turn's model calls change the balance: read it again, at most once a minute across sessions.
-  const refreshPrivateCredits = usePrivateCreditsRefresh(privateCredits.refresh, isPrivateSessionId);
-  const verifyPrivateTurn = privateVerification.verifyTurn;
-  const onPrivateTurnEnd = useCallback(
-    (sessionId: string) => {
-      verifyPrivateTurn(sessionId);
-      refreshPrivateCredits(sessionId);
-    },
-    [verifyPrivateTurn, refreshPrivateCredits],
-  );
-  // A private session's low-balance row needs its model's price, so the catalog loads when it opens.
-  const activePrivateModelId = activeSession?.privateMode?.modelId;
-  const privateModels = privateCredits.models;
-  const loadPrivateCatalog = privateCredits.loadCatalog;
-  useEffect(() => {
-    if (activePrivateModelId !== undefined && privateModels === null) {
-      void loadPrivateCatalog();
-    }
-  }, [activePrivateModelId, privateModels, loadPrivateCatalog]);
+  const {
+    topupRequests,
+    chatTopupSession,
+    setChatTopupSession,
+    isAnsweringTopup,
+    answerTopupRequest,
+    onPrivateTurnEnd,
+  } = usePrivateRuntime({
+    sessions: state.sessions,
+    activeSession,
+    credits: privateCredits,
+    updateState,
+    updateMessages,
+    saveSoon,
+    setNotice,
+  });
   // Several agents each run in their own worktree, so Worktree is on whatever it was set to.
   const isWorktreeActive = canUseWorktree && (isWorktreeOn || compare.isCompare);
   const branchPicker = useBranchPicker({
@@ -562,6 +515,8 @@ export default function App() {
     const session = sessions.find((s) => s.id === sessionId);
     return removedAgentName(agents.find((agent) => agent.id === session?.profileId), state.settings) !== null;
   };
+  // A rewound message names its session, and goes into no other session's box. A draft's message goes into the next composer shown.
+  const pendingRestoreRef = useRef<(FirstMessage & { sessionId?: string }) | null>(null);
   // A rewound message replaces the box, in the session the user is rewinding.
   const restoreMessage = (sessionId: string, text: string, attachments?: readonly string[]) => {
     setActiveSessionId(sessionId);
@@ -631,23 +586,6 @@ export default function App() {
       // A probe's lists are true for the model it ran, even where a session's report wins the shown ones.
       agentOptions: { ...prev.agentOptions, [profileId]: withEffortList(withProbed(prev.agentOptions?.[profileId], probed), probed) },
     }));
-  // A compare draft's model chips: an agent whose models are unknown is asked only when its chip opens.
-  const compareAgentIdsRef = useLatest(compare.agentIds);
-  const compareModelProbe = useCompareModelProbe({
-    cwd: shownFolderPath ?? undefined,
-    agentOptions: state.agentOptions,
-    onProbed: rememberProbed,
-    onSignedIn: signInStatus.markSignedIn,
-    onNeedsSignIn: (profileId) => {
-      // Marked as needing a sign-in, it can no longer be ticked, so it leaves the run; say so only if it was in it.
-      const wasInRun = compareAgentIdsRef.current.includes(profileId);
-      signInStatus.markNeeded(profileId);
-      if (wasInRun) {
-        const name = agents.find((a) => a.id === profileId)?.name ?? profileId;
-        setNotice(`${name} needs a sign-in, so it left the run. Pick it alone to sign in.`);
-      }
-    },
-  });
   // Settings → Agents shows the same sign-in state as the sidebar, and checks and fixes it.
   const settingsSignIn = useSettingsSignIn({
     cwd: shownFolderPath ?? workspaces[0]?.path,
@@ -1396,72 +1334,54 @@ export default function App() {
   const { clearAnnouncement } = queue;
   useEffect(() => clearAnnouncement(), [activeSessionId, clearAnnouncement]);
 
-  // Read when a run's worktrees are done, seconds after the click: an empty session id also means a run's panel.
-  const isDraftRef = useLatest(isNewSessionDraft);
-  // A rewound message names its session, and goes into no other session's box. A draft's message goes into the next composer shown.
-  const pendingRestoreRef = useRef<(FirstMessage & { sessionId?: string }) | null>(null);
-  useEffect(() => {
-    const pending = pendingRestoreRef.current;
-    if (!pending) return;
-    if (pending.sessionId !== undefined && !sessions.some((s) => s.id === pending.sessionId)) pendingRestoreRef.current = null;
-    if (!pendingRestoreRef.current || !composerRef.current || isComposerHidden) return;
-    if (pending.sessionId !== undefined && (pending.sessionId !== activeSessionId || isAgentRemovedFor(pending.sessionId))) return;
-    pendingRestoreRef.current = null;
-    composerRef.current.restore(pending.text, pending.attachments);
-  });
-  const rowSources = { isBusy: isSessionBusy, transcripts, failedTurns };
-  const compareRun = useCompareRun({
-    repoPath: activeWorkspace?.path ?? "",
-    baseBranch: branchPicker.baseBranch,
+  const {
+    compareModelProbe,
+    compareRun,
+    sessionOfItsOwn,
+    runRows,
+    handleNewRun,
+  } = useCompareRunWiring({
+    sessions,
+    activeSession,
+    activeSessionId,
+    activeRun,
+    activeWorkspace,
+    shownFolderPath,
+    isNewSessionDraft,
+    isComposerHidden,
+    isComposerHiddenRef,
+    composerRef,
+    pendingRestoreRef,
+    agents,
     agentOptions: state.agentOptions,
+    compareAgentIds: compare.agentIds,
+    baseBranch: branchPicker.baseBranch,
+    noFolderNotice: NO_FOLDER_NOTICE,
+    isSessionBusy,
+    transcripts,
+    failedTurns,
+    isAgentRemovedFor,
     startSession,
-    isOnDraft: () => isDraftRef.current,
-    openRun: setActiveRunId,
-    setIsBusy: setIsCreatingWorktree,
-    // The user may have opened another session meanwhile: the message goes back into the new session it was written for.
-    restoreMessage: (message, agentId) => {
-      if (!isDraftRef.current || !activeWorkspace) openNewSession(activeWorkspace?.path, agentId);
-      // The message waits for the new draft to show the composer.
-      if (composerRef.current && !isComposerHiddenRef.current) composerRef.current.restore(message.text, message.attachments);
-      else pendingRestoreRef.current = message;
-    },
-    onStarted: () => {
+    openNewSession,
+    rememberFolder,
+    setActiveRunId,
+    setActiveSessionId,
+    setIsCreatingWorktree,
+    onRunStarted: () => {
       setPickedAgentId(null);
       compare.reset();
       setAcpChoices(NO_CHOICES);
       branchPicker.reset();
     },
-    onNotice: setNotice,
+    rememberProbed,
+    markSignedIn: signInStatus.markSignedIn,
+    markSignInNeeded: signInStatus.markNeeded,
+    askSignIn: signIn.handBackKept,
     archiveSession: sessionActions.archiveSession,
     readSessions: () => getState().sessions,
-    openSession: setActiveSessionId,
-    agentName: (profileId) => agents.find((a) => a.id === profileId)?.name ?? "The agent",
-    sessions,
-    sources: rowSources,
-    askSignIn: signIn.handBackKept,
-    // A notification that cannot be shown is not worth an error banner: the panel has it all.
-    notifyRun: (notice) => void notifyIfAway(notice).catch(() => {}),
+    ensureLoaded,
+    setNotice,
   });
-  // The session on screen when it is not in a compare run (a run's sessions share one title, as the sidebar's menu has it).
-  const sessionOfItsOwn = activeSession && !compareRun.isInRun(activeSession.id) ? activeSession : undefined;
-  // However a session comes on screen, its refusal is taken up there: only now does its composer show.
-  const { takeSignIn } = compareRun;
-  const refusedHere = compareRun.signInNeeded.get(activeSessionId);
-  useEffect(() => {
-    if (refusedHere) takeSignIn(activeSessionId);
-  }, [activeSessionId, refusedHere, takeSignIn]);
-
-  const runRows = useCompareRunRows(activeRun, { ...rowSources, signInNeeded: compareRun.signInNeeded, ensureLoaded });
-  /** Starts the ticked agents on one prompt, each in its own worktree. */
-  const handleNewRun = (message: FirstMessage) => {
-    if (!activeWorkspace) {
-      setNotice(NO_FOLDER_NOTICE, "warning");
-      return;
-    }
-    rememberFolder(activeWorkspace);
-    const picked = compare.agentIds.flatMap((id) => agents.filter((a) => a.id === id));
-    void compareRun.startRun(picked, message);
-  };
 
   const canStartSession = Boolean(activeWorkspacePath && newSessionAgent);
   const isComposerDisabled =

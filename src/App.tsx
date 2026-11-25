@@ -55,8 +55,6 @@ import { useDraftAgentCheck } from "./hooks/useDraftAgentCheck";
 import { useSettingsSignIn } from "./hooks/useSettingsSignIn";
 import { useLatest } from "./hooks/useLatest";
 import { useUnsentMessages } from "./hooks/useUnsentMessages";
-import type { QueuedMessage } from "./lib/queued-messages";
-import { useQueuedMessages } from "./hooks/useQueuedMessages";
 import { QueuedMessages } from "./components/composer/QueuedMessages";
 import { attachmentsFor, createSessionWorktree } from "./lib/session-worktree";
 import { sweepOrphans } from "./lib/orphan-sweep";
@@ -64,7 +62,6 @@ import {
   isWaitingForAnswer,
   newSessionRecord,
   namingFor,
-  titlePlaceOf,
   type SessionSpec,
   type StartSessionOptions,
 } from "./lib/session-start";
@@ -72,7 +69,6 @@ import { isAwaitingUser } from "./lib/acp-elicitation";
 import {
   folderNameOf,
   isListed,
-  isAutoName,
   workspacePathOf,
   mostRecentSessionId,
   nextSessionName,
@@ -153,25 +149,13 @@ import { isSetupOnly } from "./lib/acp-auth";
 import { recheckAgents } from "./lib/agent-recheck";
 import { useCompareDraft } from "./hooks/useCompareDraft";
 import { useCompareRunWiring } from "./hooks/useCompareRunWiring";
-import { useDelegation } from "./hooks/useDelegation";
-import { useWorkerAutoClose } from "./hooks/useWorkerAutoClose";
-import { useWorkerStops } from "./hooks/useWorkerStops";
-import { useNow } from "./hooks/useNow";
-import { DelegateDialog, type DelegateAgentChoice } from "./components/delegation/DelegateDialog";
-import { useDelegateDialog } from "./hooks/useDelegateDialog";
-import { delegatedStartOf, delegationChoicesFor as delegationChoicesForOptions } from "./lib/delegation-start";
+import { delegationStatusFor, useDelegationRuntime, useDelegationUi } from "./hooks/useDelegationWiring";
+import { useMessageDeliveryWiring } from "./hooks/useMessageDeliveryWiring";
+import { DelegateDialog } from "./components/delegation/DelegateDialog";
 import { DelegationStatusLine } from "./components/delegation/DelegationStatusLine";
 import { DelegatedFromLine } from "./components/delegation/DelegatedFromLine";
 import { OpenedByLine } from "./components/delegation/OpenedByLine";
-import {
-  followUpSummary,
-  isOpenLink,
-  mentionBlockedReason,
-  soleOpenDelegateOf,
-  openDelegatesOf,
-  startSummary,
-  type MentionAgentStatus,
-} from "./lib/delegation";
+import { openDelegatesOf } from "./lib/delegation";
 import { compareModelControls } from "./lib/compare-models";
 import { lastOfRun, runOf } from "./lib/compare-run";
 import { compareAgentOptions } from "./lib/composer-controls";
@@ -188,7 +172,7 @@ import {
   type AgentOptions,
   type ProbedOptions,
 } from "./lib/acp-draft";
-import type { AgentProfile, ArtifactComment, ReviewComment, DelegationLink, Session, SessionWorktree, Settings, WorkerTurnEnd } from "./types";
+import type { ArtifactComment, ReviewComment, DelegationLink, Session, SessionWorktree, Settings, WorkerTurnEnd } from "./types";
 import { replyBlockedReason } from "./lib/reply-quote";
 
 const NO_FOLDER_NOTICE = "Open a project folder first: choose one from the folder chip by the message box.";
@@ -856,7 +840,7 @@ export default function App() {
     agents: agentsInUse,
     statusOf: (agentId) => {
       const agent = agentsInUse.find((candidate) => candidate.id === agentId);
-      return agent === undefined ? "not-installed" : delegationStatusOf(agent);
+      return agent === undefined ? "not-installed" : delegationStatusFor(agent, signInStatus.stateOf);
     },
     workersOf: (sessionId) =>
       openDelegatesOf(sessionId, sessions).flatMap((worker) => {
@@ -1057,81 +1041,36 @@ export default function App() {
     if (workspacePath && workspaces.some((ws) => ws.path === workspacePath)) selectWorkspace(workspacePath);
   };
 
-  /** Whether a session's agent can take a prompt now: the test a delegation report is delivered by. */
-  const canPrompt = (sessionId: string): boolean => {
-    const session = sessionById(sessionId);
-    if (session === undefined || session.status !== "running") return false;
-    if (isSessionBusy(sessionId) || isSessionWaiting(sessionId) || isAgentRemovedFor(sessionId)) return false;
-    const agent = agents.find((candidate) => candidate.id === session.profileId);
-    return agent !== undefined && isAgentReady(agent) && signInStatus.stateOf(agent.id) !== "needed";
-  };
-
-  const workerStops = useWorkerStops({
-    sessions,
-    stop: acp.stop,
-    markTerminated: (sessionId) => patchSession(sessionId, { status: "terminated", endedAt: Date.now() }),
-  });
-
-  /** Reopens a worker whose agent was closed after its turn; the session and its history stayed. */
-  const resumeWorker = async (sessionId: string, message: FirstMessage): Promise<boolean> => {
-    const session = sessions.find((candidate) => candidate.id === sessionId);
-    if (session === undefined || !session.acpSessionId) return false;
-    workerStops.forget(sessionId);
-    // Its chat may not have been opened in this run: without the load registered first, the task
-    // would be saved as the whole conversation, over the history on disk.
-    ensureLoaded(sessionId);
-    patchSession(sessionId, { status: "running", endedAt: null, exitCode: null });
-    // The model last picked for this agent is applied again, as for a user's resume; the draft's own picks are not this worker's.
-    return acp.resume(session, session.acpSessionId, message, withPreferred(NO_CHOICES, state.agentOptions?.[session.profileId]));
-  };
-
-  const delegation = useDelegation({
+  const { delegation, endForArchived: endDelegationsForArchived } = useDelegationRuntime({
     sessions,
     agents,
     transcripts,
-    isBusy: isSessionBusy,
-    canPrompt,
-    isWaiting: isSessionWaiting,
-    places: startPlaces,
+    agentOptions: state.agentOptions,
+    isSessionBusy,
+    isSessionWaiting,
+    isAgentRemovedFor,
+    signInStateOf: signInStatus.stateOf,
+    startPlaces,
     send: acp.send,
-    resume: resumeWorker,
-    canResume: (sessionId) => Boolean(sessions.find((candidate) => candidate.id === sessionId)?.acpSessionId),
-    pendingStop: workerStops.pendingStop,
-    stopWorker: workerStops.stopWorker,
-    isTurnUnderWay: acp.isTurnUnderWay,
-    startSession,
-    selectSession: handleSelectSession,
-    updateLink,
-    messagesOf: async (sessionId) => {
-      try {
-        return await readMessages(sessionId);
-      } catch {
-        return null;
-      }
-    },
-    giveBack: giveBackMessage,
-    onNotice: setNotice,
-  });
-  // Main window only: a popout must not stop agents.
-  useWorkerAutoClose({
-    sessions,
-    isBusy: isSessionBusy,
-    isWaiting: isSessionWaiting,
+    stopAgent: acp.stop,
+    resumeAgent: acp.resume,
     canReopen: (sessionId) => acp.info[sessionId]?.canReopen === true,
     isTurnUnderWay: acp.isTurnUnderWay,
-    isSendingTo: delegation.isSendingTo,
     hasLiveTasks: (sessionId) =>
       backgroundTasks.tasks.some((task) => task.kind === "shell" && task.sessionId === sessionId),
     hasFailedTurn: (sessionId) => Boolean(failedTurns[sessionId]),
     hasQueuedMessages: (sessionId) => queue.queueOf(sessionId).length > 0,
-    stop: workerStops.stopWorker,
-  });
-  // The engine was built before this hook: its turn ends reach it through the ref.
-  delegationTurnEndedRef.current = delegation.onTurnEnded;
-  delegationTurnSettledRef.current = delegation.onTurnSettled;
-  // A retry reads this when it runs: the hook's latest verdict, not the render that built the engine.
-  useEffect(() => {
-    delegationBlockedRef.current = delegation.sendBlockedReason;
+    ensureLoaded,
+    patchSession,
+    startSession,
+    selectSession: handleSelectSession,
+    updateLink,
+    readMessages,
+    giveBack: giveBackMessage,
+    onNotice: setNotice,
+    delegationTurnEndedRef,
+    delegationTurnSettledRef,
+    delegationBlockedRef,
   });
 
   /**
@@ -1147,8 +1086,7 @@ export default function App() {
     const latestSessions = getState().sessions;
     const isArchivedNow = latestSessions.find((session) => session.id === sessionId)?.archivedAt != null;
     if (!isArchivedNow) return;
-    delegation.end(sessionId);
-    for (const delegate of openDelegatesOf(sessionId, latestSessions)) delegation.end(delegate.id);
+    endDelegationsForArchived(sessionId, latestSessions);
   };
 
   /** Shows a run's panel in the chat's place; no session stays selected, or the panel would not show. */
@@ -1243,97 +1181,6 @@ export default function App() {
     recordSession, openSession: handleSelectSession, discardSession: sessionActions.discardSession, openNewSession, requestSignIn: signIn.auth.requestSignIn,
   });
 
-  /** Resolves to whether the agent took the message. */
-  const sendTo = async (sessionId: string, message: FirstMessage) => {
-    compareRun.dropSignIn(sessionId);
-    const session = sessionById(sessionId);
-    // A numbered session takes its title from the first thing the user asks.
-    const isFirstMessage = !(transcripts[sessionId]?.some((m) => m.role === "user") ?? false);
-    const sent = await acp.send(sessionId, message.text, message.attachments);
-    if (sent && session && isFirstMessage && isAutoName(session.name) && !session.namedByUser) {
-      patchSession(sessionId, { titleSource: undefined, ...namingFor(message, titlePlaceOf(session, agents)) });
-    }
-    return sent;
-  };
-
-  /** Sends what the composer held; a message the delegation pair blocks, or the agent did not take, goes back. */
-  /**
-   * Resolves true when the agent took the message. One it did not take goes back to the composer,
-   * unless `giveBack` is false: a next-step press stays a press, and the draft in the box is left alone.
-   */
-  const sendFromComposer = (sessionId: string, message: FirstMessage, giveBack = true): Promise<boolean> => {
-    if (delegation.sendBlockedReason(sessionId) !== null) {
-      if (giveBack) giveBackMessage(sessionId, message.text, message.attachments);
-      return Promise.resolve(false);
-    }
-    return sendTo(sessionId, message).then((isTaken) => {
-      if (!isTaken && giveBack) giveBackMessage(sessionId, message.text, message.attachments);
-      return isTaken;
-    });
-  };
-
-  /**
-   * Continues an ended ACP session: a fresh agent process loads it, then gets
-   * the message. A rewound one has no agent session left to load.
-   */
-  const resumeSession = (session: Session, message: FirstMessage, options?: { keepUnsent?: boolean }): Promise<boolean | null> => {
-    compareRun.dropSignIn(session.id);
-    if (!session.acpSessionId) {
-      // A rewound session: `restart` gives the message back itself.
-      void restart(session, message, startChoices);
-      setAcpChoices(NO_CHOICES);
-      // The outcome is not known here, so the queue announces nothing for it.
-      return Promise.resolve(null);
-    }
-    // Continuing an archived session brings it back into the list.
-    patchSession(session.id, { status: "running", endedAt: null, exitCode: null, archivedAt: null });
-    const taken = acp.resume(session, session.acpSessionId, message, startChoices).then((isTaken) => {
-      // The queue gives back and announces for itself (`keepUnsent`): it must know whether the agent took the message.
-      if (!isTaken && !options?.keepUnsent) giveBackMessage(session.id, message.text, message.attachments);
-      return isTaken;
-    });
-    setAcpChoices(NO_CHOICES);
-    return taken;
-  };
-
-  /** Sends one queued message the way the composer's Send does; false when the agent or the delegation pair refused it. */
-  const deliverQueued = async (sessionId: string, queued: QueuedMessage, mode: "send" | "resume") => {
-    const session = sessionById(sessionId);
-    if (!session) return false;
-    const message = { text: queued.text, attachments: [...queued.attachments] };
-    if (mode === "resume") {
-      return resumeSession(session, message, { keepUnsent: true });
-    }
-    if (delegation.sendBlockedReason(sessionId) !== null) return false;
-    return sendTo(sessionId, message);
-  };
-  /** The composer's own rule for continuing an ended session: its agent is ready. */
-  const canResumeSession = (sessionId: string) => {
-    const session = sessionById(sessionId);
-    return session !== undefined && session.status !== "running" && agents.find((a) => a.id === session.profileId)?.detected === true;
-  };
-  const queue = useQueuedMessages({
-    sessionIds: sessions.map((s) => s.id),
-    deliver: deliverQueued,
-    stop: handleInterrupt,
-    giveBack: giveBackMessage,
-    focusComposer: () => composerRef.current?.focus(),
-    isWaiting: isSessionWaiting,
-    isTurnUnderWay: acp.isTurnUnderWay,
-    isStarting: acp.isStarting,
-    isEnded: (sessionId) => sessionById(sessionId)?.status !== "running",
-    canResume: canResumeSession,
-    agentNameOf: (sessionId) => agents.find((a) => a.id === sessionById(sessionId)?.profileId)?.name ?? "The agent",
-    onNotice: setNotice,
-  });
-  queueTurnSettledRef.current = queue.onTurnSettled;
-  queueAgentEndedRef.current = queue.onAgentEnded;
-  queuePromptStartedRef.current = queue.onPromptStarted;
-  queueRewoundRef.current = queue.clearForRewind;
-  // What was announced belongs to the session on screen: another session starts quiet.
-  const { clearAnnouncement } = queue;
-  useEffect(() => clearAnnouncement(), [activeSessionId, clearAnnouncement]);
-
   const {
     compareModelProbe,
     compareRun,
@@ -1404,175 +1251,89 @@ export default function App() {
   rearmReviewRef.current = review.rearm;
   forgetReviewRef.current = review.forget;
 
-  /** What a delegation to an agent starts with: the picks, and the agent's remembered model and effort. */
-  const delegationChoicesFor = (agentId: string): AcpChoices =>
-    delegationChoicesForOptions(state.agentOptions?.[agentId]);
-
-  /** True when a message sent now joins the session's queue: a turn is under way (read from refs) and no comments are held. */
-  const isQueueingNow = (sessionId: string) =>
-    isQueueingActive && sessionId === activeSessionId && acp.isTurnUnderWay(sessionId) && !acp.isStarting(sessionId);
-
-  /** Sends to the active session, continues it when it can be resumed, or starts a new one (or a run). */
-  const handleSendMessage = (text: string, attachments?: string[]) => {
-    const message = { text, attachments };
-    // A mention is the whole message: it starts the other agent instead of sending this one.
-    if (delegationMention !== null && activeSession !== undefined) {
-      const sourceId = activeSession.id;
-      const { agentId, task } = delegationMention;
-      void delegation
-        .start(sourceId, agentId, task, {
-          attachments,
-          choices: delegationChoicesFor(agentId),
-        })
-        .then((isStarted) => {
-          if (!isStarted) giveBackMessage(sourceId, text, attachments);
-        });
-      return;
-    }
-    // While a turn runs, a message waits in the session's queue. The secret guard scans it now, with the user
-    // at the keyboard; the queue later sends it through `sendTo`, which scans nothing again.
-    if (activeSession !== undefined && isQueueingNow(activeSession.id)) {
-      const sessionId = activeSession.id;
-      secretGuard.check(
-        message,
-        () => {
-          // The turn may have ended during the scan: no turn end is left to send it.
-          if (!acp.isTurnUnderWay(sessionId)) sendFromComposer(sessionId, message);
-          else if (!queue.add(sessionId, text, attachments ?? [])) giveBackMessage(sessionId, text, attachments);
-        },
-        {
-          isEnabled: isPrivateLaunch && state.settings.secretGuard !== false,
-          root: activeSession.cwd ?? activeWorkspacePath,
-          agentName: activeAgent?.name ?? "The agent",
-          sessionId,
-        },
-      );
-      return;
-    }
-    // The pair's report hand-over blocks both sides; nothing goes out, and held review comments stay held.
-    if (activeSession !== undefined && delegation.sendBlockedReason(activeSession.id) !== null) {
-      giveBackMessage(activeSession.id, text, attachments);
-      return;
-    }
-    // The composer empties on Send, which clears the slot; keep it so the comments still go with this
-    // message after a secret review, whether the user picks Send anyway or edits and sends again.
-    const reviewSlot = review.slot;
-    const deliver = () => {
-      if (reviewSlot) review.rearm(reviewSlot);
-      if (activeSession && isActiveRunning) {
-        review.sendFrom(activeSession.id, text);
-        sendFromComposer(activeSession.id, message);
-      } else if (activeSession && isResumable) {
-        review.sendFrom(activeSession.id, text);
-        void resumeSession(activeSession, message);
-      } else if (compare.isCompare) handleNewRun(message);
-      else void handleNewSession(message);
-    };
-    // A private message pauses here when it may hold a secret; nothing goes out until the user picks.
-    secretGuard.check(message, deliver, {
-      isEnabled: isPrivateLaunch && state.settings.secretGuard !== false,
-      root: activeSession?.cwd ?? activeWorkspacePath,
-      agentName: activeAgent?.name ?? newSessionAgent?.name ?? "The agent",
-      sessionId: activeSession?.id,
-      ...(reviewSlot ? { reviewSlot } : {}),
-    });
-  };
-
-  /** What the @ list and the dialog say about an agent: its install and sign-in state, as the draft's rows do. */
-  const delegationStatusOf = (agent: AgentProfile): MentionAgentStatus => {
-    if (!isAgentReady(agent)) return "not-installed";
-    const signIn = signInStatus.stateOf(agent.id);
-    return signIn === "needed" ? "needs-sign-in" : signIn === "ready" ? "ready" : "not-checked";
-  };
-
-  const mentionedAgent =
-    delegationMention === null ? undefined : agents.find((agent) => agent.id === delegationMention.agentId);
-
-  // A mention is the whole message, so the @ group shows only for a session of its own that may delegate.
-  const activeDelegateBlockedReason = sessionOfItsOwn
-    ? delegation.delegateBlockedReason(sessionOfItsOwn.id)
-    : null;
-  const mayDelegateHere =
-    activeSession !== undefined &&
-    !compareRun.isInRun(activeSession.id) &&
-    activeSession.delegatedFrom == null &&
-    activeDelegateBlockedReason !== "";
-  const delegationAgents = mayDelegateHere
-    ? agentsInUse.map((agent) => ({
-        id: agent.id,
-        name: agent.name,
-        status: delegationStatusOf(agent),
-      }))
-    : undefined;
-
-  const delegateDialog = useDelegateDialog({
+  const {
+    queue,
+    sendTo,
+    sendFromComposer,
+    canQueueActive,
+    isQueueingActive,
+    isQueueFull,
+    handleSendMessage,
+  } = useMessageDeliveryWiring({
+    sessions,
+    activeSession,
+    activeSessionId,
+    isActiveRunning,
+    isResumable,
+    activeWorkspacePath,
     agents,
+    activeAgent,
+    newSessionAgent,
     agentOptions: state.agentOptions,
-    probe: compareModelProbe,
-    sourceId: activeSession?.id,
-    start: delegation.start,
+    transcripts,
+    startChoices,
+    setAcpChoices,
+    isCompare: compare.isCompare,
+    isPrivateLaunch,
+    isSecretGuardEnabled: state.settings.secretGuard !== false,
+    delegationMention,
+    delegation,
+    review,
+    secretGuardCheck: secretGuard.check,
+    dropCompareSignIn: compareRun.dropSignIn,
+    sendAcp: acp.send,
+    resumeAcp: acp.resume,
+    isAcpBusy: acp.isBusy,
+    isTurnUnderWay: acp.isTurnUnderWay,
+    isStarting: acp.isStarting,
+    isRestarting,
+    isSessionWaiting,
+    restartSession: restart,
+    handleInterrupt,
+    handleNewRun,
+    handleNewSession,
+    patchSession,
+    giveBackMessage,
+    composerRef,
+    onNotice: setNotice,
+    queueTurnSettledRef,
+    queueAgentEndedRef,
+    queuePromptStartedRef,
+    queueRewoundRef,
+  });
+
+  const {
+    activeDelegateBlockedReason,
+    delegateDialog,
+    delegationAgents,
+    delegationBlock,
+    delegationSummary,
+    delegationSendLabel,
+    delegateAgents,
+    delegationEnds,
+    onDelegate,
+    openerSession,
+    delegationView,
+    shownDelegationViews,
+    delegationNow,
+  } = useDelegationUi({
+    sessions,
+    activeSession,
+    activeSessionId,
+    sessionOfItsOwn,
+    agents,
+    agentsInUse,
+    agentOptions: state.agentOptions,
+    signInStateOf: signInStatus.stateOf,
+    isInCompareRun: compareRun.isInRun,
+    isSessionBusy,
+    delegationMention,
+    delegation,
+    compareModelProbe,
     composerRef,
     menuButtonRef: moreOptionsButtonRef,
   });
 
-  const mentionBlock = delegationMention === null || mentionedAgent === undefined
-    ? null
-    : mentionBlockedReason({
-        agentName: mentionedAgent.name,
-        task: delegationMention.task,
-        status: delegationStatusOf(mentionedAgent),
-        delegateReason: activeSession ? delegation.delegateBlockedReason(activeSession.id, mentionedAgent.id) : null,
-      });
-  // Why Send waits: the mention's own reason first, then the pair's report hand-over.
-  const delegationBlock = mentionBlock ?? (activeSession ? delegation.sendBlockedReason(activeSession.id) : null) ?? undefined;
-  /** What B starts on, under A's prompt; only while the mention names an agent that can start. */
-  const delegationSummary =
-    delegationMention !== null && mentionedAgent !== undefined && mentionBlock === null
-      ? {
-          // The agent has exactly one worker here: the task goes to it, and nothing new starts.
-          text:
-            activeSession !== undefined && soleOpenDelegateOf(activeSession.id, mentionedAgent.id, sessions) !== undefined
-              ? followUpSummary(mentionedAgent.name)
-              : startSummary({
-                  agentName: mentionedAgent.name,
-                  ...delegatedStartOf(state.agentOptions?.[mentionedAgent.id]),
-                }),
-          onChange: (attachments?: readonly string[]) =>
-            delegateDialog.open({
-              initialAgentId: mentionedAgent.id,
-              initialTask: delegationMention.task,
-              attachments,
-              clearsComposer: true,
-              returnsFocusToMenu: false,
-            }),
-        }
-      : undefined;
-  const delegationSendLabel =
-    delegationMention !== null && mentionedAgent !== undefined ? `Delegate to ${mentionedAgent.name}` : undefined;
-
-  const delegateAgents: readonly DelegateAgentChoice[] = agentsInUse.map((agent) => ({
-    profile: agent,
-    status: delegationStatusOf(agent),
-    // Its task would go to its one worker here, which keeps its own model and mode.
-    ...(activeSession !== undefined && soleOpenDelegateOf(activeSession.id, agent.id, sessions) !== undefined
-      ? { hasDelegate: true }
-      : {}),
-  }));
-
-  // End delegation: one item per open delegate of A, or B's own open link. A delegated session offers no Delegate of its own.
-  const openDelegates = sessionOfItsOwn ? openDelegatesOf(sessionOfItsOwn.id, sessions) : [];
-  const delegationEnds =
-    openDelegates.length > 0
-      ? openDelegates.map((delegate) => ({
-          label:
-            openDelegates.length === 1
-              ? "End delegation"
-              : `End delegation to ${agents.find((agent) => agent.id === delegate.profileId)?.name ?? delegate.profileId}`,
-          run: () => delegation.end(delegate.id),
-        }))
-      : sessionOfItsOwn !== undefined && isOpenLink(sessionOfItsOwn.delegatedFrom)
-        ? [{ label: "End delegation", run: () => delegation.end(sessionOfItsOwn.id) }]
-        : undefined;
   // The session's agent may give other agents tasks without asking: the menu takes that back.
   const onStopAllowingDelegation =
     sessionOfItsOwn !== undefined && agentTools.hasGrant(sessionOfItsOwn.id)
@@ -1583,30 +1344,6 @@ export default function App() {
     sessionOfItsOwn !== undefined && activeComputerUse !== undefined
       ? () => computerUse.stop(sessionOfItsOwn.id)
       : undefined;
-  const onDelegate =
-    sessionOfItsOwn !== undefined && sessionOfItsOwn.delegatedFrom == null
-      ? () => delegateDialog.open({ clearsComposer: false, returnsFocusToMenu: true })
-      : undefined;
-
-  // A's line while B works or waits, and B's while A works on its report; while A is in a turn its own status shows.
-  // The session whose agent opened this one, when it still exists.
-  const openerSession = activeSession?.openedBy ? sessionById(activeSession.openedBy.sessionId) : undefined;
-  const delegationViews = activeSession ? delegation.viewsFor(activeSession.id) : [];
-  // B's own line, or the first of A's: the region that announces the lines stays mounted on it.
-  const delegationView = delegationViews[0] ?? null;
-  const shownDelegationViews = isSessionBusy(activeSessionId)
-    ? []
-    : delegationViews.filter(
-        (view) =>
-          (view.role === "source" &&
-            (view.state === "working" || view.state === "needs-answer" || view.state === "failed")) ||
-          view.state === "source-working",
-      );
-  const isDelegationWorking = shownDelegationViews.some(
-    (view) => view.state === "working" || view.state === "source-working",
-  );
-  // One-second ticks while a working line shows; the time is read in whole seconds, as the canvas draws it.
-  const delegationNow = useNow(1000, isDelegationWorking);
 
   const chooseOption = (sessionId: string, cardId: string, optionId: string, answers?: Record<string, string>) => {
     // A card Zorvo made for an agent's tool call is answered by Zorvo's tools, not by the agent.
@@ -1703,15 +1440,6 @@ export default function App() {
   // A draft's message is still being checked for secrets: a second Send would start a second session.
   // Only Send waits; disabling the box would take the focus away from what the user types next.
   const isCheckingDraftSecrets = isNewSessionDraft && secretGuard.isCheckingDraft;
-  // A message sent while the agent works waits in a queue, unless review comments are held: those are marked Sent at Send.
-  const canQueueActive =
-    activeSession !== undefined &&
-    isActiveRunning &&
-    acp.isBusy(activeSessionId) &&
-    !acp.isStarting(activeSessionId) &&
-    !isRestarting(activeSessionId);
-  const isQueueingActive = canQueueActive && review.slot === null;
-  const isQueueFull = isQueueingActive && queue.isFull(activeSessionId);
   // The composer's own rule for a blocked Send; a queued row's Send now follows it, with the note the composer shows.
   const isComposerSendBlocked = isSendWaiting || isCheckingDraftSecrets || review.blocksSend || delegationBlock !== undefined;
   const isSendBlocked = isComposerSendBlocked || isQueueFull;

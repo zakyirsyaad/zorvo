@@ -204,4 +204,73 @@ describe("ChangesPanel", () => {
     expect(screen.getByText("No uncommitted changes.")).toBeDefined();
     expect(screen.queryByRole("textbox", { name: "Commit message" })).toBeNull();
   });
+
+  it("discards a modified file after a two-click confirmation and reloads", async () => {
+    const spy = vi.spyOn(tauriInternals(), "invoke").mockResolvedValue(undefined);
+    const props = renderPanel();
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard changes to src/app.ts" }));
+    expect(spy).not.toHaveBeenCalled();
+
+    const confirm = screen.getByRole("button", { name: "Confirm discard src/app.ts" });
+    expect(confirm.textContent).toBe("Discard?");
+    await act(async () => {
+      fireEvent.click(confirm);
+    });
+
+    expect(spy).toHaveBeenCalledWith(
+      "discard_session_change",
+      { path: "/w/api", file: "src/app.ts" },
+      undefined,
+    );
+    expect(screen.getByRole("status").textContent).toBe("Discarded changes to src/app.ts.");
+    expect(props.onReload).toHaveBeenCalled();
+  });
+
+  it("cancels discard confirmation on Escape without invoking the backend", () => {
+    const spy = vi.spyOn(tauriInternals(), "invoke").mockResolvedValue(undefined);
+    renderPanel();
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard changes to src/app.ts" }));
+    const confirm = screen.getByRole("button", { name: "Confirm discard src/app.ts" });
+    fireEvent.keyDown(confirm, { key: "Escape" });
+
+    expect(screen.queryByRole("button", { name: "Confirm discard src/app.ts" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Discard changes to src/app.ts" })).toBeDefined();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("prompts Delete? for untracked files and deletes after confirmation", async () => {
+    const spy = vi.spyOn(tauriInternals(), "invoke").mockResolvedValue(undefined);
+    const props = renderPanel();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete notes.md" }));
+    const confirm = screen.getByRole("button", { name: "Confirm delete notes.md" });
+    expect(confirm.textContent).toBe("Delete?");
+    await act(async () => {
+      fireEvent.click(confirm);
+    });
+
+    expect(spy).toHaveBeenCalledWith(
+      "discard_session_change",
+      { path: "/w/api", file: "notes.md" },
+      undefined,
+    );
+    expect(screen.getByRole("status").textContent).toBe("Deleted notes.md.");
+    expect(props.onReload).toHaveBeenCalled();
+  });
+
+  it("shows an alert when discarding a file fails", async () => {
+    vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd) =>
+      cmd === "discard_session_change" ? Promise.reject("Could not discard changes to src/app.ts") : Promise.resolve(undefined),
+    );
+    renderPanel();
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard changes to src/app.ts" }));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Confirm discard src/app.ts" }));
+    });
+
+    expect(screen.getByRole("alert").textContent).toContain("Could not discard changes to src/app.ts");
+  });
 });

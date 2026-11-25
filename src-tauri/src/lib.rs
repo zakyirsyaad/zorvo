@@ -786,6 +786,7 @@ pub fn run() {
             branch_state::session_branch_state,
             diff_stats::session_diff_stats_since,
             changes::commit_session_changes,
+            changes::discard_session_change,
             worktrees::create_session_worktree,
             worktrees::remove_session_worktree,
             attachment_paths::worktree_attachment_paths,

@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use zorvo_lib::changes::{commit_files, file_diff, list_changes, ChangeKind, FileChange};
+use zorvo_lib::changes::{
+    commit_files, discard_file, file_diff, list_changes, ChangeKind, FileChange,
+};
 use zorvo_lib::diff_stats::DiffTarget;
 
 fn git(dir: &Path, args: &[&str]) -> String {
@@ -343,5 +345,136 @@ fn base_target_shows_branch_and_untracked_files_and_refuses_unchanged_ones() {
     assert!(missing
         .expect_err("not in the repository")
         .contains("is not a changed file"));
+    fs::remove_dir_all(repo).ok();
+}
+
+#[test]
+fn discards_modified_and_staged_file_without_touching_other_changes() {
+    let repo = repo("discard-modified");
+    fs::write(repo.join("src/app.ts"), "edited\n").expect("modify");
+    git(&repo, &["add", "src/app.ts"]);
+    fs::write(repo.join("src/app.ts"), "edited twice\n").expect("modify unstaged");
+    fs::write(repo.join("old.md"), "keep this change\n").expect("modify other");
+
+    discard_file(&git_path(), &repo, "src/app.ts").expect("discard modified");
+
+    assert_eq!(
+        fs::read_to_string(repo.join("src/app.ts")).expect("read restored"),
+        "one\ntwo\nthree\n"
+    );
+    assert_eq!(
+        fs::read_to_string(repo.join("old.md")).expect("read untouched"),
+        "keep this change\n"
+    );
+    let left = list_changes(&git_path(), &repo).expect("list changes");
+    assert_eq!(left, vec![change("old.md", ChangeKind::Modified)]);
+    fs::remove_dir_all(repo).ok();
+}
+
+#[test]
+fn discards_deleted_file_from_head() {
+    let repo = repo("discard-deleted");
+    fs::remove_file(repo.join("gone.txt")).expect("delete");
+    git(&repo, &["rm", "-q", "gone.txt"]);
+
+    discard_file(&git_path(), &repo, "gone.txt").expect("discard deleted");
+
+    assert_eq!(
+        fs::read_to_string(repo.join("gone.txt")).expect("read restored"),
+        "bye\n"
+    );
+    assert!(list_changes(&git_path(), &repo)
+        .expect("list changes")
+        .is_empty());
+    fs::remove_dir_all(repo).ok();
+}
+
+#[test]
+fn discards_untracked_file_and_unlinks_external_symlink_without_touching_target() {
+    let repo = repo("discard-untracked");
+    let outside = repo
+        .parent()
+        .expect("temp dir")
+        .join(format!("zorvo-outside-{}.txt", std::process::id()));
+    fs::write(&outside, "secret\n").expect("write outside");
+    std::os::unix::fs::symlink(&outside, repo.join("link.txt")).expect("symlink");
+    fs::write(repo.join("temp.txt"), "scratch\n").expect("untracked");
+
+    discard_file(&git_path(), &repo, "temp.txt").expect("discard untracked");
+    discard_file(&git_path(), &repo, "link.txt").expect("discard symlink");
+
+    assert!(!repo.join("temp.txt").exists());
+    assert!(fs::symlink_metadata(repo.join("link.txt")).is_err());
+    assert_eq!(
+        fs::read_to_string(&outside).expect("outside preserved"),
+        "secret\n"
+    );
+    fs::remove_file(outside).ok();
+    fs::remove_dir_all(repo).ok();
+}
+
+#[test]
+fn discards_added_file_with_head_and_on_unborn_repo() {
+    let repo = repo("discard-added");
+    fs::write(repo.join("staged.ts"), "hello\n").expect("write");
+    git(&repo, &["add", "staged.ts"]);
+
+    discard_file(&git_path(), &repo, "staged.ts").expect("discard staged");
+
+    assert!(!repo.join("staged.ts").exists());
+    assert!(list_changes(&git_path(), &repo)
+        .expect("list changes")
+        .is_empty());
+    fs::remove_dir_all(repo).ok();
+
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("clock")
+        .as_nanos();
+    let unborn = std::env::temp_dir().join(format!("zorvo-unborn-{}-{nanos}", std::process::id()));
+    fs::create_dir_all(&unborn).expect("create unborn");
+    git(&unborn, &["init", "-q", "-b", "main"]);
+    fs::write(unborn.join("first.ts"), "init\n").expect("write first");
+    git(&unborn, &["add", "first.ts"]);
+
+    discard_file(&git_path(), &unborn, "first.ts").expect("discard added before first commit");
+
+    assert!(!unborn.join("first.ts").exists());
+    assert!(list_changes(&git_path(), &unborn)
+        .expect("list changes")
+        .is_empty());
+    fs::remove_dir_all(unborn).ok();
+}
+
+#[test]
+fn discards_renamed_file_and_restores_original_path() {
+    let repo = repo("discard-renamed");
+    git(&repo, &["mv", "old.md", "new.md"]);
+    fs::write(repo.join("new.md"), "moving and edited\n").expect("edit renamed");
+
+    discard_file(&git_path(), &repo, "new.md").expect("discard rename");
+
+    assert!(!repo.join("new.md").exists());
+    assert_eq!(
+        fs::read_to_string(repo.join("old.md")).expect("read old.md"),
+        "moving\n"
+    );
+    assert!(list_changes(&git_path(), &repo)
+        .expect("list changes")
+        .is_empty());
+    fs::remove_dir_all(repo).ok();
+}
+
+#[test]
+fn refuses_invalid_or_unchanged_paths_on_discard() {
+    let repo = repo("discard-invalid");
+
+    assert!(discard_file(&git_path(), &repo, "../escape.txt").is_err());
+    assert!(discard_file(&git_path(), &repo, "/etc/hosts").is_err());
+    assert!(discard_file(&git_path(), &repo, "--all").is_err());
+    assert!(discard_file(&git_path(), &repo, "src/app.ts")
+        .unwrap_err()
+        .contains("is not a changed file"));
+
     fs::remove_dir_all(repo).ok();
 }

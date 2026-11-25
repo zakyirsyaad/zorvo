@@ -27,6 +27,7 @@ function timeLabelOf(message: ChatMessage): string | undefined {
 import { ArtifactCardRow } from "./ArtifactCardRow";
 import type { ArtifactCard } from "../../types";
 import { cardIdOf } from "../../lib/artifacts";
+import { NextStepBox, type NextStepView } from "./NextStepBox";
 
 /** A message or card that arrives on screen fades in once (the appear token); streamed text does not move. */
 const APPEAR = "motion-safe:animate-appear";
@@ -70,6 +71,8 @@ export interface MessageRowProps {
   appears?: boolean;
   /** True when its permission or input card arrived on screen after the message itself: the card fades in once. */
   cardAppears?: boolean;
+  /** The active next-step box (drawn under the reply it names), null when none is active, undefined in a popout. */
+  nextStep?: NextStepView | null;
 }
 
 /** A subagent's steps in the reply itself, for a window that has no inspector to open them in. */
@@ -123,6 +126,7 @@ export const MessageRow = memo(function MessageRow({
   visualSessionId,
   appears = false,
   cardAppears = false,
+  nextStep,
 }: MessageRowProps) {
   const isUser = message.role === "user";
   const timeLabel = timeLabelOf(message);
@@ -219,6 +223,15 @@ export const MessageRow = memo(function MessageRow({
           card={message.artifactCard}
           state={artifactIds === undefined || artifactIds.has(cardIdOf(message.artifactCard)) ? "open" : "removed"}
           onOpen={onOpenArtifact}
+        />
+      )}
+
+      {/* What happens next, under a turn that ended on its own */}
+      {message.role === "agent" && message.endedNormally && (nextStep?.messageId === message.id || message.nextStep) && (
+        <NextStepBox
+          step={message.nextStep}
+          agentName={agentName}
+          view={nextStep === undefined ? undefined : nextStep?.messageId === message.id ? nextStep : null}
         />
       )}
     </div>

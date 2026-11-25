@@ -1,4 +1,5 @@
 import type { ModelPrice } from "../lib/private-credits";
+import type { NextStepView } from "./chat/NextStepBox";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useArrivedKeys } from "../hooks/useArrivedKeys";
 import { MessageRow } from "./chat/MessageRow";
@@ -72,6 +73,8 @@ export interface ChatCanvasProps {
   privateModel?: ModelPrice | null;
   /** True while the agent works on its turn: shown under the last message. */
   isWorking?: boolean;
+  /** The active next-step box; null when none is active; left out in a popout, which shows the words only. */
+  nextStep?: NextStepView | null;
   /** Failed requests in a row the agent reported while it works. */
   failures?: AgentFailures;
   /** Qwen Code's background agents, for the notice that says they have gone quiet; never while a turn runs. */
@@ -133,6 +136,7 @@ export function ChatCanvas({
   privateModelId,
   privateModel,
   isWorking = false,
+  nextStep,
   failures,
   agentTasks,
   onStop,
@@ -288,6 +292,7 @@ export function ChatCanvas({
           agentProfileId={agentProfileId}
           visualSessionId={visualSessionId}
           isLast={msg === lastMessage}
+          nextStep={nextStep}
           isCurrentTurn={msg.role === "agent" && index >= currentTurnStartsAt}
           showActions={msg.role !== "user" && index < runningTurnStartsAt}
           copied={copiedMessageId === msg.id}

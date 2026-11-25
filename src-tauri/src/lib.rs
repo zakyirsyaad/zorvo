@@ -11,6 +11,7 @@ pub mod branches;
 pub mod browser;
 pub mod browser_commands;
 pub mod browser_debug;
+pub mod browser_upload;
 pub mod changes;
 pub mod computer_use;
 pub mod data_migration;

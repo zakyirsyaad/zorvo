@@ -76,6 +76,18 @@ pub(super) struct Tab {
     document: Option<String>,
     picker: Option<Picker>,
     pending: Vec<WeakReply>,
+    /// Approved, staged files that answer this tab's next file chooser, from `origin` only.
+    upload: Option<PendingUpload>,
+}
+pub(super) struct PendingUpload {
+    pub(super) origin: String,
+    pub(super) paths: Vec<std::path::PathBuf>,
+    pub(super) armed_at: std::time::Instant,
+}
+impl PendingUpload {
+    pub(super) fn is_fresh(&self) -> bool {
+        self.armed_at.elapsed() < crate::browser_upload::ARM_TTL
+    }
 }
 pub(super) struct Picker {
     document: String,
@@ -313,6 +325,8 @@ fn create(app: &AppHandle, sid: &str, url: &str) -> Result<String, String> {
                         tab.loading = matches!(event, wry::PageLoadEvent::Started);
                         if tab.loading {
                             cancel_pending(&mut tab.pending);
+                            // Files approved for one page never answer the next one's chooser.
+                            tab.upload = None;
                             tab.frames.clear();
                             tab.document = None;
                             if let Some(picker) = tab.picker.take() {
@@ -359,6 +373,7 @@ fn create(app: &AppHandle, sid: &str, url: &str) -> Result<String, String> {
                 document: None,
                 picker: None,
                 pending: vec![],
+                upload: None,
             },
         ));
         session.active = Some(id.clone());
@@ -549,6 +564,79 @@ fn dispatch(app: &AppHandle, sid: &str, args: Value, reply: Reply) {
             tab.pending.push(Rc::downgrade(&reply.0));
         }
         match operation {
+            "__upload_page" => {
+                // SAFETY: dispatch runs on the main thread and retains this tab's view.
+                let url = unsafe {
+                    tab.view
+                        .webview()
+                        .URL()
+                        .and_then(|url| url.absoluteString())
+                        .map(|url| url.to_string())
+                };
+                let _ = reply.send(
+                    url.ok_or_else(|| "Open a web page before uploading files.".to_string())
+                        .map(|url| json!({ "url": url })),
+                );
+            }
+            "__upload_arm" => {
+                let origin = args["origin"].as_str().unwrap_or_default().to_owned();
+                // SAFETY: as above.
+                let current = unsafe {
+                    tab.view
+                        .webview()
+                        .URL()
+                        .and_then(|url| url.absoluteString())
+                        .map(|url| url.to_string())
+                };
+                let same = current
+                    .as_deref()
+                    .and_then(|url| crate::browser_upload::origin_of(url).ok())
+                    .is_some_and(|now| now == origin);
+                let paths: Vec<std::path::PathBuf> = args["staged"]
+                    .as_array()
+                    .map(|paths| {
+                        paths
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(Into::into)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if !same || tab.loading {
+                    let _ = reply.send(Err("The page changed. Ask for the upload again.".into()));
+                } else if paths.is_empty() {
+                    let _ = reply.send(Err("Specify at least one file.".into()));
+                } else {
+                    tab.upload = Some(PendingUpload {
+                        origin,
+                        paths,
+                        armed_at: std::time::Instant::now(),
+                    });
+                    let mut click = args.clone();
+                    click["operation"] = json!("click");
+                    if let Some(object) = click.as_object_mut() {
+                        object.remove("origin");
+                        object.remove("staged");
+                    }
+                    helper(
+                        &tab.view.webview(),
+                        args.get("frameId"),
+                        &tab.frames,
+                        &click,
+                        reply,
+                    );
+                }
+            }
+            "__upload_state" => {
+                if tab.upload.as_ref().is_some_and(|upload| !upload.is_fresh()) {
+                    tab.upload = None;
+                }
+                let _ = reply.send(Ok(json!({ "pending": tab.upload.is_some() })));
+            }
+            "__upload_disarm" => {
+                tab.upload = None;
+                let _ = reply.send(Ok(json!({ "pending": false })));
+            }
             "__manual_zoom" => {
                 // SAFETY: this public WebKit property belongs to the retained
                 // session-owned view on its main thread, not to page script.

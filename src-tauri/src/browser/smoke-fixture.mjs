@@ -17,6 +17,18 @@ const server = http.createServer((request, response) => {
     response.end('<!doctype html><meta charset="utf-8"><title>Strict CSP browser smoke</title><h1 id="strict-ready">Strict CSP</h1><label>Strict input <input id="strict-input" aria-label="Strict input"></label>');
     return;
   }
+  if (request.url === '/upload') {
+    // A file input that reports what it received, for the native upload case.
+    response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    response.end(`<!doctype html><meta charset="utf-8"><title>Upload browser smoke</title>
+      <label>Statement <input type="file" multiple aria-label="Statement file"></label>
+      <button type="button" aria-label="Plain button">Plain</button><output id="upload-ready">Ready</output>
+      <script>document.querySelector('input[type=file]').addEventListener('change', async event => {
+        const files = [...event.target.files];
+        window.uploaded = await Promise.all(files.map(async file => ({ name: file.name, size: file.size, text: await file.text() })));
+      });</script>`);
+    return;
+  }
   if (request.url.split('?')[0] === '/responsive') {
     // Header data stays a string literal even if it contains HTML/script syntax.
     const info = JSON.stringify({ ua: request.headers['user-agent'] ?? '', document: randomUUID() }).replace(/</g, '\\u003c');

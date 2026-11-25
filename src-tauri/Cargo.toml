@@ -71,11 +71,11 @@ objc2 = "0.6"
 # The browser's views and pictures of canvas artboards (`artifacts/render.rs`): the versions
 # wry already compiles.
 block2 = "=0.6.2"
-objc2-web-kit = { version = "=0.3.2", default-features = false, features = ["std", "block2", "objc2-app-kit", "objc2-core-foundation", "WKContentWorld", "WKFrameInfo", "WKHTTPCookieStore", "WKPDFConfiguration", "WKPreferences", "WKScriptMessage", "WKScriptMessageHandler", "WKSecurityOrigin", "WKSnapshotConfiguration", "WKUIDelegate", "WKUserContentController", "WKUserScript", "WKWebView", "WKWebViewConfiguration", "WKWebsiteDataStore"] }
-objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSBitmapImageRep", "NSGraphics", "NSImageRep", "NSImage", "NSPasteboard"] }
+objc2-web-kit = { version = "=0.3.2", default-features = false, features = ["std", "block2", "objc2-app-kit", "objc2-core-foundation", "WKContentWorld", "WKFrameInfo", "WKHTTPCookieStore", "WKOpenPanelParameters", "WKPDFConfiguration", "WKPreferences", "WKScriptMessage", "WKScriptMessageHandler", "WKSecurityOrigin", "WKSnapshotConfiguration", "WKUIDelegate", "WKUserContentController", "WKUserScript", "WKWebView", "WKWebViewConfiguration", "WKWebsiteDataStore"] }
+objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "block2", "NSApplication", "NSBitmapImageRep", "NSGraphics", "NSImageRep", "NSImage", "NSOpenPanel", "NSPanel", "NSPasteboard", "NSResponder", "NSSavePanel", "NSWindow"] }
 # Keychain for the Zorvo Private device secret; the version the updater already compiles.
 security-framework = "=3.7.0"
-objc2-foundation = { version = "0.3", features = ["NSData", "NSDictionary", "NSGeometry", "NSString", "NSUserDefaults", "NSValue"] }
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSData", "NSDictionary", "NSGeometry", "NSString", "NSURL", "NSUserDefaults", "NSValue"] }
 # Joins exported artboards into one PDF (`artifacts/render.rs::join_pdfs`), same objc2 family.
 objc2-pdf-kit = { version = "=0.3.2", default-features = false, features = ["std", "PDFDocument", "PDFPage"] }
 

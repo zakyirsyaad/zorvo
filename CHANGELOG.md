@@ -4,6 +4,11 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+
+- **Choose File works in the Browser tab.** A page's file button now opens the file picker; before, clicking it did nothing.
+- **An agent can upload a file to a page you are signed in to.** After you approve the files and the site on a one-time card, the agent fills the page's file field in the Browser tab itself, where before it could only use a separate Chromium window without your sign-in. The files must be in the session's folder.
+
 ## [0.19.0] - 2026-11-25
 
 ### Added

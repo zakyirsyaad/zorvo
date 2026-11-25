@@ -20,6 +20,8 @@ mod sites_smoke;
 #[cfg(all(target_os = "macos", debug_assertions))]
 mod smoke;
 #[cfg(all(target_os = "macos", debug_assertions))]
+mod upload_smoke;
+#[cfg(all(target_os = "macos", debug_assertions))]
 pub use smoke::{frontend_ready, smoke};
 
 #[derive(Clone, Copy, Debug, serde::Deserialize)]
@@ -273,6 +275,79 @@ pub async fn execute(app: &AppHandle, session_id: String, args: Value) -> Result
         let _ = (app, session_id, args);
         Err("The embedded browser requires macOS.".into())
     }
+}
+
+/// The tab, frame, ref and grant of an upload request, for the internal upload operations, so a
+/// revoked grant or a cancelled call still stops them.
+#[cfg(target_os = "macos")]
+fn upload_target(args: &Value, operation: &str) -> Value {
+    let mut target = serde_json::json!({ "operation": operation });
+    for (from, to) in [
+        ("tabId", "tabId"),
+        ("tabID", "tabId"),
+        ("frameId", "frameId"),
+        ("frameID", "frameId"),
+        ("ref", "ref"),
+        ("_zorvoCallId", "_zorvoCallId"),
+        ("_zorvoGrant", "_zorvoGrant"),
+    ] {
+        if let Some(value) = args.get(from).filter(|v| !v.is_null()) {
+            target[to] = value.clone();
+        }
+    }
+    target
+}
+
+/// The address of the page an upload would go to.
+#[cfg(target_os = "macos")]
+pub async fn upload_page(app: &AppHandle, session: String, args: &Value) -> Result<String, String> {
+    native::execute(app, session, upload_target(args, "__upload_page"))
+        .await?
+        .get("url")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| "Open a web page before uploading files.".into())
+}
+
+/// Arms the tab with the staged files for `origin` and clicks the input at `ref`.
+#[cfg(target_os = "macos")]
+pub async fn upload_arm(
+    app: &AppHandle,
+    session: String,
+    args: &Value,
+    origin: &str,
+    staged: &[std::path::PathBuf],
+) -> Result<(), String> {
+    let mut target = upload_target(args, "__upload_arm");
+    target["origin"] = serde_json::json!(origin);
+    target["staged"] = serde_json::json!(staged
+        .iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect::<Vec<_>>());
+    native::execute(app, session, target).await.map(|_| ())
+}
+
+/// Whether the armed files still wait for the page's file chooser.
+#[cfg(target_os = "macos")]
+pub async fn upload_pending(
+    app: &AppHandle,
+    session: String,
+    args: &Value,
+) -> Result<bool, String> {
+    Ok(
+        native::execute(app, session, upload_target(args, "__upload_state"))
+            .await?
+            .get("pending")
+            == Some(&Value::Bool(true)),
+    )
+}
+
+/// Withdraws armed files the page never asked for.
+#[cfg(target_os = "macos")]
+pub async fn upload_disarm(app: &AppHandle, session: String, args: &Value) -> Result<(), String> {
+    native::execute(app, session, upload_target(args, "__upload_disarm"))
+        .await
+        .map(|_| ())
 }
 
 #[tauri::command]

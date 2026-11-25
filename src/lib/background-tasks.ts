@@ -24,6 +24,8 @@ export interface BackgroundTask {
   sessionId: string;
   /** The OS process a shell task can be stopped through. */
   pid?: number;
+  /** The local ports a shell task listens on, when it has any. */
+  ports?: number[];
 }
 
 export interface BackgroundTasksInput {
@@ -167,6 +169,7 @@ export function backgroundTasksOf(input: BackgroundTasksInput): BackgroundTask[]
       startedAt: processesReadAt - process.elapsedSecs * 1000,
       sessionId: process.sessionId,
       pid: process.pid,
+      ...(process.ports.length > 0 ? { ports: process.ports } : {}),
     };
   });
 

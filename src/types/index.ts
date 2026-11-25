@@ -608,7 +608,9 @@ export type PageMessage =
 /** Where the agent showed a page (with the version shown then) or a canvas (with its artboard count then). */
 export type ArtifactCard =
   | { kind?: undefined; artifactId: string; title: string; version: number }
-  | { kind: 'canvas'; canvasKey: string; title: string; artboards: number };
+  | { kind: 'canvas'; canvasKey: string; title: string; artboards: number }
+  | { kind: 'motion'; motionKey: string; title: string; duration: number; formats: number }
+  | { kind: 'video'; videoKey: string; title: string };
 
 export interface ElicitationChoice {
   value: string;

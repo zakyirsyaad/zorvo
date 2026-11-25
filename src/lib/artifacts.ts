@@ -1,3 +1,4 @@
+import { isMotionKey, isVideoKey } from './motion';
 import type { Artifact, ArtifactCard, ArtifactVersion, Session } from '../types';
 import type { CanvasEntry } from './canvas';
 import { isArchived } from './session-helpers';
@@ -29,8 +30,10 @@ export interface ShownArtifact {
 
 /** The artifact the viewer shows (a `version` of null follows the newest), or a canvas. */
 export type ViewedArtifact =
-  | { artifactId: string; version: number | null; canvasKey?: undefined }
-  | { canvasKey: string; artifactId?: undefined; version?: undefined };
+  | { artifactId: string; version: number | null; canvasKey?: undefined; motionKey?: undefined; videoKey?: undefined }
+  | { canvasKey: string; artifactId?: undefined; version?: undefined; motionKey?: undefined; videoKey?: undefined }
+  | { motionKey: string; artifactId?: undefined; version?: undefined; canvasKey?: undefined; videoKey?: undefined }
+  | { videoKey: string; artifactId?: undefined; version?: undefined; canvasKey?: undefined; motionKey?: undefined };
 
 const ARTIFACT_ID = /^a-[0-9a-f]{16}$/;
 const CANVAS_KEY = /^c-[0-9a-f]{16}$/;
@@ -84,6 +87,16 @@ export function parseShown(value: unknown): ShownArtifact | null {
 /** A card saved in a transcript, or null when it does not fit. */
 export function parseArtifactCard(value: unknown): ArtifactCard | null {
   if (!isObject(value)) return null;
+  if (value.kind === 'motion') {
+    const { motionKey, title, duration, formats } = value;
+    if (!isMotionKey(motionKey) || typeof title !== 'string' || typeof duration !== 'number' || !Number.isFinite(duration) || !isCount(formats)) return null;
+    return { kind: 'motion', motionKey, title, duration, formats };
+  }
+  if (value.kind === 'video') {
+    const { videoKey, title } = value;
+    if (!isVideoKey(videoKey) || typeof title !== 'string') return null;
+    return { kind: 'video', videoKey, title };
+  }
   if (value.kind === 'canvas') {
     const { canvasKey, title, artboards } = value;
     if (typeof canvasKey !== 'string' || !CANVAS_KEY.test(canvasKey) || typeof title !== 'string' || !isCount(artboards)) return null;
@@ -160,7 +173,16 @@ export function canvasOpeningFor(input: { isOnScreen: boolean; key: string; view
 
 /** The id a card names: an artifact's id or a canvas's key (they never look alike). */
 export function cardIdOf(card: ArtifactCard): string {
-  return card.kind === 'canvas' ? card.canvasKey : card.artifactId;
+  switch (card.kind) {
+    case 'canvas':
+      return card.canvasKey;
+    case 'motion':
+      return card.motionKey;
+    case 'video':
+      return card.videoKey;
+    default:
+      return card.artifactId;
+  }
 }
 
 export function cardState(card: ArtifactCard, artifacts: readonly Artifact[]): 'open' | 'removed' {

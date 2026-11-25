@@ -555,3 +555,50 @@ describe("canvases", () => {
     expect(screen.getByRole("list", { name: "Artifacts" })).toBeTruthy();
   });
 });
+
+describe("motions and videos", () => {
+  const MOTION = { key: "m-0123456789abcdef", folder: "/w/promo", relative: "promo", title: "Promo", shownAt: 5, duration: 15, formats: ["wide", "tall"] };
+  const VIDEO = { key: "v-0123456789abcdef", path: "/w/out/reel.mp4", relative: "out/reel.mp4", title: "Reel", shownAt: 4 };
+
+  it("lists them and opens each by its key", () => {
+    const { props } = show({ motions: [MOTION], videos: [VIDEO] });
+    expect(screen.getByText("Video · 15 s · 2 formats · promo")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Promo/ }));
+    expect(props.onView).toHaveBeenCalledWith({ motionKey: MOTION.key });
+    fireEvent.click(screen.getByRole("button", { name: /Reel/ }));
+    expect(props.onView).toHaveBeenCalledWith({ videoKey: VIDEO.key });
+  });
+
+  it("shows a motion's preview, formats and renders", async () => {
+    spy.mockImplementation((cmd: string, args?: Record<string, unknown>) => {
+      if (cmd === "motion_read") {
+        return Promise.resolve({
+          entry: MOTION,
+          title: "Promo",
+          duration: 15,
+          fps: 60,
+          poster: 5,
+          tracks: 1,
+          formats: [
+            { id: "wide", width: 1920, height: 1080, hasRender: true, isUpToDate: true },
+            { id: "tall", width: 1080, height: 1920, hasRender: false, isUpToDate: false },
+          ],
+          jobs: [],
+          error: null,
+          warnings: [],
+        });
+      }
+      return fakeTauriInvoke(cmd, args);
+    });
+    show({ artifacts: [], motions: [MOTION], viewed: { motionKey: MOTION.key } });
+    expect(await screen.findByRole("radio", { name: "wide" })).toBeTruthy();
+    expect(screen.getByText("Preview has no motion blur. Exports do.")).toBeTruthy();
+    expect(screen.getByText("Rendered")).toBeTruthy();
+    expect(screen.getByText("Not rendered")).toBeTruthy();
+    await waitFor(() => expect(calls("motion_view_show").length).toBeGreaterThan(0));
+    expect(calls("motion_view_show")[0]).toMatchObject({ sessionId: "s-1", key: MOTION.key, format: "wide" });
+    fireEvent.click(screen.getByRole("button", { name: "Play" }));
+    expect(calls("motion_view_command")).toContainEqual({ sessionId: "s-1", key: MOTION.key, name: "play" });
+    expect(screen.getByRole("button", { name: "Mute" })).toBeTruthy();
+  });
+});

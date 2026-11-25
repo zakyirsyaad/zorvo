@@ -304,3 +304,24 @@ describe("FileViewer — contents", () => {
     expect(screen.getByRole("region", { name: "Contents of a.ts" })).toHaveTextContent("changed");
   });
 });
+
+describe("FileViewer — video", () => {
+  afterEach(() => {
+    fileResult = () => Promise.resolve({ kind: "text", text: "const a = 1;\nlet b;\n", size: 20 });
+  });
+
+  it("plays a video through a media token, never by its path", async () => {
+    fileResult = () => Promise.resolve({ kind: "video", mime: "video/mp4", size: 2048 });
+    mockInvoke.mockImplementation((cmd: string, args?: Record<string, unknown>) => {
+      if (cmd === "read_workspace_file") return fileResult();
+      if (cmd === "media_url_for_file") return Promise.resolve("zorvo-media://localhost/0123456789abcdef0123456789abcdef");
+      return Promise.resolve(args === undefined ? undefined : null);
+    });
+    await renderViewer({ relativePath: "out/wide.mp4" });
+    const video = await screen.findByLabelText("wide.mp4");
+    expect(video.tagName).toBe("VIDEO");
+    expect(video.getAttribute("src")).toBe("zorvo-media://localhost/0123456789abcdef0123456789abcdef");
+    expect(mockInvoke).toHaveBeenCalledWith("media_url_for_file", { root: ROOT, relative: "out/wide.mp4" });
+    expect(screen.getByText("Video · 2 KB · Read only")).toBeInTheDocument();
+  });
+});

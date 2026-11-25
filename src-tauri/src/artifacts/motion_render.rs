@@ -313,7 +313,7 @@ impl MotionRenderer {
         );
         drop(queue);
         self.wake.notify_all();
-        self.emit(&view);
+        self.announce(&view);
         Ok(view)
     }
 
@@ -354,7 +354,7 @@ impl MotionRenderer {
             let view = entry.view.clone();
             queue.waiting.retain(|id| id != job);
             drop(queue);
-            self.emit(&view);
+            self.announce(&view);
         }
         true
     }
@@ -375,7 +375,7 @@ impl MotionRenderer {
         }
     }
 
-    fn emit(&self, view: &JobView) {
+    fn announce(&self, view: &JobView) {
         let _ = self.app.emit(MOTION_RENDER_EVENT, view);
     }
 
@@ -517,7 +517,7 @@ impl MotionRenderer {
             return;
         }
         if let Some(view) = self.update(job, |view| view.state = JobState::Rendering) {
-            self.emit(&view);
+            self.announce(&view);
         }
         let result = self.render_formats(job, &session_id, &key, &root, &destination);
         let view = self.update(job, |view| match &result {
@@ -532,7 +532,7 @@ impl MotionRenderer {
             }
         });
         if let Some(view) = view {
-            self.emit(&view);
+            self.announce(&view);
         }
     }
 
@@ -570,7 +570,7 @@ impl MotionRenderer {
                     progress.file = Some(format!("{OUT_DIR}/{id}.mp4"));
                 }
             }) {
-                self.emit(&view);
+                self.announce(&view);
             }
             let rendered = out_file(root, &id);
             let copied = match destination {
@@ -639,7 +639,7 @@ impl MotionRenderer {
                             progress.frame = index;
                         }
                     }) {
-                        self.emit(&view);
+                        self.announce(&view);
                     }
                 }
             }

@@ -780,6 +780,15 @@ export default function App() {
   // The pages each session's agent showed; the backend owns them and says when they change.
   const artifacts = useArtifacts(useMemo(() => sessions.map((session) => session.id), [sessions]));
   const sessionArtifacts = useMemo(() => (activeSession ? artifacts.bySession.get(activeSession.id) ?? [] : []), [artifacts.bySession, activeSession]);
+  const sessionMotions = useMemo(
+    () => (activeSession ? artifacts.motionsBySession.get(activeSession.id) ?? [] : []),
+    [artifacts.motionsBySession, activeSession],
+  );
+  const sessionVideos = useMemo(
+    () => (activeSession ? artifacts.videosBySession.get(activeSession.id) ?? [] : []),
+    [artifacts.videosBySession, activeSession],
+  );
+  const sessionMediaCount = sessionMotions.length + sessionVideos.length;
   const sessionCanvases = useMemo(
     () => (activeSession ? artifacts.canvasesBySession.get(activeSession.id) ?? [] : []),
     [artifacts.canvasesBySession, activeSession],
@@ -865,11 +874,29 @@ export default function App() {
   };
   // Artifact ids and canvas keys never look alike, so one set tells a card whether its output is still listed.
   const artifactIds = useMemo(
-    () => new Set([...sessionArtifacts.map((artifact) => artifact.id), ...sessionCanvases.map((canvas) => canvas.key)]),
-    [sessionArtifacts, sessionCanvases],
+    () =>
+      new Set([
+        ...sessionArtifacts.map((artifact) => artifact.id),
+        ...sessionCanvases.map((canvas) => canvas.key),
+        ...sessionMotions.map((motion) => motion.key),
+        ...sessionVideos.map((video) => video.key),
+      ]),
+    [sessionArtifacts, sessionCanvases, sessionMotions, sessionVideos],
   );
   /** A chat card's Open: the version it marks, in the Artifacts tab (the newest is followed, not pinned), or the canvas. */
   const openArtifactCard = (card: ArtifactCard) => {
+    if (card.kind === "motion") {
+      if (!sessionMotions.some((motion) => motion.key === card.motionKey)) return;
+      inspector.viewArtifact({ motionKey: card.motionKey });
+      inspector.show("artifacts");
+      return;
+    }
+    if (card.kind === "video") {
+      if (!sessionVideos.some((video) => video.key === card.videoKey)) return;
+      inspector.viewArtifact({ videoKey: card.videoKey });
+      inspector.show("artifacts");
+      return;
+    }
     if (card.kind === "canvas") {
       if (!sessionCanvases.some((canvas) => canvas.key === card.canvasKey)) return;
       inspector.viewArtifact({ canvasKey: card.canvasKey });
@@ -886,12 +913,12 @@ export default function App() {
   // A tab that no longer applies (another folder, a draft) does not show.
   const inspectorTab = inspector.tab && inspectorTabs.includes(inspector.tab) ? inspector.tab : null;
   // The open artifact's page takes the chat's place: only on the Artifacts tab of a session that still has one.
-  const isArtifactExpanded = inspector.isArtifactExpanded && inspectorTab === "artifacts" && sessionArtifacts.length + sessionCanvases.length > 0;
+  const isArtifactExpanded = inspector.isArtifactExpanded && inspectorTab === "artifacts" && sessionArtifacts.length + sessionCanvases.length + sessionMediaCount > 0;
   // The Browser tab's Expand: the inspector takes the whole stage, the main sheet hidden, and the page's native view
   // only moves (its box grows), so the page keeps what it holds.
   const isBrowserExpanded = inspector.isBrowserExpanded && inspectorTab === "browser" && activeSession !== undefined;
   // The artifact page on screen, for its comments: the Artifacts tab's viewer shows it, expanded or not.
-  const shownArtifact = inspectorTab === "artifacts" ? shownArtifactOf(sessionArtifacts, inspector.viewedArtifact, createdFiles.length + sessionCanvases.length) : undefined;
+  const shownArtifact = inspectorTab === "artifacts" ? shownArtifactOf(sessionArtifacts, inspector.viewedArtifact, createdFiles.length + sessionCanvases.length + sessionMediaCount) : undefined;
   const viewedVersion = inspector.viewedArtifact?.artifactId === shownArtifact?.id ? inspector.viewedArtifact?.version : null;
   const shownVersion = shownArtifact ? (viewedVersion ?? newestVersion(shownArtifact)) : 0;
   const shownPage =
@@ -901,7 +928,7 @@ export default function App() {
   // The canvas on screen, for its comments, chosen as the Artifacts tab's viewer chooses it.
   const shownCanvasEntry =
     inspectorTab === "artifacts" && !shownArtifact
-      ? shownCanvasOf(sessionCanvases, inspector.viewedArtifact, sessionArtifacts.length + createdFiles.length)
+      ? shownCanvasOf(sessionCanvases, inspector.viewedArtifact, sessionArtifacts.length + createdFiles.length + sessionMediaCount)
       : undefined;
   const shownCanvas = useMemo(
     () => {
@@ -2574,6 +2601,8 @@ export default function App() {
                     onError={reportError}
                     onNotice={setNotice}
                     canvases={sessionCanvases}
+                    motions={sessionMotions}
+                    videos={sessionVideos}
                     turnsEnded={turnsEnded}
                     comments={artifactComments}
                     addReview={review.addArtifactReview}
@@ -2720,8 +2749,15 @@ export default function App() {
                     // and comments would lose the page they are on.
                     if (!inspector.viewedArtifact && shownArtifact) inspector.viewArtifact({ artifactId: shownArtifact.id, version: null });
                     // So is a canvas that opened by itself, being the only thing listed.
-                    const onlyCanvas = sessionCanvases.length === 1 && sessionArtifacts.length === 0 && createdFiles.length === 0 ? sessionCanvases[0] : undefined;
+                    const onlyCanvas =
+                      sessionCanvases.length === 1 && sessionArtifacts.length === 0 && createdFiles.length === 0 && sessionMediaCount === 0
+                        ? sessionCanvases[0]
+                        : undefined;
                     if (!inspector.viewedArtifact && onlyCanvas) inspector.viewArtifact({ canvasKey: onlyCanvas.key });
+                    // And a motion or a video that is the only thing listed.
+                    const isOnlyMedia = sessionMediaCount === 1 && sessionCanvases.length === 0 && sessionArtifacts.length === 0 && createdFiles.length === 0;
+                    if (!inspector.viewedArtifact && isOnlyMedia && sessionMotions[0]) inspector.viewArtifact({ motionKey: sessionMotions[0].key });
+                    if (!inspector.viewedArtifact && isOnlyMedia && sessionVideos[0]) inspector.viewArtifact({ videoKey: sessionVideos[0].key });
                     inspector.setArtifactExpanded(true);
                   }}
                   onError={reportError}
@@ -2731,6 +2767,8 @@ export default function App() {
                   cwd={activeSession.cwd}
                   files={createdFiles}
                   canvases={sessionCanvases}
+                  motions={sessionMotions}
+                  videos={sessionVideos}
                   turnsEnded={turnsEnded}
                   onInsertText={canvasInsertText}
                   insertBlockedReason={canvasInsertBlockedReason}

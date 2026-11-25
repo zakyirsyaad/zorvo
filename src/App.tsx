@@ -92,6 +92,8 @@ import { useAppearance } from "./hooks/useAppearance";
 import { usePersistedState } from "./hooks/usePersistedState";
 import { useAgentTasks } from "./hooks/useAgentTasks";
 import { useBackgroundTasks } from "./hooks/useBackgroundTasks";
+import { useNextStep } from "./hooks/useNextStep";
+import { requestBrowserOpen } from "./lib/browser";
 import { useSessionTaskTabs } from "./hooks/useSessionTaskTabs";
 import type { TaskTab } from "./hooks/useTaskTabs";
 import { TasksPanel } from "./components/tasks/TasksPanel";
@@ -1460,13 +1462,15 @@ export default function App() {
   };
 
   /** Sends what the composer held; a message the delegation pair blocks, or the agent did not take, goes back. */
-  const sendFromComposer = (sessionId: string, message: FirstMessage) => {
+  /** Resolves true when the agent took the message; one it did not take goes back to the composer. */
+  const sendFromComposer = (sessionId: string, message: FirstMessage): Promise<boolean> => {
     if (delegation.sendBlockedReason(sessionId) !== null) {
       giveBackMessage(sessionId, message.text, message.attachments);
-      return;
+      return Promise.resolve(false);
     }
-    void sendTo(sessionId, message).then((isTaken) => {
+    return sendTo(sessionId, message).then((isTaken) => {
       if (!isTaken) giveBackMessage(sessionId, message.text, message.attachments);
+      return isTaken;
     });
   };
 
@@ -1955,6 +1959,21 @@ export default function App() {
     commentsWaitFor: canQueueActive && review.slot?.sessionId === activeSessionId ? activeAgent?.name ?? "The agent" : undefined,
     continuesSession: isResumable || Boolean(activeSession),
   });
+  // The box under a finished turn: its buttons send through the composer's own Send.
+  const nextStep = useNextStep({
+    session: activeSession ?? null,
+    sessions,
+    messages: currentMessages,
+    isBusy: activeSession ? isSessionBusy(activeSession.id) : false,
+    isWaiting: activeSession ? isSessionWaiting(activeSession.id) : false,
+    blockedReason: isComposerSendBlocked ? composerNoteText ?? "You can't send right now." : undefined,
+    pullRequest: activeSession ? pullRequestOf(activeSession) : null,
+    tasks: backgroundTasks.tasks,
+    send: (sessionId, text) => sendFromComposer(sessionId, { text }),
+    updateMessages,
+    openUrl: openPullRequest,
+    openPreview: requestBrowserOpen,
+  });
   const composerCommands = composerCommandsFor({
     isRunning: isActiveRunning,
     liveCommands: acp.info[activeSessionId]?.commands,
@@ -2158,6 +2177,7 @@ export default function App() {
                       conversationId={activeSessionId}
                       visualSessionId={activeSessionId ?? undefined}
                       messages={currentMessages}
+                      nextStep={nextStep}
                       jumpTo={chatJump}
                       onJumped={() => setChatJump(null)}
                       agentName={activeAgent?.name}

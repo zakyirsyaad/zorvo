@@ -76,6 +76,21 @@ pub(super) struct Tab {
     document: Option<String>,
     picker: Option<Picker>,
     pending: Vec<WeakReply>,
+    /// Approved, staged files that answer this tab's next file chooser, from `origin` only.
+    upload: Option<PendingUpload>,
+    /// The id of the last armed upload a file chooser took, so its caller can tell taken from expired.
+    upload_taken: Option<u64>,
+}
+pub(super) struct PendingUpload {
+    pub(super) id: u64,
+    pub(super) origin: String,
+    pub(super) paths: Vec<std::path::PathBuf>,
+    pub(super) armed_at: std::time::Instant,
+}
+impl PendingUpload {
+    pub(super) fn is_fresh(&self) -> bool {
+        self.armed_at.elapsed() < crate::browser_upload::ARM_TTL
+    }
 }
 pub(super) struct Picker {
     document: String,
@@ -313,6 +328,8 @@ fn create(app: &AppHandle, sid: &str, url: &str) -> Result<String, String> {
                         tab.loading = matches!(event, wry::PageLoadEvent::Started);
                         if tab.loading {
                             cancel_pending(&mut tab.pending);
+                            // Files approved for one page never answer the next one's chooser.
+                            tab.upload = None;
                             tab.frames.clear();
                             tab.document = None;
                             if let Some(picker) = tab.picker.take() {
@@ -359,6 +376,8 @@ fn create(app: &AppHandle, sid: &str, url: &str) -> Result<String, String> {
                 document: None,
                 picker: None,
                 pending: vec![],
+                upload: None,
+                upload_taken: None,
             },
         ));
         session.active = Some(id.clone());
@@ -549,6 +568,91 @@ fn dispatch(app: &AppHandle, sid: &str, args: Value, reply: Reply) {
             tab.pending.push(Rc::downgrade(&reply.0));
         }
         match operation {
+            "__upload_page" => {
+                let _ = reply.send(
+                    upload_origin(tab, args.get("frameId"))
+                        .map(|origin| json!({ "origin": origin, "tabId": tid })),
+                );
+            }
+            "__upload_check" => {
+                let check = json!({
+                    "operation": "upload_target",
+                    "ref": args.get("ref").cloned().unwrap_or(Value::Null),
+                });
+                helper(
+                    &tab.view.webview(),
+                    args.get("frameId"),
+                    &tab.frames,
+                    &check,
+                    reply,
+                );
+            }
+            "__upload_arm" => {
+                let origin = args["origin"].as_str().unwrap_or_default().to_owned();
+                let id = args["uploadId"].as_u64().unwrap_or_default();
+                let same = upload_origin(tab, args.get("frameId")).is_ok_and(|now| now == origin);
+                let paths: Vec<std::path::PathBuf> = args["staged"]
+                    .as_array()
+                    .map(|paths| {
+                        paths
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(Into::into)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if !same || tab.loading {
+                    let _ = reply.send(Err("The page changed. Ask for the upload again.".into()));
+                } else if paths.is_empty() || id == 0 {
+                    let _ = reply.send(Err("Specify at least one file.".into()));
+                } else {
+                    tab.upload = Some(PendingUpload {
+                        id,
+                        origin,
+                        paths,
+                        armed_at: std::time::Instant::now(),
+                    });
+                    let mut click = json!({
+                        "operation": "click",
+                        "ref": args.get("ref").cloned().unwrap_or(Value::Null),
+                    });
+                    if let Some(frame) = args.get("frameId") {
+                        click["frameId"] = frame.clone();
+                    }
+                    helper(
+                        &tab.view.webview(),
+                        args.get("frameId"),
+                        &tab.frames,
+                        &click,
+                        reply,
+                    );
+                }
+            }
+            "__upload_state" => {
+                let id = args["uploadId"].as_u64().unwrap_or_default();
+                let state = if tab.upload_taken == Some(id) {
+                    "taken"
+                } else if tab
+                    .upload
+                    .as_ref()
+                    .is_some_and(|upload| upload.id == id && upload.is_fresh())
+                {
+                    "waiting"
+                } else {
+                    if tab.upload.as_ref().is_some_and(|upload| upload.id == id) {
+                        tab.upload = None;
+                    }
+                    "expired"
+                };
+                let _ = reply.send(Ok(json!({ "state": state })));
+            }
+            "__upload_disarm" => {
+                let id = args["uploadId"].as_u64().unwrap_or_default();
+                if tab.upload.as_ref().is_some_and(|upload| upload.id == id) {
+                    tab.upload = None;
+                }
+                let _ = reply.send(Ok(json!({ "state": "expired" })));
+            }
             "__manual_zoom" => {
                 // SAFETY: this public WebKit property belongs to the retained
                 // session-owned view on its main thread, not to page script.
@@ -775,6 +879,36 @@ fn dispatch(app: &AppHandle, sid: &str, args: Value, reply: Reply) {
     ) {
         changed(app, sid);
     }
+}
+
+/// The origin an upload from this tab goes to: the frame's own when `frame_id` names one (an
+/// input inside an iframe posts to that frame's site), else the page's. Only web origins.
+fn upload_origin(tab: &Tab, frame_id: Option<&Value>) -> Result<String, String> {
+    if let Some(frame) = frame(frame_id, &tab.frames)? {
+        // SAFETY: the frame info is retained by this tab and read on the main thread.
+        let origin = unsafe {
+            let origin = frame.securityOrigin();
+            let protocol = origin.protocol().to_string();
+            if !matches!(protocol.as_str(), "http" | "https") {
+                return Err("Open a web page before uploading files.".into());
+            }
+            crate::browser_upload::frame_origin(
+                &protocol,
+                &origin.host().to_string(),
+                origin.port() as i64,
+            )
+        };
+        return Ok(origin);
+    }
+    // SAFETY: dispatch runs on the main thread and retains this tab's view.
+    let url = unsafe {
+        tab.view
+            .webview()
+            .URL()
+            .and_then(|url| url.absoluteString())
+            .map(|url| url.to_string())
+    };
+    crate::browser_upload::origin_of(&url.ok_or("Open a web page before uploading files.")?)
 }
 
 fn frame<'a>(

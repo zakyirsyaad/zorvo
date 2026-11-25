@@ -6,11 +6,14 @@ use objc2::{
     runtime::{Bool, NSObject},
     DefinedClass, MainThreadOnly,
 };
-use objc2_foundation::{MainThreadMarker, NSObjectProtocol, NSProcessInfo, NSString};
+use objc2_app_kit::{NSModalResponse, NSModalResponseOK, NSOpenPanel};
+use objc2_foundation::{
+    MainThreadMarker, NSArray, NSObjectProtocol, NSProcessInfo, NSString, NSURL,
+};
 use objc2_web_kit::{
-    WKFrameInfo, WKMediaCaptureType, WKNavigationAction, WKPermissionDecision, WKPreferences,
-    WKScriptMessage, WKScriptMessageHandler, WKSecurityOrigin, WKUIDelegate,
-    WKUserContentController, WKWebView, WKWebViewConfiguration, WKWindowFeatures,
+    WKFrameInfo, WKMediaCaptureType, WKNavigationAction, WKOpenPanelParameters,
+    WKPermissionDecision, WKPreferences, WKScriptMessage, WKScriptMessageHandler, WKSecurityOrigin,
+    WKUIDelegate, WKUserContentController, WKWebView, WKWebViewConfiguration, WKWindowFeatures,
 };
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -155,6 +158,11 @@ define_class!(
             }
             std::ptr::null_mut()
         }
+        // Without this method a page's file input does nothing: WKWebView asks the app for files here.
+        #[unsafe(method(webView:runOpenPanelWithParameters:initiatedByFrame:completionHandler:))]
+        fn open_panel(&self,_view:&WKWebView,parameters:&WKOpenPanelParameters,frame:&WKFrameInfo,completion:&Block<dyn Fn(*mut NSArray<NSURL>)>){
+            self.choose_files(parameters,frame,completion.copy());
+        }
         #[unsafe(method(webView:requestMediaCapturePermissionForOrigin:initiatedByFrame:type:decisionHandler:))]
         fn media(&self,_view:&WKWebView,_origin:&WKSecurityOrigin,_frame:&WKFrameInfo,_kind:WKMediaCaptureType,decision:&Block<dyn Fn(WKPermissionDecision)>){decision.call((WKPermissionDecision::Deny,));}
 
@@ -220,6 +228,86 @@ impl BrowserDelegate {
             .alloc::<Self>()
             .set_ivars(DelegateData { app, session, tab });
         unsafe { msg_send![super(object), init] }
+    }
+    /// Answers a page's file chooser: with the files an approved agent upload armed on this tab,
+    /// when the asking frame is the approved origin, else with the system's open panel for the
+    /// person at the keyboard. The completion runs exactly once on every path.
+    fn choose_files(
+        &self,
+        parameters: &WKOpenPanelParameters,
+        frame: &WKFrameInfo,
+        completion: RcBlock<dyn Fn(*mut NSArray<NSURL>)>,
+    ) {
+        // SAFETY: WebKit calls the UI delegate on the main thread with a live frame.
+        let origin = unsafe {
+            let origin = frame.securityOrigin();
+            crate::browser_upload::frame_origin(
+                &origin.protocol().to_string(),
+                &origin.host().to_string(),
+                origin.port() as i64,
+            )
+        };
+        let sid = &self.ivars().session;
+        let tid = &self.ivars().tab;
+        // An armed upload answers only a chooser from its own origin, and only once. A stale one is
+        // dropped; one from another frame stays armed for the input the agent clicks.
+        let armed = super::with_tab(sid, tid, |tab| {
+            if tab.upload.as_ref().is_some_and(|upload| !upload.is_fresh()) {
+                tab.upload = None;
+            }
+            match &tab.upload {
+                Some(upload) if upload.origin == origin => {
+                    let taken = tab.upload.take();
+                    tab.upload_taken = taken.as_ref().map(|upload| upload.id);
+                    taken.map(Some)
+                }
+                Some(_) => Some(None),
+                None => None,
+            }
+        })
+        .flatten();
+        match armed {
+            Some(Some(upload)) => {
+                let urls: Vec<Retained<NSURL>> = upload
+                    .paths
+                    .iter()
+                    .map(|path| {
+                        NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy()))
+                    })
+                    .collect();
+                let array = NSArray::from_retained_slice(&urls);
+                completion.call((Retained::as_ptr(&array) as *mut NSArray<NSURL>,));
+            }
+            // Another origin asked while an upload waits: it gets nothing, and no panel opens.
+            Some(None) => completion.call((std::ptr::null_mut(),)),
+            None => {
+                let Some(mtm) = MainThreadMarker::new() else {
+                    completion.call((std::ptr::null_mut(),));
+                    return;
+                };
+                let panel = NSOpenPanel::openPanel(mtm);
+                panel.setCanChooseFiles(true);
+                // SAFETY: plain property reads of the parameters WebKit handed this call.
+                let (directories, multiple) = unsafe {
+                    (
+                        parameters.allowsDirectories(),
+                        parameters.allowsMultipleSelection(),
+                    )
+                };
+                panel.setCanChooseDirectories(directories);
+                panel.setAllowsMultipleSelection(multiple);
+                let chosen = panel.clone();
+                let handler = RcBlock::new(move |response: NSModalResponse| {
+                    if response == NSModalResponseOK {
+                        let urls = chosen.URLs();
+                        completion.call((Retained::as_ptr(&urls) as *mut NSArray<NSURL>,));
+                    } else {
+                        completion.call((std::ptr::null_mut(),));
+                    }
+                });
+                panel.beginWithCompletionHandler(&handler);
+            }
+        }
     }
     fn dialog(
         &self,

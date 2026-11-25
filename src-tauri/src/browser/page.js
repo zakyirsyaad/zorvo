@@ -180,6 +180,7 @@
             }
             return result({filled:a.fields.length});
           case 'click': el=target(a); if(a.button && a.button!=='left') el.dispatchEvent(new MouseEvent(a.button==='right'?'contextmenu':'auxclick',{bubbles:true,button:a.button==='right'?2:1})); else { el.click(); if(a.count===2){el.click();el.dispatchEvent(new MouseEvent('dblclick',{bubbles:true,detail:2}));} } return result({clicked:true, trusted:false});
+          case 'upload_target': el=target(a); return result({fileInput: el instanceof HTMLInputElement && el.type==='file' && !el.disabled});
           case 'hover': el=target(a); el.dispatchEvent(new MouseEvent('mouseover',{bubbles:true})); el.dispatchEvent(new MouseEvent('mousemove',{bubbles:true})); return result({hovered:true,trusted:false});
           case 'drag': {
             el=target({...a,ref:a.from??a.ref}); const to=target({ref:a.to??a.toRef,selector:a.toSelector}); const dataTransfer=new DataTransfer();

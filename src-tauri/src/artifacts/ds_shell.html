@@ -65,6 +65,8 @@
   .preview .placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--ds-box); color: var(--ds-text); }
   .asset img { width: 100%; height: 96px; object-fit: contain; background: var(--ds-box); border-radius: 6px; }
   .missing { color: var(--ds-danger); }
+  body.commenting [data-token], body.commenting [data-component], body.commenting article { cursor: crosshair; }
+  .badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 4px; margin-left: 6px; border-radius: 9px; background: var(--ds-mark); color: var(--ds-page); font-size: 11px; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -89,6 +91,25 @@
   var fontStyle = null;
   var fontLink = null;
   var commentMode = false;
+  var marksByComponent = {};
+  var CONTEXT = 60;
+
+  function post(message) {
+    var body = JSON.stringify(message);
+    var ipc = window.ipc;
+    if (ipc && typeof ipc.postMessage === "function") { ipc.postMessage(body); return; }
+    var handlers = window.webkit && window.webkit.messageHandlers;
+    if (handlers && handlers.ipc) handlers.ipc.postMessage(body);
+  }
+
+  function postTo(frameEl, message) {
+    var target = frameEl && frameEl.contentWindow;
+    if (target && typeof target.postMessage === "function") target.postMessage(message, "*");
+  }
+
+  function badges(node, numbers) {
+    list(numbers).forEach(function (n) { node.appendChild(el("span", "badge", n)); });
+  }
 
   function el(tag, cls, text) {
     var node = document.createElement(tag);
@@ -158,7 +179,9 @@
       var block = el("section");
       var heading = el("h2", "family", section.title);
       heading.id = id;
+      badges(heading, own("sections", section.file));
       var article = el("article");
+      if (typeof section.file === "string") article.setAttribute("data-file", section.file);
       // Cleaned in Rust (ammonia): no script, no handlers, ids prefixed `ds-u-`.
       article.innerHTML = typeof section.html === "string" ? section.html : "";
       block.appendChild(heading);
@@ -177,6 +200,7 @@
       var swatch = el("button", "swatch");
       swatch.type = "button";
       swatch.setAttribute("data-token", token.name);
+      badges(swatch, own("tokens", token.name));
       var chip = el("span", "chip");
       chip.style.background = String(token.value);
       swatch.appendChild(chip);
@@ -195,7 +219,11 @@
     items.forEach(function (style) {
       var row = el("div", "row");
       row.setAttribute("data-token", style.name);
-      row.appendChild(el("strong", "name", style.name));
+      var styleName = el("button", "name", style.name);
+      styleName.type = "button";
+      styleName.setAttribute("data-token", style.name);
+      badges(styleName, own("tokens", style.name));
+      row.appendChild(styleName);
       var sample = el("span", "sample", style.group ? style.group + " " + style.name : style.name);
       sample.style.cssText = String(style.css || "");
       row.appendChild(sample);
@@ -209,8 +237,11 @@
     family(id, title);
     items.forEach(function (token) {
       var row = el("div", "row");
-      row.setAttribute("data-token", token.name);
-      row.appendChild(el("strong", "name", token.name));
+      var tokenName = el("button", "name", token.name);
+      tokenName.type = "button";
+      tokenName.setAttribute("data-token", token.name);
+      badges(tokenName, own("tokens", token.name));
+      row.appendChild(tokenName);
       row.appendChild(draw(token.value));
       row.appendChild(el("code", "", token.value));
       contentEl.appendChild(row);
@@ -239,6 +270,7 @@
         var name = el("button", "", component.name);
         name.type = "button";
         name.setAttribute("data-component", component.name);
+        badges(name, own("components", component.name));
         block.appendChild(name);
         var box = el("div", "preview");
         box.style.height = Math.max(40, Math.min(4000, Number(component.height) || 120)) + "px";
@@ -297,6 +329,12 @@
         var frame = document.createElement("iframe");
         frame.setAttribute("sandbox", "allow-scripts");
         frame.setAttribute("title", preview.name);
+        // Reported from the frame element's own event, never from a message a frame sent.
+        frame.addEventListener("load", function () {
+          if (commentMode) postTo(frame, { zorvo: "mode", on: true });
+          if (marksByComponent[preview.name]) postTo(frame, { zorvo: "marks", marks: marksByComponent[preview.name] });
+          post({ kind: "ds-preview-loaded", component: preview.name });
+        });
         frame.src = preview.url;
         preview.box.textContent = "";
         preview.box.appendChild(frame);
@@ -315,6 +353,57 @@
     pending = true;
     (window.requestAnimationFrame || setTimeout)(function () { pending = false; updateLive(); });
   }
+
+  function own(kind, name) {
+    var marks = current && current.ownMarks && current.ownMarks[kind];
+    return marks && Object.prototype.hasOwnProperty.call(marks, name) ? marks[name] : [];
+  }
+
+  function setMode(on) {
+    commentMode = on === true;
+    document.body.classList.toggle("commenting", commentMode);
+    previews.forEach(function (preview) {
+      if (preview.frame) postTo(preview.frame, { zorvo: "mode", on: commentMode });
+    });
+    return commentMode;
+  }
+
+  function setMarks(component, marks) {
+    marksByComponent[component] = list(marks);
+    previews.forEach(function (preview) {
+      if (preview.name === component && preview.frame) postTo(preview.frame, { zorvo: "marks", marks: marksByComponent[component] });
+    });
+  }
+
+  // In comment mode a click on a token or a component's name picks it; nothing else happens.
+  contentEl.addEventListener("click", function (event) {
+    if (!commentMode) return;
+    var target = event.target instanceof Element ? event.target.closest("[data-token], [data-component]") : null;
+    if (!target) return;
+    event.preventDefault();
+    var token = target.getAttribute("data-token");
+    if (token) post({ kind: "ds-pick-token", name: token });
+    else post({ kind: "ds-pick-component", name: target.getAttribute("data-component") });
+  });
+
+  // A selection inside one section of the brand book picks that passage, with its context.
+  document.addEventListener("mouseup", function () {
+    if (!commentMode) return;
+    var selection = window.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+    var range = selection.getRangeAt(0);
+    var start = range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement;
+    var end = range.endContainer.nodeType === 1 ? range.endContainer : range.endContainer.parentElement;
+    var article = start && start.closest("article[data-file]");
+    if (!article || !end || end.closest("article[data-file]") !== article) return;
+    var quote = range.toString().slice(0, 1000);
+    if (quote.trim() === "") return;
+    var whole = article.textContent || "";
+    var at = whole.indexOf(quote);
+    var before = at > 0 ? whole.slice(Math.max(0, at - CONTEXT), at) : "";
+    var after = at >= 0 ? whole.slice(at + quote.length, at + quote.length + CONTEXT) : "";
+    post({ kind: "ds-pick-section", file: article.getAttribute("data-file"), quote: quote, before: before, after: after });
+  });
 
   function apply(state) {
     if (!state || typeof state !== "object") return;
@@ -354,8 +443,8 @@
   Object.defineProperty(window, "__zorvoDs", {
     value: Object.freeze({
       apply: apply,
-      mode: function (on) { commentMode = on === true; return commentMode; },
-      marks: function () {},
+      mode: setMode,
+      marks: setMarks,
       liveIds: liveIds,
       current: function () { return current; },
     }),

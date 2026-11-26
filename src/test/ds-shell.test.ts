@@ -186,3 +186,47 @@ describe('the design system shell', () => {
     expect(chip?.getAttribute('onmouseover')).toBeNull();
   });
 });
+
+describe('comments in the design system shell', () => {
+  const posted: Record<string, unknown>[] = [];
+  beforeEach(() => {
+    posted.length = 0;
+    (window as unknown as { ipc: unknown }).ipc = { postMessage: (body: string) => posted.push(JSON.parse(body) as Record<string, unknown>) };
+  });
+
+  it('picks a token or a component only in comment mode', () => {
+    ds().apply({ ...empty(), colours: [{ name: 'accent', value: '#2563eb' }], components: [component('Button')] });
+    document.querySelector<HTMLButtonElement>('button.swatch')!.click();
+    expect(posted).toEqual([]);
+    ds().mode(true);
+    document.querySelector<HTMLButtonElement>('button.swatch')!.click();
+    document.querySelector<HTMLButtonElement>('[data-component="Button"]')!.click();
+    expect(posted).toEqual([
+      { kind: 'ds-pick-token', name: 'accent' },
+      { kind: 'ds-pick-component', name: 'Button' },
+    ]);
+    ds().mode(false);
+  });
+
+  it('never passes on a message a preview frame sent', () => {
+    ds().apply({ ...empty(), components: [component('Button')] });
+    ds().mode(true);
+    window.dispatchEvent(new MessageEvent('message', { data: { kind: 'ds-pick-token', name: 'x' } }));
+    expect(posted).toEqual([]);
+    ds().mode(false);
+  });
+
+  it('reports a preview as loaded from its iframe element', () => {
+    ds().apply({ ...empty(), components: [component('Button')] });
+    ds().liveIds({ top: 0, height: 100000 });
+    const frame = document.querySelector('iframe');
+    expect(frame).not.toBeNull();
+    frame!.dispatchEvent(new Event('load'));
+    expect(posted).toContainEqual({ kind: 'ds-preview-loaded', component: 'Button' });
+  });
+
+  it('draws the numbers of comments on a token', () => {
+    ds().apply({ ...empty(), colours: [{ name: 'accent', value: '#2563eb' }], ownMarks: { tokens: { accent: [1, 3] }, components: {}, sections: {} } });
+    expect([...document.querySelectorAll('button.swatch .badge')].map((badge) => badge.textContent)).toEqual(['1', '3']);
+  });
+});

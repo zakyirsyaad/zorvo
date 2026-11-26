@@ -8,6 +8,14 @@ import { encodeSegment } from './canvas';
  */
 
 const ORIGIN = 'zorvo-artifact://localhost/';
+
+/** The numbers of the comments on a token, a whole component or a section, drawn by the shell on its rows. */
+export interface OwnMarks {
+  tokens: Record<string, number[]>;
+  components: Record<string, number[]>;
+  sections: Record<string, number[]>;
+}
+const NO_OWN_MARKS: OwnMarks = { tokens: {}, components: {}, sections: {} };
 /** The most `ds_view_apply` takes; Rust refuses more. */
 export const MAX_SHELL_STATE_BYTES = 1024 * 1024;
 const DIGEST_CHARS = 12;
@@ -79,6 +87,7 @@ export function dsShellState(
   theme: string,
   notes: readonly string[],
   maxBytes: number = MAX_SHELL_STATE_BYTES,
+  ownMarks: OwnMarks = NO_OWN_MARKS,
 ): string {
   const content = read.content;
   const key = read.entry.key;
@@ -116,9 +125,9 @@ export function dsShellState(
     fontCss: fontCss(tokens?.fonts ?? [], theme),
     googleFontsUrl: read.googleFontsUrl,
     notes: [...notes],
-    ownMarks: { tokens: {}, components: {}, sections: {} },
+    ownMarks,
   };
-  const sections = (content?.sections ?? []).map((section, index) => ({ id: `s-${index}`, title: section.title, html: section.html }));
+  const sections = (content?.sections ?? []).map((section, index) => ({ id: `s-${index}`, file: section.file, title: section.title, html: section.html }));
   for (let kept = sections.length; kept >= 0; kept -= 1) {
     const json = JSON.stringify({ ...base, sections: sections.slice(0, kept), sectionsCut: kept < sections.length });
     if (new TextEncoder().encode(json).length <= maxBytes || kept === 0) return json;

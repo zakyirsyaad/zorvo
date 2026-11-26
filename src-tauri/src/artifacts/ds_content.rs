@@ -233,7 +233,7 @@ fn is_digest_file(relative: &str) -> bool {
 }
 
 /// A component's folder name: what a URL and a comment name it by.
-fn is_component_name(name: &str) -> bool {
+pub(crate) fn is_component_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 64
         && name != "lib"

@@ -15,6 +15,7 @@ use super::ds_source::{source_state, SourceState};
 use super::ds_store::DesignSystemEntry;
 use super::ds_tokens::DsTokens;
 use super::ds_view::{ds_apply_script, ShownDesignSystem};
+use super::picks::{checked_marks, PageMark};
 use super::protocol::Served;
 use super::store::{is_session_id, ArtifactStore, FAILED};
 use super::view::{self, Bounds};
@@ -319,6 +320,31 @@ pub fn ds_source_state(
         &crate::git_info::git_binary(),
         &session_id,
         &key,
+    )
+}
+
+/// Comment mode for the design system on screen; the shell passes it on to each live preview.
+#[tauri::command(async)]
+pub fn ds_comment_mode(app: AppHandle, session_id: String, key: String, on: bool) {
+    view::set_ds_comment_mode(&app, ShownDesignSystem { session_id, key }, on);
+}
+
+/// The marks of one preview of the design system on screen, checked as a page's marks are.
+#[tauri::command(async)]
+pub fn ds_view_marks(
+    app: AppHandle,
+    session_id: String,
+    key: String,
+    component: String,
+    marks: Vec<PageMark>,
+) -> Result<(), String> {
+    let marks =
+        checked_marks(marks).ok_or_else(|| "Zorvo could not mark that preview.".to_string())?;
+    view::set_ds_marks(
+        &app,
+        ShownDesignSystem { session_id, key },
+        component,
+        marks,
     )
 }
 

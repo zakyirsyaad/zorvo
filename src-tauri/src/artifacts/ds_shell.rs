@@ -20,5 +20,5 @@ mod tests {
         assert!(!DS_SHELL.contains("http://") && !DS_SHELL.contains("https://"));
     }
 
-    const PINNED_SHA256: &str = "86354848ac8a5bb609bd9fc2b460065f3f9085f044aed07591bb757092345b78";
+    const PINNED_SHA256: &str = "148bfd23119b8d512fc0080dc5fcd5d4e4767c62b3bf59b5757a7d0cbfbedca1";
 }

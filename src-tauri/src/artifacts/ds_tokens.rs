@@ -155,7 +155,7 @@ pub fn is_theme_id(text: &str) -> bool {
 }
 
 /// A token name: `[A-Za-z0-9][A-Za-z0-9_.-]{0,63}`.
-fn is_token_name(text: &str) -> bool {
+pub(crate) fn is_token_name(text: &str) -> bool {
     text.len() <= MAX_NAME_CHARS
         && text
             .chars()

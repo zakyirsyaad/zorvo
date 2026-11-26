@@ -4,6 +4,7 @@ import { AgentTile } from "../ui/AgentTile";
 import { ElicitationCard } from "./ElicitationCard";
 import { MarkdownRenderer } from "../MarkdownRenderer";
 import { MessageActionBar } from "../MessageActionBar";
+import type { RewindOptions } from "../../hooks/useSessionRewind";
 import { UserMessageBar } from "./UserMessageBar";
 import { AttachmentChips } from "../composer/AttachmentChips";
 import { ToolsPart } from "./ToolsPart";
@@ -48,7 +49,7 @@ export interface MessageRowProps {
   readAloudSupported: boolean;
   onCopy: (messageId: string, content: string) => void;
   onFork?: (messageId: string) => void;
-  onRewind?: (messageId: string) => void;
+  onRewind?: (messageId: string, options?: RewindOptions) => void;
   onToggleReadAloud: (messageId: string, content: string) => void;
   onChooseOption?: (cardId: string, optionId: string, answers?: Record<string, string>) => void;
   onAnswerElicitation?: (key: string, answer: ElicitationAnswer) => void;
@@ -289,7 +290,8 @@ export const MessageRow = memo(function MessageRow({
           <UserMessageBar
             copied={copied}
             onCopy={() => onCopy(message.id, message.content)}
-            onRewind={onRewind ? () => onRewind(message.id) : undefined}
+            canRestoreFiles={Boolean(message.checkpoint)}
+            onRewind={onRewind ? (options) => (options ? onRewind(message.id, options) : onRewind(message.id)) : undefined}
           />
         </>
       ) : (

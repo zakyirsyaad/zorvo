@@ -8,6 +8,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - **Agents can make videos.** Ask any agent for a video or motion graphics and it writes a composition (a page that moves, with a `motion.json`), shows it beside the chat with a play head, checks stills with motion blur, and renders MP4s of every format you asked for, with sound only when you ask. Zorvo renders with WebKit and AVFoundation on your Mac: nothing is downloaded, and the preview is the same engine as the video. Export saves one format or all of them.
 - **Videos play in Zorvo.** An MP4 or MOV an agent shows (a Remotion render, say) gets a card in the chat and a player in Output, and the Files viewer plays videos in your project.
+- **Discard changes to a single file.** Each file in the Changes tab has a two-click Discard (or Delete, for new files) action to undo edits or remove an untracked file without leaving the inspector.
+- **Restore files when rewinding a chat.** Zorvo takes a lightweight git snapshot before each turn (leaving your index, stash and gitignored files untouched, and skipping untracked files over 5 MB), so Rewind offers a two-click **Rewind + files?** option that puts back the files the agent reported changing since that message. Nothing else in the repository is touched.
 
 ### Changed
 

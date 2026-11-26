@@ -13,6 +13,7 @@ pub mod browser_commands;
 pub mod browser_debug;
 pub mod browser_upload;
 pub mod changes;
+pub mod checkpoints;
 pub mod computer_use;
 pub mod data_migration;
 pub mod diff_stats;
@@ -816,6 +817,9 @@ pub fn run() {
             branch_state::session_branch_state,
             diff_stats::session_diff_stats_since,
             changes::commit_session_changes,
+            changes::discard_session_change,
+            checkpoints::create_turn_checkpoint,
+            checkpoints::restore_turn_checkpoint,
             worktrees::create_session_worktree,
             worktrees::remove_session_worktree,
             attachment_paths::worktree_attachment_paths,

@@ -224,3 +224,36 @@ describe("useAcpEngine turn checks and marks", () => {
     });
   });
 });
+
+describe("useAcpEngine when Stop is pressed before the prompt goes out", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("never sends a message whose pre-turn checkpoint was still being taken", async () => {
+    const engine = renderEngine();
+    await startTurn(engine);
+    await emit({ kind: "turn-end", stopReason: "end_turn" });
+
+    let finishCheckpoint!: (sha: string | null) => void;
+    const original = tauriInternals().invoke.bind(tauriInternals());
+    const spy = vi.spyOn(tauriInternals(), "invoke").mockImplementation((cmd, args) => {
+      if (cmd === "create_turn_checkpoint") return new Promise((resolve) => (finishCheckpoint = resolve));
+      return original(cmd, args);
+    });
+
+    let taken: boolean | undefined;
+    await act(async () => {
+      void engine.result.current.send("s-1", "rename the files").then((value) => (taken = value));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(spy).toHaveBeenCalledWith("create_turn_checkpoint", expect.anything(), undefined));
+    act(() => engine.result.current.interrupt("s-1", []));
+    await act(async () => {
+      finishCheckpoint("a".repeat(40));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(taken).toBe(false));
+    expect(spy.mock.calls.filter(([cmd]) => cmd === "acp_prompt")).toEqual([]);
+    expect(engine.messages().some((message) => message.content === "rename the files")).toBe(false);
+  });
+});

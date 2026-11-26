@@ -4,6 +4,7 @@
 //! Every path the UI sends back is checked against what `git status` reports,
 //! and git reads paths literally, so a file named `*.txt` is that file alone.
 
+use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -313,7 +314,7 @@ fn bounded(diff: String, is_cut: bool) -> String {
 }
 
 /// True for a plain relative path inside the repository.
-fn is_inside(path: &str) -> bool {
+pub(crate) fn is_inside(path: &str) -> bool {
     let path = Path::new(path);
     !path.as_os_str().is_empty() && path.components().all(|c| matches!(c, Component::Normal(_)))
 }
@@ -412,4 +413,117 @@ pub fn commit_session_changes(
 ) -> Result<String, String> {
     ensure_known_workspace(&path, |p| store.is_known_workspace(p))?;
     commit_files(&git_binary(), Path::new(&path), &files, &message)
+}
+
+/// Removes an untracked or newly staged file (or symlink) from `toplevel`, verifying the
+/// parent stays inside `toplevel` and never following symlinks or deleting directories.
+pub(crate) fn remove_worktree_file(toplevel: &Path, rel_path: &str) -> Result<(), String> {
+    if !is_inside(rel_path) {
+        return Err(format!("{rel_path} is not a file in this repository"));
+    }
+    let full = toplevel.join(rel_path);
+    let meta = match fs::symlink_metadata(&full) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(format!("Could not inspect {rel_path}: {e}")),
+        Ok(meta) => meta,
+    };
+    if meta.file_type().is_dir() {
+        return Err(format!("Cannot discard directory {rel_path}"));
+    }
+    let root = toplevel
+        .canonicalize()
+        .map_err(|e| format!("Could not resolve repository root: {e}"))?;
+    let parent = full
+        .parent()
+        .ok_or_else(|| format!("{rel_path} is not inside this repository"))?
+        .canonicalize()
+        .map_err(|e| format!("Could not resolve parent folder for {rel_path}: {e}"))?;
+    if !parent.starts_with(&root) {
+        return Err(format!("{rel_path} points outside the repository"));
+    }
+    fs::remove_file(&full).map_err(|e| format!("Could not remove {rel_path}: {e}"))
+}
+
+/// Discards uncommitted changes to a single changed file (or deletes an untracked/added file).
+pub fn discard_file(git: &Path, dir: &Path, file: &str) -> Result<(), String> {
+    if !is_inside(file) || file.ends_with('/') {
+        return Err(format!(
+            "{file} is not a discardable file in this repository"
+        ));
+    }
+    let toplevel = toplevel_of(git, dir)?;
+    let changes = changes_at(git, &toplevel)?;
+    let change = changes
+        .into_iter()
+        .find(|c| c.path == file)
+        .ok_or_else(|| format!("{file} is not a changed file in this repository"))?;
+    let has_head = run_git(
+        git,
+        &toplevel,
+        &["rev-parse", "--verify", "--quiet", "HEAD"],
+    )
+    .is_ok();
+
+    match change.kind {
+        ChangeKind::Untracked => remove_worktree_file(&toplevel, &change.path),
+        ChangeKind::Added => {
+            if has_head {
+                run_git(git, &toplevel, &["reset", "-q", "HEAD", "--", &change.path])
+                    .map_err(|e| format!("Could not unstage {file}: {e}"))?;
+            } else {
+                run_git(
+                    git,
+                    &toplevel,
+                    &["rm", "--cached", "-f", "--", &change.path],
+                )
+                .map_err(|e| format!("Could not unstage {file}: {e}"))?;
+            }
+            remove_worktree_file(&toplevel, &change.path)
+        }
+        ChangeKind::Modified | ChangeKind::Deleted => {
+            if !has_head {
+                return Err("Cannot restore a file before the first commit".to_string());
+            }
+            run_git(git, &toplevel, &["reset", "-q", "HEAD", "--", &change.path])
+                .map_err(|e| format!("Could not unstage {file}: {e}"))?;
+            run_git(git, &toplevel, &["checkout", "-q", "--", &change.path])
+                .map_err(|e| format!("Could not discard changes to {file}: {e}"))?;
+            Ok(())
+        }
+        ChangeKind::Renamed => {
+            if !has_head {
+                return Err("Cannot restore a renamed file before the first commit".to_string());
+            }
+            let old_path = change
+                .old_path
+                .as_deref()
+                .ok_or_else(|| format!("Renamed file {file} is missing its original path"))?;
+            if !is_inside(old_path) {
+                return Err(format!("{old_path} is not a file in this repository"));
+            }
+            run_git(
+                git,
+                &toplevel,
+                &["reset", "-q", "HEAD", "--", old_path, &change.path],
+            )
+            .map_err(|e| format!("Could not unstage {file}: {e}"))?;
+            run_git(git, &toplevel, &["checkout", "-q", "--", old_path])
+                .map_err(|e| format!("Could not restore {old_path}: {e}"))?;
+            if change.path != old_path {
+                remove_worktree_file(&toplevel, &change.path)?;
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Discards uncommitted changes to one file (or deletes an untracked/newly-added file).
+#[tauri::command(async)]
+pub fn discard_session_change(
+    store: State<'_, AppStore>,
+    path: String,
+    file: String,
+) -> Result<(), String> {
+    ensure_known_workspace(&path, |p| store.is_known_workspace(p))?;
+    discard_file(&git_binary(), Path::new(&path), &file)
 }

@@ -22,6 +22,7 @@ import { AGENT_LOGOS } from "../../site/lib/agent-logos";
 import { DOWNLOADS_FALLBACK, downloadCount, formatCount, latestVersion } from "../../site/lib/downloads";
 import { STRIP_AGENTS } from "../../site/lib/strip-agents";
 import { Voices } from "../../site/components/sections/Voices";
+import type { Voice } from "../../site/lib/voices";
 import { LINKS } from "../../site/lib/links";
 import robots from "../../site/app/robots";
 import sitemap from "../../site/app/sitemap";
@@ -108,7 +109,7 @@ describe("landing page", () => {
     return body.textContent ?? "";
   })();
 
-  it("has the sixteen sections in order, the paid extra after the free app, and no pricing", () => {
+  it("has the seventeen sections in order, the paid extra after the free app, and no pricing", () => {
     const names = [...document.querySelectorAll("main > section")].map(
       (section) => section.id || section.getAttribute("aria-label"),
     );
@@ -116,6 +117,7 @@ describe("landing page", () => {
       "top",
       "Agents",
       "community",
+      "stats",
       "sessions",
       "compare",
       "delegate",
@@ -367,13 +369,51 @@ describe("landing page", () => {
     expect(document.querySelector('footer a[href="#faq"]')?.textContent).toBe("Questions");
   });
 
-  it("shows no voices section without real quotes, and lays out the ones it is given", () => {
-    expect(document.querySelector("#voices")).toBeNull();
-    const voices = ["one", "two", "three", "four"].map((word) => ({ quote: `Quote ${word}.`, name: `Name ${word}`, role: "Role", source: "Discord" }));
-    const section = new DOMParser().parseFromString(renderToStaticMarkup(<Voices voices={voices} />), "text/html");
-    expect([...section.querySelectorAll("blockquote")].map((quote) => quote.textContent)).toEqual(voices.map((voice) => voice.quote));
-    expect(section.querySelector("figure")?.className).toContain("bg-fg");
-    expect(section.querySelectorAll("figcaption")).toHaveLength(4);
+  describe("voices", () => {
+    const voice = (word: string) => ({ quote: `Quote ${word}.`, name: `Name ${word}`, role: "Role", source: "Discord" });
+    const render = (voices: readonly Voice[]) =>
+      new DOMParser().parseFromString(renderToStaticMarkup(<Voices voices={voices} />), "text/html");
+
+    it("shows no voices section without real quotes", () => {
+      expect(document.querySelector("#voices")).toBeNull();
+    });
+
+    it("keeps every quote word for word, the first one largest", () => {
+      const voices = ["one", "two", "three", "four"].map(voice);
+      const section = render(voices);
+      expect([...section.querySelectorAll("blockquote")].map((quote) => quote.textContent)).toEqual(voices.map((v) => v.quote));
+      expect(section.querySelectorAll("figcaption")).toHaveLength(4);
+      expect(section.querySelector("[data-voice=lead] blockquote")?.textContent).toBe("Quote one.");
+      expect(section.querySelectorAll("[data-voice=pair]")).toHaveLength(2);
+      expect(section.querySelectorAll("[data-voice=rest]")).toHaveLength(1);
+    });
+
+    it("draws only the rows it has quotes for", () => {
+      expect(render([voice("one")]).querySelectorAll("figure")).toHaveLength(1);
+      const two = render([voice("one"), voice("two")]);
+      expect(two.querySelectorAll("[data-voice=pair]")).toHaveLength(1);
+      expect(two.querySelector("[data-voice=rest]")).toBeNull();
+    });
+
+    it("marks the lead's highlight inside its own words, and nothing that is not in the quote", () => {
+      const lead = { ...voice("one"), quote: "I run Codex and Claude Code side by side now.", highlight: "side by side" };
+      const marked = render([lead]).querySelector("blockquote mark");
+      expect(marked?.textContent).toBe("side by side");
+      expect(render([{ ...lead, highlight: "not in the quote" }]).querySelector("mark")).toBeNull();
+      expect(render([lead, { ...voice("two"), highlight: "Quote" }]).querySelectorAll("mark")).toHaveLength(1);
+    });
+
+    it("names the person, the agents they run, and links to where they said it", () => {
+      const lead = { ...voice("one"), handle: "someone", agents: ["Claude Code", "Codex"], source: "X", href: "https://x.com/someone/status/1" };
+      const caption = render([lead]).querySelector("figcaption")!;
+      expect(caption.textContent).toContain("Name one");
+      expect(caption.textContent).toContain("@someone");
+      expect(caption.textContent).toContain("runs Claude Code and Codex");
+      const link = caption.querySelector("a")!;
+      expect(link.getAttribute("href")).toBe("https://x.com/someone/status/1");
+      expect(link.textContent).toContain("Read on X");
+      expect(render([voice("one")]).querySelector("figcaption a")).toBeNull();
+    });
   });
 
   it("keeps the long-session numbers, ending at their final values", () => {

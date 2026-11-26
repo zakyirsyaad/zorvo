@@ -9,6 +9,11 @@ const ARTIFACTS_CHANGED = 'artifacts-changed';
 /** The last good read of each system, kept for this run, so Expand and Shrink start with it at once. */
 const lastGoodReads = new Map<string, DesignSystemRead>();
 
+/** The system as last read well, for a comment picked on it. */
+export function designSystemReadNow(sessionId: string, key: string): DesignSystemRead | null {
+  return lastGoodReads.get(`${sessionId}/${key}`) ?? null;
+}
+
 export interface DesignSystemState {
   read: DesignSystemRead | null;
   /** The last read that held the system's content; kept while a later read has an error. */

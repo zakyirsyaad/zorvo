@@ -5,6 +5,13 @@ import { useDesignSystemTheme } from "../../hooks/useDesignSystemTheme";
 import { useDesignSystemSource } from "../../hooks/useDesignSystemSource";
 import { Button } from "../ui/Button";
 import { ThemeMenu } from "./ThemeMenu";
+import { MessageSquarePlus } from "lucide-react";
+import { IconButton } from "../ui/IconButton";
+import { useDesignSystemMarks } from "../../hooks/useDesignSystemMarks";
+import { dsOwnMarks } from "../../lib/design-system-comments";
+import type { ArtifactCommentsState } from "../../hooks/useArtifactComments";
+import type { AddArtifactReview } from "../../hooks/useReviewWiring";
+import { ArtifactCommentStrip } from "./ArtifactCommentStrip";
 import { enqueueArtifactViewCall } from "../../hooks/useArtifactView";
 import { useLatest } from "../../hooks/useLatest";
 import { FOLDER_NOT_FOUND } from "../../lib/canvas";
@@ -26,6 +33,9 @@ export interface DesignSystemViewerProps {
   onInsertText?: (text: string) => void;
   /** Why the message box cannot take text now. */
   insertBlockedReason?: string;
+  /** The session's artifact comments; absent (a popout), no Comment button and no strip. */
+  comments?: ArtifactCommentsState;
+  addReview?: AddArtifactReview;
 }
 
 const COULD_NOT_SHOW = "Zorvo could not show that design system.";
@@ -48,6 +58,8 @@ export function DesignSystemViewer({
   isCovered = false,
   onInsertText,
   insertBlockedReason,
+  comments,
+  addReview,
 }: DesignSystemViewerProps) {
   const source = useDesignSystemSource(sessionId, designSystemKey, turnsEnded);
   const system = useDesignSystem(sessionId, cwd, designSystemKey, turnsEnded);
@@ -69,7 +81,12 @@ export function DesignSystemViewer({
     return lines;
   }, [list, shown]);
 
-  const state = useMemo(() => (shown === null ? null : dsShellState(shown, sessionId, theme, [])), [shown, sessionId, theme]);
+  useDesignSystemMarks(sessionId, designSystemKey, comments?.comments, shown, onError);
+  const ownMarks = useMemo(() => dsOwnMarks(comments?.comments ?? [], designSystemKey), [comments?.comments, designSystemKey]);
+  const state = useMemo(
+    () => (shown === null ? null : dsShellState(shown, sessionId, theme, [], undefined, ownMarks)),
+    [shown, sessionId, theme, ownMarks],
+  );
   const isCut = useMemo(() => (state === null ? false : (JSON.parse(state) as { sectionsCut?: boolean }).sectionsCut === true), [state]);
   useEffect(() => {
     if (state === null) return;
@@ -122,6 +139,11 @@ export function DesignSystemViewer({
           </Button>
         )}
         {picked.theme !== null && <ThemeMenu themes={themeIds} theme={picked.theme} onPick={picked.setTheme} onMenuOpen={setIsMenuOpen} />}
+        {comments && shown !== null && (
+          <IconButton label="Comment" size="row" aria-pressed={comments.isCommenting} onClick={() => comments.setCommenting(!comments.isCommenting)}>
+            <MessageSquarePlus size={14} />
+          </IconButton>
+        )}
       </DesignSystemHeader>
       {isFolderGone ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 p-4 text-center">
@@ -138,6 +160,7 @@ export function DesignSystemViewer({
       ) : (
         <div className="min-h-0 flex-1" />
       )}
+      {comments && addReview && shown !== null && !isFolderGone && <ArtifactCommentStrip systemSource={shown} cwd={cwd ?? ""} comments={comments} addReview={addReview} />}
     </div>
   );
 }

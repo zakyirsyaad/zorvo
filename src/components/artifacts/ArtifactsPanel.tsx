@@ -259,6 +259,8 @@ export function ArtifactsPanel({
         onError={onError}
         onInsertText={onInsertText}
         insertBlockedReason={insertBlockedReason}
+        comments={comments}
+        addReview={addReview}
       />
     );
   }

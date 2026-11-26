@@ -1,3 +1,4 @@
+import { designSystemReadNow } from './useDesignSystem';
 import { useMemo } from 'react';
 import { agentNameOr } from '../lib/agent-name';
 import {
@@ -204,12 +205,27 @@ export function useArtifactsWiring({
     return { sessionId, key, boardsNow: () => canvasBoardsNow(sessionId, key) };
   }, [activeSession, shownCanvasEntry]);
 
+  const shownSystemKey =
+    inspectorTab === 'artifacts' && !shownArtifact && !shownCanvasEntry
+      ? (inspector.viewedArtifact?.designSystemKey ??
+        (!inspector.viewedArtifact && sessionDesignSystems.length === 1 && sessionArtifacts.length + sessionCanvases.length + createdFiles.length + sessionMotions.length + sessionVideos.length === 0
+          ? sessionDesignSystems[0].key
+          : undefined))
+      : undefined;
+  const shownDesignSystem = useMemo(() => {
+    if (!activeSession || !shownSystemKey || !sessionDesignSystems.some((system) => system.key === shownSystemKey)) return null;
+    const sessionId = activeSession.id;
+    const key = shownSystemKey;
+    return { sessionId, key, readNow: () => designSystemReadNow(sessionId, key) };
+  }, [activeSession, shownSystemKey, sessionDesignSystems]);
+
   const artifactComments = useArtifactComments({
     sessionId: activeSession?.id,
     comments: activeSession?.artifactComments,
     update: updateArtifactComments,
     shownPage,
     shownCanvas,
+    shownDesignSystem,
     forget: forgetInMessage,
     onError,
   });
@@ -222,6 +238,7 @@ export function useArtifactsWiring({
     artifacts.readSessions,
     updateArtifactComments,
     forgetInMessage,
+    artifacts.designSystemsBySession,
   );
 
   const expandArtifact = () => {

@@ -192,3 +192,44 @@ describe("out of date and Sync again", () => {
     expect(invoke.mock.calls.some(([cmd]) => cmd === "acp_prompt")).toBe(false);
   });
 });
+
+describe("comment mode in the design system viewer", () => {
+  it("turns comment mode on through the session's comments", async () => {
+    const setCommenting = vi.fn();
+    const comments = {
+      sessionId: SESSION,
+      comments: [],
+      isCommenting: false,
+      setCommenting,
+      candidate: null,
+      candidateBody: () => "",
+      setCandidateBody: vi.fn(),
+      cancelCandidate: vi.fn(),
+      saveCandidate: vi.fn(() => "saved" as const),
+      startArtboardComment: vi.fn(),
+      missing: new Set<number>(),
+      canvasMissing: new Map(),
+      editComment: vi.fn(),
+      deleteComment: vi.fn(),
+      clearSent: vi.fn(),
+    };
+    const addReview = { inMessage: new Set<string>(), blockedReason: undefined, add: vi.fn(), addCanvas: vi.fn(), addDesignSystem: vi.fn() };
+    render(
+      <ArtifactsPanel
+        sessionId={SESSION}
+        artifacts={[]}
+        viewed={{ designSystemKey: KEY }}
+        onView={() => undefined}
+        isExpanded={false}
+        onToggleExpanded={() => undefined}
+        onError={() => undefined}
+        cwd="/w"
+        designSystems={[ENTRY]}
+        comments={comments}
+        addReview={addReview}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Comment" }));
+    expect(setCommenting).toHaveBeenCalledWith(true);
+  });
+});

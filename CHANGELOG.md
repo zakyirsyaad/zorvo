@@ -4,6 +4,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-11-26
+
 ### Added
 
 - **Agents are told which design systems a folder holds before they design a page, a canvas or a motion.** A design system is a folder with a `design-system.json`; Zorvo looks for one in the session's folder and below it, never above it, names the default, and lists the tokens it could not read.
@@ -594,7 +596,8 @@ Tagged but never published; its fix shipped in 0.11.2.
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.21.2...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.21.2...v0.22.0
 [0.21.2]: https://github.com/zakyirsyaad/zorvo/compare/v0.21.1...v0.21.2
 [0.21.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.21.0...v0.21.1
 [0.21.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.20.1...v0.21.0

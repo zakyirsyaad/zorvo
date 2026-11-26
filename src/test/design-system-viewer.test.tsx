@@ -18,7 +18,7 @@ const invoke = vi.fn<(cmd: string, args?: Record<string, unknown>) => Promise<un
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (cmd: string, args?: Record<string, unknown>) => invoke(cmd, args) }));
 
 import { ArtifactsPanel } from "../components/artifacts/ArtifactsPanel";
-import { defaultProblemLine, type DesignSystemEntry } from "../lib/design-systems";
+import { defaultProblemLine, shownName, type DesignSystemEntry } from "../lib/design-systems";
 import { parseArtifactCard } from "../lib/artifacts";
 import { ArtifactCardRow } from "../components/chat/ArtifactCardRow";
 
@@ -96,7 +96,7 @@ describe("design systems in the Artifacts tab", () => {
     panel([ENTRY], { designSystemKey: KEY });
     expect(await screen.findByRole("heading", { name: "Acme" })).toBeTruthy();
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("could not be read"));
-    expect(screen.getByRole("status").textContent).toContain("No default design system: none of `a` and `b` is marked default.");
+    expect(screen.getByRole("status").textContent).toContain("No default design system: none of a and b is marked default.");
     fireEvent.click(screen.getByRole("button", { name: "Show in Finder" }));
     expect(invoke).toHaveBeenCalledWith("reveal_file_in_finder", { path: "/w/docs/ds/design-system.json" });
   });
@@ -106,6 +106,7 @@ describe("the default's line", () => {
   it("words both problems", () => {
     expect(defaultProblemLine({ kind: "severalMarked", relatives: ["a", "b"] })).toBe("No default design system: `a` and `b` are both marked default.");
     expect(defaultProblemLine({ kind: "noneMarked", relatives: ["a", "b", "c"] })).toBe("No default design system: none of `a`, `b` and `c` is marked default.");
+    expect(defaultProblemLine({ kind: "severalMarked", relatives: ["a", "b"] }, shownName)).toBe("No default design system: a and b are both marked default.");
   });
 });
 
@@ -153,9 +154,9 @@ describe("out of date and Sync again", () => {
   it("words the source line and the message", async () => {
     const { sourceLine, syncMessage, parseSourceState } = await import("../lib/design-systems");
     const changed = { state: "changed" as const, commit: "a1b2c3d4", paths: ["src/styles/globals.css"], commits: 3, uncommitted: false };
-    expect(sourceLine(changed)).toBe("Source changed since a1b2c3d: `src/styles/globals.css`, 3 commits.");
-    expect(sourceLine({ ...changed, commits: 1 })).toBe("Source changed since a1b2c3d: `src/styles/globals.css`, 1 commit.");
-    expect(sourceLine({ ...changed, commits: 0, uncommitted: true })).toBe("Source changed since a1b2c3d: `src/styles/globals.css` has uncommitted changes.");
+    expect(sourceLine(changed)).toBe("Source changed since a1b2c3d: src/styles/globals.css, 3 commits.");
+    expect(sourceLine({ ...changed, commits: 1 })).toBe("Source changed since a1b2c3d: src/styles/globals.css, 1 commit.");
+    expect(sourceLine({ ...changed, commits: 0, uncommitted: true })).toBe("Source changed since a1b2c3d: src/styles/globals.css has uncommitted changes.");
     expect(sourceLine({ state: "unknownCommit", commit: "a1b2c3d" })).toBe("Source commit a1b2c3d is not in this repository.");
     expect(sourceLine({ state: "unreadable" })).toBe("Source paths could not be read.");
     expect(sourceLine({ state: "current", commit: "a1b2c3d" })).toBeNull();

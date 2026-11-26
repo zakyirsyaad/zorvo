@@ -39,6 +39,7 @@
   #main { flex: 1 1 auto; overflow-y: auto; padding: 24px 32px 64px; box-sizing: border-box; }
   h1 { margin: 0 0 16px; font-size: 22px; font-weight: 600; color: var(--ds-text-strong); }
   h2.family { margin: 40px 0 12px; font-size: 16px; font-weight: 600; color: var(--ds-text-strong); }
+  h3.group { margin: 24px 0 8px; font-size: 13px; font-weight: 600; color: var(--ds-text); }
   #notes { margin: 0 0 16px; color: var(--ds-danger); }
   #notes:empty { display: none; }
   #notes p { margin: 0 0 4px; }
@@ -63,6 +64,7 @@
   .preview { position: relative; border-radius: 8px; overflow: hidden; background: var(--ds-page); box-shadow: 0 1px 4px var(--ds-shadow); }
   .preview iframe { display: block; width: 100%; height: 100%; border: 0; background: var(--ds-page); }
   .preview .placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--ds-box); color: var(--ds-text); }
+  .asset { display: flex; flex-direction: column; gap: 4px; }
   .asset img { width: 100%; height: 96px; object-fit: contain; background: var(--ds-box); border-radius: 6px; }
   .missing { color: var(--ds-danger); }
   body.commenting [data-token], body.commenting [data-component], body.commenting article { cursor: crosshair; }
@@ -91,6 +93,8 @@
   var fontStyle = null;
   var fontLink = null;
   var commentMode = false;
+  /** Where a component with no group goes, beside named groups under Components. */
+  var UNGROUPED = "Other";
   var marksByComponent = {};
   var CONTEXT = 60;
 
@@ -201,11 +205,12 @@
       var swatch = el("button", "swatch");
       swatch.type = "button";
       swatch.setAttribute("data-token", token.name);
-      badges(swatch, own("tokens", token.name));
       var chip = el("span", "chip");
       chip.style.background = String(token.value);
       swatch.appendChild(chip);
-      swatch.appendChild(el("strong", "", token.name));
+      var tokenName = el("strong", "marked", token.name);
+      badges(tokenName, own("tokens", token.name));
+      swatch.appendChild(tokenName);
       swatch.appendChild(el("code", "", token.value));
       if (token.usage) swatch.appendChild(el("span", "", token.usage));
       grid.appendChild(swatch);
@@ -254,18 +259,24 @@
     var groups = [];
     var byGroup = {};
     list(state.components).forEach(function (component) {
-      var group = component.group || "Components";
+      var group = component.group || UNGROUPED;
       if (!Object.prototype.hasOwnProperty.call(byGroup, group)) {
         byGroup[group] = [];
         groups.push(group);
       }
       byGroup[group].push(component);
     });
+    if (!groups.length) return;
+    // The index lists Components, with its groups under it; one ungrouped family needs no level.
+    var isOneFamily = groups.length === 1 && groups[0] === UNGROUPED;
+    family("components", "Components");
     groups.forEach(function (group) {
-      var heading = el("h2", "family", group);
-      heading.id = "group-" + slug(group);
-      contentEl.appendChild(heading);
-      addLink(heading.id, group, true);
+      if (!isOneFamily) {
+        var heading = el("h3", "group", group);
+        heading.id = "group-" + slug(group);
+        contentEl.appendChild(heading);
+        addLink(heading.id, group, true);
+      }
       byGroup[group].forEach(function (component) {
         var block = el("div", "component");
         var name = el("button", "", component.name);
@@ -424,7 +435,8 @@
   function redrawBadges() {
     contentEl.querySelectorAll(".badge").forEach(function (badge) { badge.remove(); });
     contentEl.querySelectorAll("button[data-token]").forEach(function (node) {
-      badges(node, own("tokens", node.getAttribute("data-token")));
+      // A swatch draws its numbers beside its name, as it did when it was built.
+      badges(node.querySelector(".marked") || node, own("tokens", node.getAttribute("data-token")));
     });
     contentEl.querySelectorAll("button[data-component]").forEach(function (node) {
       badges(node, own("components", node.getAttribute("data-component")));

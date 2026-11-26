@@ -86,9 +86,15 @@ export function parseSystemList(value: unknown): SystemList | null {
 }
 
 /** Text an agent reads as one code span, with what hides or reshapes text made visible. */
+/** How a name is set in a line: a code span in text for an agent, as it is for a line on screen. */
+type Quote = (text: string) => string;
+
 function quoted(text: string): string {
   return codeSpan(escapeVisible(text));
 }
+
+/** A name in a line Zorvo shows the user, where a code span would read as stray backticks. */
+export const shownName: Quote = (text) => escapeVisible(text);
 
 function joinedNames(names: readonly string[]): string {
   if (names.length <= 1) return names.join('');
@@ -96,11 +102,11 @@ function joinedNames(names: readonly string[]): string {
 }
 
 /** "2 tokens could not be read: `brand` (var()), `x` (named colour)."; `null` for none. */
-export function droppedLine(dropped: readonly DroppedToken[]): string | null {
+export function droppedLine(dropped: readonly DroppedToken[], quote: Quote = quoted): string | null {
   if (dropped.length === 0) return null;
   const named = dropped
     .slice(0, MAX_DROPPED_NAMED)
-    .map((token) => `${quoted(token.name || token.family)} (${escapeVisible(token.reason)})`);
+    .map((token) => `${quote(token.name || token.family)} (${escapeVisible(token.reason)})`);
   const rest = dropped.length - named.length;
   const list = rest > 0 ? `${named.join(', ')} and ${rest} more` : named.join(', ');
   const count = dropped.length === 1 ? '1 token' : `${dropped.length} tokens`;
@@ -163,8 +169,8 @@ export function designSystemResultText(read: DesignSystemRead): string {
 }
 
 /** The viewer's line when several systems leave the folder without a default. */
-export function defaultProblemLine(problem: DefaultProblem): string {
-  const names = joinedNames(problem.relatives.map(quoted));
+export function defaultProblemLine(problem: DefaultProblem, quote: Quote = quoted): string {
+  const names = joinedNames(problem.relatives.map(quote));
   if (problem.kind === 'severalMarked') {
     const amount = problem.relatives.length === 2 ? 'both' : 'all';
     return `No default design system: ${names} are ${amount} marked default.`;
@@ -208,15 +214,15 @@ function shortCommit(commit: string): string {
   return commit.slice(0, 7);
 }
 
-function pathList(paths: readonly string[]): string {
-  return joinedNames(paths.map(quoted));
+function pathList(paths: readonly string[], quote: Quote = quoted): string {
+  return joinedNames(paths.map(quote));
 }
 
-/** The header's line about the system's source; `null` when there is nothing to say. */
+/** The header's line about the system's source, names as plain text; `null` when there is nothing to say. */
 export function sourceLine(state: SourceState): string | null {
   switch (state.state) {
     case 'changed': {
-      const since = `Source changed since ${shortCommit(state.commit)}: ${pathList(state.paths)}`;
+      const since = `Source changed since ${shortCommit(state.commit)}: ${pathList(state.paths, shownName)}`;
       if (state.commits === 0) return `${since} has uncommitted changes.`;
       return `${since}, ${state.commits === 1 ? '1 commit' : `${state.commits} commits`}.`;
     }

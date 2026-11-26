@@ -6,6 +6,7 @@ import {
   designSystemResultText,
   SEARCH_SCOPE,
   droppedLine,
+  shownName,
   parseSystemList,
   systemsLine,
   type FoundSystem,
@@ -87,6 +88,7 @@ describe('droppedLine', () => {
       '1 token could not be read: `brand` (var()).',
     );
     expect(droppedLine([])).toBeNull();
+    expect(droppedLine([{ family: 'color', name: 'brand', reason: 'var()' }], shownName)).toBe('1 token could not be read: brand (var()).');
   });
 
   it('names a family that is not a list by its family', () => {

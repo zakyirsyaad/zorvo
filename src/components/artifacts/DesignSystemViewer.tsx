@@ -15,7 +15,7 @@ import { ArtifactCommentStrip } from "./ArtifactCommentStrip";
 import { enqueueArtifactViewCall } from "../../hooks/useArtifactView";
 import { useLatest } from "../../hooks/useLatest";
 import { FOLDER_NOT_FOUND } from "../../lib/canvas";
-import { defaultProblemLine, droppedLine, dsShellState, sourceLine, syncMessage } from "../../lib/design-systems";
+import { defaultProblemLine, droppedLine, dsShellState, shownName, sourceLine, syncMessage } from "../../lib/design-systems";
 import { ArtifactPageBox } from "./ArtifactPageBox";
 import { DesignSystemHeader } from "./DesignSystemHeader";
 
@@ -74,8 +74,8 @@ export function DesignSystemViewer({
 
   const notes = useMemo(() => {
     const lines: string[] = [];
-    if (list?.defaultProblem) lines.push(defaultProblemLine(list.defaultProblem));
-    const dropped = droppedLine(shown?.content?.tokens?.dropped ?? []);
+    if (list?.defaultProblem) lines.push(defaultProblemLine(list.defaultProblem, shownName));
+    const dropped = droppedLine(shown?.content?.tokens?.dropped ?? [], shownName);
     if (dropped) lines.push(dropped);
     if (shown?.content?.tokensError) lines.push(`tokens.json could not be read: ${shown.content.tokensError}`);
     return lines;

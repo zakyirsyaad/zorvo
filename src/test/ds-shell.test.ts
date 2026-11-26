@@ -118,11 +118,25 @@ describe('the design system shell', () => {
       fonts: [{ family: 'Acme', file: 'fonts/Acme.woff2', url: null }],
     });
 
-    expect(indexLinks()).toEqual(['Overview', 'Voice', 'Colours', 'Spacing', 'Actions', 'Surfaces', 'Fonts']);
+    expect(indexLinks()).toEqual(['Overview', 'Voice', 'Colours', 'Spacing', 'Components', 'Actions', 'Surfaces', 'Fonts']);
+    expect(document.querySelectorAll('#index a.group')).toHaveLength(2);
     for (const link of document.querySelectorAll<HTMLAnchorElement>('#index a')) {
       expect(link.getAttribute('href')).toMatch(/^#/);
       expect(document.getElementById(link.getAttribute('href')!.slice(1))).not.toBeNull();
     }
+  });
+
+  it('lists ungrouped components under one Components entry with no level below it', () => {
+    ds().apply({ ...empty(), components: [component('Button', null), component('Card', null)] });
+
+    expect(indexLinks()).toEqual(['Components']);
+    expect(document.querySelectorAll('#main h3.group')).toHaveLength(0);
+  });
+
+  it('puts components with no group under Other beside the named groups', () => {
+    ds().apply({ ...empty(), components: [component('Button', 'Actions'), component('Swatch', null)] });
+
+    expect(indexLinks()).toEqual(['Components', 'Actions', 'Other']);
   });
 
   it('puts a section in an article and keeps its prefixed ids', () => {
@@ -227,7 +241,7 @@ describe('comments in the design system shell', () => {
 
   it('draws the numbers of comments on a token', () => {
     ds().apply({ ...empty(), colours: [{ name: 'accent', value: '#2563eb' }], ownMarks: { tokens: { accent: [1, 3] }, components: {}, sections: {} } });
-    expect([...document.querySelectorAll('button.swatch .badge')].map((badge) => badge.textContent)).toEqual(['1', '3']);
+    expect([...document.querySelectorAll('button.swatch strong .badge')].map((badge) => badge.textContent)).toEqual(['1', '3']);
   });
 });
 
@@ -258,7 +272,7 @@ describe('new comment numbers', () => {
     const frame = document.querySelector('iframe');
     ds().apply({ ...state, ownMarks: { tokens: { accent: [2] }, components: { Button: [1] }, sections: {} } });
     expect(document.querySelector('iframe')).toBe(frame);
-    expect(document.querySelector('button.swatch .badge')?.textContent).toBe('2');
+    expect(document.querySelector('button.swatch strong .badge')?.textContent).toBe('2');
     expect(document.querySelector('[data-component="Button"] .badge')?.textContent).toBe('1');
   });
 });

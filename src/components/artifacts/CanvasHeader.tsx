@@ -53,6 +53,8 @@ export interface CanvasCommenting {
   onCommentOnArtboard: () => void;
 }
 
+/** Below this header width the zoom steps give way, so Reload, Comment and Expand stay on screen. */
+const NARROW_HIDDEN = "@max-[44rem]:hidden";
 const DIVIDER = <span aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-border" />;
 
 /** What the selected artboard offers: its title, Focus, and the artboards before and after it. */
@@ -121,7 +123,7 @@ export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBa
 
   return (
     <>
-      <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-2">
+      <div className="@container flex h-11 shrink-0 items-center gap-1 border-b border-border px-2">
         {onBack && !isExpanded && (
           <Button variant="ghost" size="sm" tone="secondary" aria-label="Back to artifacts" onClick={onBack} className="gap-0.5 pl-1">
             <ChevronLeft size={14} aria-hidden="true" />
@@ -135,16 +137,17 @@ export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBa
         <Button variant="ghost" size="sm" tone="secondary" onClick={() => onCommand("fit")}>
           Fit
         </Button>
-        <Button variant="ghost" size="sm" tone="secondary" onClick={() => onCommand("actual")}>
+        {/* A narrow header keeps Fit and leaves the zoom steps to the canvas's own pinch and scroll. */}
+        <Button variant="ghost" size="sm" tone="secondary" onClick={() => onCommand("actual")} className={NARROW_HIDDEN}>
           100%
         </Button>
-        <IconButton label="Zoom out" size="row" onClick={() => onCommand("out")}>
+        <IconButton label="Zoom out" size="row" onClick={() => onCommand("out")} className={NARROW_HIDDEN}>
           <Minus size={14} />
         </IconButton>
-        <span aria-label={`Zoom ${percent}`} className="min-w-10 shrink-0 text-center text-ui-sm text-fg-secondary tabular-nums">
+        <span aria-label={`Zoom ${percent}`} className="min-w-10 shrink-0 text-center @max-[44rem]:hidden text-ui-sm text-fg-secondary tabular-nums">
           {percent}
         </span>
-        <IconButton label="Zoom in" size="row" onClick={() => onCommand("in")}>
+        <IconButton label="Zoom in" size="row" onClick={() => onCommand("in")} className={NARROW_HIDDEN}>
           <Plus size={14} />
         </IconButton>
         <Popover

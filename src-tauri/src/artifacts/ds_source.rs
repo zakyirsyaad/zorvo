@@ -12,7 +12,14 @@ use crate::changes::{run_git, run_git_with};
 
 /// At most this many changed paths are named.
 const MAX_CHANGED_PATHS: usize = 5;
-const NO_FSMONITOR: [&str; 2] = ["-c", "core.fsmonitor=false"];
+/// A cloned or downloaded repository's config is not trusted: no fsmonitor, no signature check
+/// (`log.showSignature` would run `gpg.program`).
+const NO_FSMONITOR: [&str; 4] = [
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "log.showSignature=false",
+];
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase", tag = "state")]
@@ -112,18 +119,36 @@ pub fn source_state(git: &Path, system_root: &Path, source: Option<&DsSource>) -
             Err(_) => Err(()),
         }
     };
-    let Ok((log, _)) = run(with_paths(&["log", "--format=%H", &range]), &[0]) else {
+    let Ok((log, _)) = run(
+        with_paths(&["log", "--no-show-signature", "--format=%H", &range]),
+        &[0],
+    ) else {
         return SourceState::Unreadable;
     };
     let commits = u32::try_from(log.lines().filter(|line| !line.trim().is_empty()).count())
         .unwrap_or(u32::MAX);
-    let Ok((_, quiet)) = run(
-        with_paths(&["diff", "--no-ext-diff", "--no-textconv", "--quiet", "HEAD"]),
+    // Comparing the working tree runs the clean filter of any `filter.<driver>` the repository's
+    // own config defines, a program of its choosing: with one defined there, uncommitted changes
+    // are not looked for. The user's global config (git-lfs, say) is theirs and trusted. Reading
+    // the config runs nothing.
+    let defines_filter = run_git_with(
+        git,
+        &top,
+        &git_args(&["config", "--local", "--get-regexp", r"^filter\."]),
         &[0, 1],
-    ) else {
-        return SourceState::Unreadable;
+    )
+    .map_or(true, |out| !out.trim().is_empty());
+    let uncommitted = if defines_filter {
+        false
+    } else {
+        let Ok((_, quiet)) = run(
+            with_paths(&["diff", "--no-ext-diff", "--no-textconv", "--quiet", "HEAD"]),
+            &[0, 1],
+        ) else {
+            return SourceState::Unreadable;
+        };
+        quiet == 1
     };
-    let uncommitted = quiet == 1;
     if commits == 0 && !uncommitted {
         return SourceState::Current { commit };
     }
@@ -357,5 +382,34 @@ mod tests {
         let _ = state(&temp, &code(&["src/styles/globals.css"], &commit));
         assert!(!external.exists());
         assert!(!textconv.exists());
+    }
+
+    #[test]
+    fn never_runs_a_filter_or_a_signature_program() {
+        let (temp, commit) = repo("ds-src-filter");
+        let filter = marker_script(&temp, "filter");
+        let gpg = marker_script(&temp, "gpg");
+        fs::write(temp.0.join(".gitattributes"), "* filter=x\n").unwrap();
+        git(
+            &temp.0,
+            &[
+                "config",
+                "filter.x.clean",
+                &temp.0.join("filter.sh").to_string_lossy(),
+            ],
+        );
+        git(&temp.0, &["config", "log.showSignature", "true"]);
+        git(
+            &temp.0,
+            &[
+                "config",
+                "gpg.program",
+                &temp.0.join("gpg.sh").to_string_lossy(),
+            ],
+        );
+        fs::write(temp.0.join("src/styles/globals.css"), "changed").unwrap();
+        let _ = state(&temp, &code(&["src/styles/globals.css"], &commit));
+        assert!(!filter.exists());
+        assert!(!gpg.exists());
     }
 }

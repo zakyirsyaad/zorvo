@@ -71,6 +71,16 @@ pub fn resolve_system(session_folder: &Path, path: &str) -> Result<(PathBuf, Str
     ))
 }
 
+/// A remembered system's path relative to its session's folder, as `is_inside_known_session_folder`
+/// reads it: the session's folder itself is `.` in an entry and nothing to that check.
+fn session_relative(relative: &str) -> &str {
+    if relative == "." {
+        ""
+    } else {
+        relative
+    }
+}
+
 fn token_count(tokens: Option<&DsTokens>) -> u32 {
     tokens.map_or(0, |t| (t.tokens.len() + t.styles.len()) as u32)
 }
@@ -184,7 +194,7 @@ pub fn read_design_system(
         google_fonts_url: None,
     };
     let root = PathBuf::from(&entry.folder);
-    if !is_inside_known_session_folder(&root, &entry.relative, &is_known) {
+    if !is_inside_known_session_folder(&root, session_relative(&entry.relative), &is_known) {
         return Ok(failed(entry, FOLDER_NOT_FOUND));
     }
     Ok(match read_content(&root) {
@@ -292,12 +302,7 @@ pub fn source_state_of(
         .design_system(session_id, key)
         .ok_or_else(|| FAILED.to_string())?;
     let root = PathBuf::from(&entry.folder);
-    let relative = if entry.relative == "." {
-        ""
-    } else {
-        entry.relative.as_str()
-    };
-    if !is_inside_known_session_folder(&root, relative, &is_known) {
+    if !is_inside_known_session_folder(&root, session_relative(&entry.relative), &is_known) {
         return Ok(SourceState::None);
     }
     let source = read_content(&root)
@@ -348,11 +353,20 @@ pub fn ds_view_marks(
     )
 }
 
-/// The components `ds_view_apply` reads for `key`: none when the system is forgotten or no
-/// longer reads, so every preview message is refused.
-pub fn components_of(artifacts: &ArtifactStore, session_id: &str, key: &str) -> Vec<String> {
+/// The components `ds_view_apply` reads for `key`: none when the system is forgotten, outside a
+/// known session folder or no longer reads, so every preview message is refused.
+pub fn components_of(
+    artifacts: &ArtifactStore,
+    is_known: impl Fn(&Path) -> bool,
+    session_id: &str,
+    key: &str,
+) -> Vec<String> {
     artifacts
         .design_system(session_id, key)
+        .filter(|entry| {
+            let root = Path::new(&entry.folder);
+            is_inside_known_session_folder(root, session_relative(&entry.relative), &is_known)
+        })
         .and_then(|entry| read_content(Path::new(&entry.folder)).ok())
         .map(|content| content.components.into_iter().map(|c| c.name).collect())
         .unwrap_or_default()
@@ -361,6 +375,7 @@ pub fn components_of(artifacts: &ArtifactStore, session_id: &str, key: &str) -> 
 #[tauri::command(async)]
 pub fn ds_view_apply(
     app: AppHandle,
+    store: State<'_, AppStore>,
     artifacts: State<'_, Arc<ArtifactStore>>,
     session_id: String,
     key: String,
@@ -370,7 +385,12 @@ pub fn ds_view_apply(
         session_id: session_id.clone(),
         key: key.clone(),
     };
-    let names = components_of(&artifacts, &session_id, &key);
+    let names = components_of(
+        &artifacts,
+        |root| store.is_known_workspace(root).unwrap_or(false),
+        &session_id,
+        &key,
+    );
     let script = ds_apply_script(&state).ok_or_else(|| view::COULD_NOT_SHOW.to_string())?;
     view::apply_design_system(&app, shown, names, script);
     Ok(())
@@ -529,5 +549,20 @@ mod tests {
             Some("https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Space+Grotesk:wght@400&display=swap")
         );
         assert_eq!(google_fonts_url(None), None);
+    }
+
+    #[test]
+    fn a_system_at_the_session_folder_itself_reads() {
+        let data = Temp::new("ds-root-data");
+        let work = Temp::new("ds-root-work");
+        full_system(&work.0, ".");
+        let artifacts = ArtifactStore::new(data.0.clone());
+        let cwd = work.0.to_string_lossy().to_string();
+        let read = show_design_system(&artifacts, known(&work.0), "s1", &cwd, ".", 1).unwrap();
+        assert_eq!(read.entry.relative, ".");
+        let again = read_design_system(&artifacts, known(&work.0), "s1", &read.entry.key).unwrap();
+        assert_eq!(again.error, None);
+        assert!(again.content.is_some());
+        assert!(components_of(&artifacts, |_| false, "s1", &read.entry.key).is_empty());
     }
 }

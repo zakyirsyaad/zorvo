@@ -93,3 +93,11 @@ describe('a design system pick', () => {
     expect(parseDsPick({ sessionId: 's', key: 'c-0123456789abcdef', target: { kind: 'token', name: 'accent' } })).toBeNull();
   });
 });
+
+describe('a design system cancel', () => {
+  it('reads a preview Escape as a cancel of that system', async () => {
+    const { parseDsCancel } = await import('../lib/design-system-picks');
+    expect(parseDsCancel({ sessionId: 's', key: KEY, target: { kind: 'component', name: 'Button' }, message: { kind: 'cancel' } })).toEqual({ sessionId: 's', key: KEY });
+    expect(parseDsCancel({ sessionId: 's', key: KEY, target: { kind: 'token', name: 'accent' } })).toBeNull();
+  });
+});

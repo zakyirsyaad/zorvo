@@ -307,7 +307,8 @@
     var top = viewport && typeof viewport.top === "number" ? viewport.top : 0;
     var height = viewport && typeof viewport.height === "number" ? viewport.height : 0;
     var middle = top + height / 2;
-    var origin = contentEl.getBoundingClientRect().top;
+    // Positions in #main's scroll coordinates, the ones `top` is given in.
+    var origin = mainEl.getBoundingClientRect().top - mainEl.scrollTop;
     var visible = previews.filter(function (preview) {
       if (!preview.url) return false;
       var rect = preview.box.getBoundingClientRect();
@@ -398,10 +399,15 @@
     if (!article || !end || end.closest("article[data-file]") !== article) return;
     var quote = range.toString().slice(0, 1000);
     if (quote.trim() === "") return;
-    var whole = article.textContent || "";
-    var at = whole.indexOf(quote);
-    var before = at > 0 ? whole.slice(Math.max(0, at - CONTEXT), at) : "";
-    var after = at >= 0 ? whole.slice(at + quote.length, at + quote.length + CONTEXT) : "";
+    // The context around this selection, not around the first place its words appear.
+    var head = document.createRange();
+    head.selectNodeContents(article);
+    head.setEnd(range.startContainer, range.startOffset);
+    var tail = document.createRange();
+    tail.selectNodeContents(article);
+    tail.setStart(range.endContainer, range.endOffset);
+    var before = head.toString().slice(-CONTEXT);
+    var after = tail.toString().slice(0, CONTEXT);
     post({ kind: "ds-pick-section", file: article.getAttribute("data-file"), quote: quote, before: before, after: after });
   });
 

@@ -382,7 +382,11 @@ fn respond_with_system(
         return not_found();
     };
     let Some(path) = canvas.design_system.as_deref() else {
-        return not_found();
+        // A canvas that names no system keeps a real `_ds/` folder of its own; a theme it cannot have.
+        return match theme {
+            Some(_) => not_found(),
+            None => serve_canvas_file(root, relative),
+        };
     };
     let Some(session) = super::ds_canvas::session_folder_of(root, relative_to_session) else {
         return not_found();
@@ -398,21 +402,24 @@ fn respond_with_system(
     };
     match relative.strip_prefix("_ds/") {
         Some(rest) => super::ds_protocol::serve_system_file(&system.root, &chosen, rest, None),
-        None => {
-            let Some((path, kind)) = canvas_file(root, relative) else {
-                return not_found();
-            };
-            let Ok(body) = super::source::read_bytes_checked(&path) else {
-                return not_found();
-            };
-            let csp = if kind.starts_with("text/html") {
-                BOARD_CSP
-            } else {
-                FILE_CSP
-            };
-            canvas_response(kind, Some(csp), body)
-        }
+        None => serve_canvas_file(root, relative),
     }
+}
+
+/// One file of a canvas folder, under the board or file CSP.
+fn serve_canvas_file(root: &Path, relative: &str) -> Response<Vec<u8>> {
+    let Some((path, kind)) = canvas_file(root, relative) else {
+        return not_found();
+    };
+    let Ok(body) = super::source::read_bytes_checked(&path) else {
+        return not_found();
+    };
+    let csp = if kind.starts_with("text/html") {
+        BOARD_CSP
+    } else {
+        FILE_CSP
+    };
+    canvas_response(kind, Some(csp), body)
 }
 
 /// Whether the canvas view may go to `url`: the wrapper and the files of this canvas only.
@@ -1150,6 +1157,10 @@ mod tests {
             get(&canvas_file_url(SESSION, &key, "screens/cart.html")),
             200
         );
+        // Its own `_ds` folder is served as any folder of the canvas.
+        std::fs::create_dir_all(root.join("_ds")).unwrap();
+        std::fs::write(root.join("_ds/logo.png"), b"\x89PNG").unwrap();
+        assert_eq!(get(&canvas_file_url(SESSION, &key, "_ds/logo.png")), 200);
     }
 
     #[test]

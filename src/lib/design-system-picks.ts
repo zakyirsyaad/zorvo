@@ -64,3 +64,11 @@ export function parseDsPick(payload: unknown): DsPick | null {
   const anchor = anchorOf(payload.message, target);
   return anchor && { sessionId, key, target, anchor };
 }
+
+/** A `ds-pick` payload that is a preview's cancel (Escape), with the system it came from. */
+export function parseDsCancel(payload: unknown): { sessionId: string; key: string } | null {
+  if (!isRecord(payload) || !isRecord(payload.message) || payload.message.kind !== 'cancel') return null;
+  const { sessionId, key } = payload;
+  if (typeof sessionId !== 'string' || sessionId === '' || typeof key !== 'string' || !KEY.test(key)) return null;
+  return { sessionId, key };
+}

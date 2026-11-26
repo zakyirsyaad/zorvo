@@ -230,3 +230,22 @@ describe('comments in the design system shell', () => {
     expect([...document.querySelectorAll('button.swatch .badge')].map((badge) => badge.textContent)).toEqual(['1', '3']);
   });
 });
+
+describe('a brand book pick', () => {
+  it('takes the context around the selection, not around the first match', () => {
+    const posted: Record<string, unknown>[] = [];
+    (window as unknown as { ipc: unknown }).ipc = { postMessage: (body: string) => posted.push(JSON.parse(body) as Record<string, unknown>) };
+    ds().apply({ ...empty(), sections: [{ id: 's-0', file: 'README.md', title: 'Overview', html: '<p>one word here then two word there</p>' } as never] });
+    ds().mode(true);
+    const text = document.querySelector('article p')!.firstChild!;
+    const second = text.textContent!.lastIndexOf('word');
+    const range = document.createRange();
+    range.setStart(text, second);
+    range.setEnd(text, second + 4);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(range);
+    document.dispatchEvent(new MouseEvent('mouseup'));
+    expect(posted).toEqual([{ kind: 'ds-pick-section', file: 'README.md', quote: 'word', before: 'one word here then two ', after: ' there' }]);
+    ds().mode(false);
+  });
+});

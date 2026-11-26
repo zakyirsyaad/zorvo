@@ -7,7 +7,7 @@ import type { CanvasesBySession } from './useArtifacts';
 import { createId } from '../lib/ids';
 import { MAX_COMMENT_LENGTH } from '../lib/review-comments';
 import type { Artifact, ArtifactAnchor, ArtifactComment, DesignSystemCommentRef, PageMessage, PageRef, Session } from '../types';
-import { parseDsPick } from '../lib/design-system-picks';
+import { parseDsCancel, parseDsPick } from '../lib/design-system-picks';
 import { targetHash } from '../lib/design-system-comments';
 import type { DesignSystemRead } from '../lib/design-system-read';
 import type { DesignSystemsBySession } from './useArtifacts';
@@ -233,6 +233,20 @@ export function useArtifactComments({
     });
     const stopSystem = listen<unknown>(DS_PICK, (event) => {
       if (isGone) return;
+      const cancel = parseDsCancel(event.payload);
+      if (cancel !== null) {
+        // Escape in a preview: a candidate with nothing typed goes, as on a page.
+        if (systemKeyOf(cancel) !== latest.current.shownKey || !latest.current.isCommenting) return;
+        const owner = cancel.sessionId;
+        setCandidates((prev) => {
+          if (!(owner in prev) || (bodies.current[owner] ?? '').trim() !== '') return prev;
+          delete bodies.current[owner];
+          const next = { ...prev };
+          delete next[owner];
+          return next;
+        });
+        return;
+      }
       const pick = parseDsPick(event.payload);
       const now = latest.current;
       if (pick === null || systemKeyOf(pick) !== now.shownKey || !now.isCommenting) return;

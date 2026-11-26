@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { dsMarksFor } from '../lib/design-system-comments';
@@ -23,6 +23,8 @@ export function useDesignSystemMarks(
   onError: (message: string) => void,
 ): void {
   const latest = useLatest({ comments, read, onError });
+  // The previews that have said they loaded: only they are told their marks again on a change.
+  const loaded = useRef(new Set<string>());
 
   const send = (component: string) => {
     const { comments: list, read: now } = latest.current;
@@ -40,7 +42,9 @@ export function useDesignSystemMarks(
     const stop = listen<unknown>(DS_VIEW, (event) => {
       const payload = event.payload as Record<string, unknown> | null;
       if (payload?.sessionId !== sessionId || payload.key !== key || payload.kind !== 'preview-loaded') return;
-      if (typeof payload.component === 'string') sendRef.current(payload.component);
+      if (typeof payload.component !== 'string') return;
+      loaded.current.add(payload.component);
+      sendRef.current(payload.component);
     });
     return () => {
       void stop.then((unlisten) => unlisten());
@@ -49,8 +53,7 @@ export function useDesignSystemMarks(
 
   const signature = JSON.stringify((comments ?? []).filter((comment) => comment.designSystem?.key === key).map((comment) => [comment.id, comment.designSystem?.hash]));
   useEffect(() => {
-    const components = latest.current.read?.content?.components ?? [];
     if (!latest.current.comments) return;
-    for (const component of components) sendRef.current(component.name);
+    for (const component of loaded.current) sendRef.current(component);
   }, [signature, latest, sendRef]);
 }

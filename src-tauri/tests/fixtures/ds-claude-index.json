@@ -1,0 +1,19 @@
+{
+  "v": 3,
+  "layout": "files",
+  "createdOnFiles": { "v": 1, "at": "2026-11-26T10:00:00Z" },
+  "title": "Acme Design System",
+  "namespace": "Acme",
+  "libraries": [],
+  "sections": {
+    "colors": { "title": "Colors", "order": 1 }
+  },
+  "groups": [],
+  "assetGroups": {},
+  "blobs": {
+    "0f3a9c2d4e5b6a7c8d9e0f1a2b3c4d5e": { "size": 2048, "type": "image/svg+xml" }
+  },
+  "docs": { "readme": "README.md", "sections": [] },
+  "lastChange": { "at": "2026-11-26T10:05:00Z", "by": "agent" },
+  "v4only": {}
+}

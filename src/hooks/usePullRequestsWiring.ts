@@ -2,8 +2,8 @@ import { useCallback, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import {
   newestSessionInFolder,
-  pullRequestOfWork,
   pullRequestOnBranch,
+  pullRequestsOfWork,
   sessionPullRequestOf,
 } from '../lib/pull-request-look';
 import { isArchived, workspacePathOf } from '../lib/session-helpers';
@@ -65,19 +65,27 @@ export function usePullRequestsWiring({
 
   // The top bar reads the same list; its own call is only for a branch outside the 100 newest.
   const shownFolder = activeSession ? folderPullRequests.get(workspacePathOf(activeSession)) : undefined;
-  // A session in the folder's own checkout first shows the pull request its agent made, often from a worktree of its own.
-  const workPullRequest =
-    shownFolder && activeSession && !activeSession.worktree
-      ? pullRequestOfWork(shownFolder, activeSession.agentWork)
-      : null;
+  // A session in the folder's own checkout first shows the pull requests its agent made, often from a worktree of its own.
+  const workPullRequests = useMemo(
+    () =>
+      shownFolder && activeSession && !activeSession.worktree
+        ? pullRequestsOfWork(shownFolder, activeSession.agentWork)
+        : [],
+    [shownFolder, activeSession],
+  );
   const listedPullRequest =
-    workPullRequest ?? (shownFolder ? pullRequestOnBranch(shownFolder, branch ?? null) : null);
+    workPullRequests[0] ?? (shownFolder ? pullRequestOnBranch(shownFolder, branch ?? null) : null);
   const ownPullRequest = usePullRequest(
     isRepository && !listedPullRequest ? shownFolderPath : undefined,
     branch ?? undefined,
     turnsEnded,
   );
   const pullRequest = listedPullRequest ?? ownPullRequest;
+  // The overview card lists every pull request the agent made; without any, the one the top bar shows.
+  const pullRequests = useMemo(
+    () => (workPullRequests.length > 0 ? workPullRequests : pullRequest ? [pullRequest] : []),
+    [workPullRequests, pullRequest],
+  );
 
   const repoPullRequests = useRepoPullRequests(
     changesFolderPath,
@@ -91,5 +99,5 @@ export function usePullRequestsWiring({
     );
   };
 
-  return { pullRequest, pullRequestOf, repoPullRequests, openPullRequest };
+  return { pullRequest, pullRequests, pullRequestOf, repoPullRequests, openPullRequest };
 }

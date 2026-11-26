@@ -37,7 +37,8 @@ export interface OverviewInputs {
   shellTasks: readonly BackgroundTask[];
   pages: readonly Artifact[];
   files: readonly CreatedFile[];
-  pullRequest: PullRequestStatus | null;
+  /** The session's pull requests, newest first. */
+  pullRequests: readonly PullRequestStatus[];
   /** The background agents Qwen Code reports, when it does. */
   agentTasks?: readonly AgentTask[];
   /** The agent's clock in that answer, for how long a task has been quiet. */
@@ -54,7 +55,7 @@ export interface Overview {
   sources: { path: string; isImage: boolean }[];
   pages: readonly Artifact[];
   files: readonly CreatedFile[];
-  pullRequest: PullRequestStatus | null;
+  pullRequests: readonly PullRequestStatus[];
   /** Tasks at work now, for the collapsed pill. */
   runningCount: number;
 }
@@ -189,7 +190,7 @@ export function overviewOf(inputs: OverviewInputs): Overview {
     sources: sourcesOf(inputs.messages),
     pages: inputs.pages,
     files: inputs.files,
-    pullRequest: inputs.pullRequest,
+    pullRequests: inputs.pullRequests,
     runningCount: all.filter((task) => task.state === 'running' || task.state === 'needs-you').length,
   };
 }

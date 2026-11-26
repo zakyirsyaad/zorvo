@@ -16,7 +16,7 @@ const task = (key: string, state: OverviewTask["state"], overrides: Partial<Over
   ...overrides,
 });
 
-const empty: Overview = { tasks: [], finished: [], sources: [], pages: [], files: [], pullRequest: null, runningCount: 0 };
+const empty: Overview = { tasks: [], finished: [], sources: [], pages: [], files: [], pullRequests: [], runningCount: 0 };
 
 function show(overview: Partial<Overview> = {}, props: Partial<OverviewCardProps> = {}) {
   const handlers = {
@@ -42,6 +42,16 @@ function show(overview: Partial<Overview> = {}, props: Partial<OverviewCardProps
   );
   return { card: screen.getByRole("region", { name: "Session overview" }), ...handlers };
 }
+
+const pullRequest = (number: number, title: string): Overview["pullRequests"][number] => ({
+  branch: `agent/pr-${number}`,
+  number,
+  title,
+  url: `https://github.com/o/r/pull/${number}`,
+  state: "open",
+  isDraft: false,
+  checks: { passing: 5, failing: 0, pending: 0 },
+});
 
 const section = (card: HTMLElement, name: string | RegExp) => within(card).getByRole("region", { name });
 
@@ -140,15 +150,7 @@ describe("OverviewCard", () => {
     const { card, onOpenPage, onOpenFile, onOpenUrl } = show({
       pages: [page] as unknown as Overview["pages"],
       files: [{ path: "/w/agent-desktop/src/lib/pr-chip.ts", at: Date.now() }],
-      pullRequest: {
-        branch: "agent/redesign-row",
-        number: 250,
-        title: "Redesign the session row",
-        url: "https://github.com/o/r/pull/250",
-        state: "open",
-        isDraft: false,
-        checks: { passing: 5, failing: 0, pending: 0 },
-      },
+      pullRequests: [pullRequest(250, "Redesign the session row")],
     });
 
     fireEvent.click(within(section(card, /^Artifacts/)).getByRole("button", { name: /Session row options/ }));
@@ -158,6 +160,17 @@ describe("OverviewCard", () => {
     expect(onOpenPage).toHaveBeenCalledWith("a-1");
     expect(onOpenFile).toHaveBeenCalledWith("src/lib/pr-chip.ts");
     expect(onOpenUrl).toHaveBeenCalledWith("https://github.com/o/r/pull/250");
+  });
+
+  it("lists every pull request of the session under Pull requests", () => {
+    const { card, onOpenUrl } = show({
+      pullRequests: [pullRequest(273, "Add the pull pipeline"), pullRequest(272, "Parse the XML")],
+    });
+    const listed = section(card, /^Pull requests/);
+    expect(within(listed).getByText("2")).toBeTruthy();
+    fireEvent.click(within(listed).getByRole("button", { name: /^Open pull request 272 in your browser/ }));
+    expect(within(listed).getByRole("button", { name: /^Open pull request 273 in your browser/ })).toBeTruthy();
+    expect(onOpenUrl).toHaveBeenCalledWith("https://github.com/o/r/pull/272");
   });
 
   it("folds to a pill that says what runs and what changed", () => {

@@ -99,8 +99,11 @@ function commandsIn(text: string, depth = 0): string[][] {
 
 /** What one finished shell command made: the branches it named and, for `gh pr create`, the address it printed. */
 function workOfTool(tool: ToolExecution): AgentWork {
-  if (tool.status !== 'completed' || tool.kind !== 'execute' || !tool.command) return EMPTY;
-  const commands = commandsIn(tool.command);
+  if (tool.status !== 'completed' || tool.kind !== 'execute') return EMPTY;
+  // Antigravity sends no input and puts the command in the tool's title.
+  const command = tool.command ?? tool.name;
+  if (!command) return EMPTY;
+  const commands = commandsIn(command);
   const branches = commands.flatMap((words) => {
     const branch = branchOf(words);
     return branch && BRANCH.test(branch) ? [branch] : [];

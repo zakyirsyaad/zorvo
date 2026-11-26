@@ -44,6 +44,32 @@ describe("agentWorkOf", () => {
     expect(work).toEqual({ branches: ["fix/a", "fix/b"], pullRequestUrls: ["https://github.com/o/r/pull/7"] });
   });
 
+  it("reads the command from the tool's title when the agent sends no input, as Antigravity does", () => {
+    next += 1;
+    const titled: ToolExecution = {
+      id: `t${next}`,
+      name: [
+        "gh pr create \\",
+        "  --base main \\",
+        "  --head feat/ibkr-flex-pipeline \\",
+        '  --title "feat(ibkr-flex): add the pull pipeline" \\',
+        `  --body "$(cat <<'EOF'`,
+        "## Summary",
+        "",
+        "Runs `git checkout -b not/this` in the docs only.",
+        "EOF",
+        ')"',
+      ].join("\n"),
+      kind: "execute",
+      status: "completed",
+      details: [{ kind: "text", text: "https://github.com/O/R/pull/273\n" }],
+    };
+    expect(agentWorkOf([reply(titled)])).toEqual({
+      branches: ["feat/ibkr-flex-pipeline"],
+      pullRequestUrls: ["https://github.com/O/R/pull/273"],
+    });
+  });
+
   it("ignores what did not finish, other programs, and pull requests it only mentioned", () => {
     const work = agentWorkOf([
       reply(shell("git worktree add -b fix/failed wt", "", "failed")),

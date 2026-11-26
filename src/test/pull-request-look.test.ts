@@ -7,6 +7,7 @@ import {
   pullRequestLine,
   pullRequestLook,
   pullRequestOfWork,
+  pullRequestsOfWork,
   pullRequestOnBranch,
   sessionBranchOf,
   sessionPullRequestOf,
@@ -110,6 +111,24 @@ describe("which pull request a session shows", () => {
     const newest = newestSessionInFolder([byUrl, byBranch]);
     expect(sessionPullRequestOf(byUrl, listed, newest)?.number).toBe(259);
     expect(sessionPullRequestOf(byBranch, listed, newest)?.number).toBe(257);
+  });
+
+  it("lists every pull request the agent made, newest first and each once", () => {
+    const listed: FolderPullRequests = {
+      branch: "feat/ibkr-flex-pipeline",
+      pullRequests: [
+        pr({ branch: "feat/ibkr-flex-pipeline", number: 273, url: "https://github.com/O/R/pull/273" }),
+        pr({ branch: "feat/ibkr-flex-xml-parser", number: 272, url: "https://github.com/O/R/pull/272" }),
+        pr({ branch: "fix/other", number: 271 }),
+      ],
+    };
+    const work = {
+      branches: ["feat/ibkr-flex-xml-parser", "feat/ibkr-flex-pipeline", "fix/unlisted"],
+      pullRequestUrls: ["https://github.com/O/R/pull/272"],
+    };
+    expect(pullRequestsOfWork(listed, work).map((found) => found.number)).toEqual([273, 272]);
+    expect(pullRequestOfWork(listed, work)?.number).toBe(273);
+    expect(pullRequestsOfWork(listed, undefined)).toEqual([]);
   });
 
   it("prefers a worktree session's own branch, and falls back to the folder's branch", () => {

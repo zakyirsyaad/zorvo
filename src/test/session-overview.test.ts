@@ -29,7 +29,7 @@ const shell = (id: string, startedAt: number): BackgroundTask => ({
   sessionId: "s-1",
 });
 
-const base: OverviewInputs = { messages: [], isBusy: false, shellTasks: [], pages: [], files: [], pullRequest: null };
+const base: OverviewInputs = { messages: [], isBusy: false, shellTasks: [], pages: [], files: [], pullRequests: [] };
 
 describe("a shell command's row", () => {
   it("is titled by its program, keeps the whole command for a tooltip, and says its ports, not its session", () => {

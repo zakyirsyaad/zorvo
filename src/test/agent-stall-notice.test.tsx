@@ -20,21 +20,21 @@ describe("AgentStallNotice", () => {
     vi.useRealTimers();
   });
 
-  it("says nothing for the first minute, then that the agent has sent nothing", () => {
+  it("says nothing for the first three minutes, then that the agent has sent nothing", () => {
     render(<AgentStallNotice agentName="Gemini CLI" messages={[question]} />);
 
-    act(() => void vi.advanceTimersByTime(59_000));
+    act(() => void vi.advanceTimersByTime(179_000));
     expect(screen.queryByRole("status")).toBeNull();
 
     act(() => void vi.advanceTimersByTime(2_000));
-    expect(screen.getByRole("status")).toHaveTextContent("Gemini CLI hasn't sent anything for 1 minute.");
+    expect(screen.getByRole("status")).toHaveTextContent("Gemini CLI hasn't sent anything for 3 minutes.");
   });
 
   it("says the agent may be stuck, as a quiet notice, not an alert", () => {
     render(<AgentStallNotice agentName="Qwen Code" messages={[question]} />);
-    act(() => void vi.advanceTimersByTime(121_000));
+    act(() => void vi.advanceTimersByTime(241_000));
     const notice = screen.getByRole("status");
-    expect(notice.textContent).toContain("Qwen Code hasn't sent anything for 2 minutes. It may be stuck.");
+    expect(notice.textContent).toContain("Qwen Code hasn't sent anything for 4 minutes. It may be stuck.");
     // A title in fg over a muted sentence, as drawn; only the clock carries the attention colour.
     expect(notice.querySelector("[data-notice-title]")?.className).toContain("text-fg");
     expect(notice.querySelector("[data-notice-body]")?.className).toContain("text-fg-muted");
@@ -43,13 +43,13 @@ describe("AgentStallNotice", () => {
 
   it("starts counting again when the agent sends something, and hides the notice", () => {
     const { rerender } = render(<AgentStallNotice agentName="Gemini CLI" messages={[question]} />);
-    act(() => void vi.advanceTimersByTime(61_000));
+    act(() => void vi.advanceTimersByTime(181_000));
     expect(screen.getByRole("status")).toBeInTheDocument();
 
     rerender(<AgentStallNotice agentName="Gemini CLI" messages={[question, reply({ content: "O" })]} />);
     expect(screen.queryByRole("status")).toBeNull();
 
-    act(() => void vi.advanceTimersByTime(59_000));
+    act(() => void vi.advanceTimersByTime(179_000));
     expect(screen.queryByRole("status")).toBeNull();
   });
 
@@ -138,7 +138,7 @@ describe("AgentStallNotice", () => {
 
   it("keeps the usual notice when nothing can end the agent", () => {
     render(<AgentStallNotice agentName="Qwen Code" messages={[question]} stopAskedAt={Date.now()} />);
-    act(() => void vi.advanceTimersByTime(61_000));
-    expect(screen.getByRole("status")).toHaveTextContent("Qwen Code hasn't sent anything for 1 minute.");
+    act(() => void vi.advanceTimersByTime(181_000));
+    expect(screen.getByRole("status")).toHaveTextContent("Qwen Code hasn't sent anything for 3 minutes.");
   });
 });

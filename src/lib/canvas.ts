@@ -1,9 +1,10 @@
 import guide from './canvas-guide.md?raw';
+import craft from './design-craft.md?raw';
 import { codeSpan } from './artifact-comments';
 import { escapeVisible } from './visible-text';
 
-/** What `artifact_guide` answers for `kind: "canvas"`: how to lay out several screens. */
-export const CANVAS_GUIDE: string = guide;
+/** What `artifact_guide` answers for `kind: "canvas"`: how to lay out several screens, then how to design them well. */
+export const CANVAS_GUIDE: string = guide + craft;
 
 /**
  * The sentences the backend refuses a canvas with that name no path and repeat nothing the agent

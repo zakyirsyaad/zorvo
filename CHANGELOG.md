@@ -4,9 +4,18 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Added
+
+- **Agents are told which design systems a folder holds before they design a page, a canvas or a motion.** A design system is a folder with a `design-system.json`; Zorvo looks for one in the session's folder and below it, never above it, names the default, and lists the tokens it could not read.
+- **An agent can make a design system for your project, from its code or from brand files you give it, and Zorvo shows it beside the chat.** Its brand book, its colours, type, spacing and shadows in each theme, every component's live preview, and its logos and fonts, in the Artifacts tab, the gallery and a card in the chat.
+- **A canvas can use your project's design system, and Theme switches every artboard.** Artboards load the system's tokens, styles and logos from `_ds/`, and pictures and exports follow the theme you pick.
+- **You can comment on a design system's tokens, components and brand book.** Comments go to the agent through the message box, as page comments do.
+- **A design system made from your code says when that code changed, and Sync again asks the agent to update it.**
+
 ### Changed
 
 - **Google Antigravity runs through your own `agy` CLI.** When `agy` 1.5.17 or newer is on your PATH, Zorvo starts Antigravity with `agy acp` instead of its download of the registry's server, so your own subagents and skills from `~/.gemini/config` work in Zorvo too. Sessions you started before still continue. Without `agy`, nothing changes.
+- **Agents design pages and canvases with more care.** The guide an agent reads before it shows you a page or a canvas now tells it to follow your project's own design system when there is one, ask its questions once, write placeholders instead of made-up names and numbers, use real buttons, links and labels, and keep text readable in both themes. On a canvas it builds one artboard at a time, so you watch the screens appear.
 
 ### Fixed
 

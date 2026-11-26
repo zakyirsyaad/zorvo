@@ -10,6 +10,12 @@ The repository's `docs/design-system/` folder is the source, and the [Zorvo Desi
 - `adopting.md`: how the app's old classes mapped onto these tokens.
 - `index.html`: the same reference, local. Run `npm run design-system` to open it.
 
+## The index and the default
+
+`design-system.json` marks this folder as a design system. It has the shape of Claude's index, so the folder can be published to Claude unchanged, and Zorvo reads only a few of its fields: `title`, `namespace` (the global `components/bundle.js` assigns), `libraries`, `groups` and `assetGroups` (the order of asset groups), and `zorvo.default`. Every other field is left as it is.
+
+`"zorvo": { "default": true }` makes this the project's default system. Zorvo looks for systems in a session's folder and the folders below it, and tells an agent which ones it found, and which is the default, before the agent designs a page, a canvas or a motion. With one system and none marked, that one is the default; with several, mark exactly one.
+
 ## In the code
 
 `src/styles/globals.css` is the app's source of truth. Its `@theme` block holds the dark values and turns each token into Tailwind utilities, so `surface-2` is `bg-surface-2`, `fg-muted` is `text-fg-muted` and `border-strong` is `border-border-strong`. The `@media (prefers-color-scheme: light)` block overrides the same variables for light mode.

@@ -14,6 +14,8 @@ on:
       - "package.json"
       - "pnpm-lock.yaml"
       - ".nvmrc"
+      # The design-system tests read this folder as a fixture.
+      - "docs/design-system/**"
       - ".github/workflows/rust.yml"
 
 permissions:

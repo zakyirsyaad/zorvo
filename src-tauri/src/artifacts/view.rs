@@ -27,6 +27,12 @@ use super::canvas_view::{
     apply_script, canvas_intake, canvas_marks_script, canvas_mode_script, command_script,
     pick_event, view_event, CanvasIntake, CanvasNavigation, CANVAS_PICK, CANVAS_VIEW,
 };
+use super::ds_protocol::ds_shell_url;
+use super::ds_view::{
+    ds_intake, ds_marks_script, ds_mode_script, ds_pick_event, keep_state, kept_state,
+    record_components, recorded_components, DsIntake, DsNavigation, DsShellMessage,
+    ShownDesignSystem, DS_PICK, DS_VIEW,
+};
 use super::page_script::{marks_script, mode_script, PAGE_SCRIPT};
 use super::picks::{
     accepted_message, FloodGuard, Intake, PageMark, PagePickEvent, RateLimit, ViewState,
@@ -51,6 +57,7 @@ pub enum ShownView {
     Page(ShownPage),
     Canvas(ShownCanvas),
     Motion(ShownMotion),
+    DesignSystem(ShownDesignSystem),
 }
 
 /// A motion the view shows through Zorvo's preview wrapper.
@@ -120,6 +127,8 @@ thread_local! {
     /// The last state asked for a motion, as the script that applies it, run again once a view of
     /// that motion has loaded.
     static MOTION_STATE: RefCell<Option<(ShownMotion, String)>> = const { RefCell::new(None) };
+    /// The generation design system marks were last run in, as for a canvas.
+    static DS_MARKS_SENT: Cell<u64> = const { Cell::new(0) };
 }
 
 /// Changes what decides the view's visibility and applies it. Main thread only.
@@ -144,6 +153,7 @@ fn mark_loaded(generation: u64) {
         apply_page_state();
         apply_canvas_state();
         apply_motion_state();
+        apply_design_system_state();
     }
 }
 
@@ -156,7 +166,7 @@ fn shown_view() -> Option<ShownView> {
 fn shown_page() -> Option<ShownPage> {
     match shown_view()? {
         ShownView::Page(page) => Some(page),
-        ShownView::Canvas(_) | ShownView::Motion(_) => None,
+        ShownView::Canvas(_) | ShownView::Motion(_) | ShownView::DesignSystem(_) => None,
     }
 }
 
@@ -164,7 +174,7 @@ fn shown_page() -> Option<ShownPage> {
 fn shown_canvas() -> Option<ShownCanvas> {
     match shown_view()? {
         ShownView::Canvas(canvas) => Some(canvas),
-        ShownView::Page(_) | ShownView::Motion(_) => None,
+        ShownView::Page(_) | ShownView::Motion(_) | ShownView::DesignSystem(_) => None,
     }
 }
 
@@ -372,6 +382,7 @@ pub fn is_showing(shown: Option<&ShownView>, session_id: &str, artifact_id: Opti
         Some(ShownView::Page(page)) => (&page.session_id, &page.artifact_id),
         Some(ShownView::Canvas(canvas)) => (&canvas.session_id, &canvas.key),
         Some(ShownView::Motion(motion)) => (&motion.session_id, &motion.key),
+        Some(ShownView::DesignSystem(system)) => (&system.session_id, &system.key),
         None => return false,
     };
     session == session_id && artifact_id.is_none_or(|wanted| id == wanted)
@@ -502,7 +513,7 @@ pub fn apply_canvas(
 fn shown_motion() -> Option<ShownMotion> {
     match shown_view()? {
         ShownView::Motion(motion) => Some(motion),
-        ShownView::Page(_) | ShownView::Canvas(_) => None,
+        ShownView::Page(_) | ShownView::Canvas(_) | ShownView::DesignSystem(_) => None,
     }
 }
 
@@ -542,6 +553,150 @@ pub fn apply_motion(app: &AppHandle, motion: ShownMotion, script: String) {
     let _ = app.run_on_main_thread(move || {
         let is_shown = shown_motion().as_ref() == Some(&motion);
         MOTION_STATE.with(|state| *state.borrow_mut() = Some((motion, script.clone())));
+        if is_shown && DISPLAY.get().is_loaded {
+            evaluate(&script);
+        }
+    });
+}
+
+/// The design system the view on screen shows, when it shows one. Main thread only.
+fn shown_design_system() -> Option<ShownDesignSystem> {
+    match shown_view()? {
+        ShownView::DesignSystem(system) => Some(system),
+        ShownView::Page(_) | ShownView::Canvas(_) | ShownView::Motion(_) => None,
+    }
+}
+
+/// Hands the design system shell on screen the last state asked for it, then its comment mode,
+/// which may have been turned on while it loaded. Main thread only.
+fn apply_design_system_state() {
+    let Some(system) = shown_design_system() else {
+        return;
+    };
+    if let Some(script) = kept_state(&system) {
+        evaluate(&script);
+    }
+    evaluate(&ds_mode_script(COMMENTING.get()));
+}
+
+/// What the design system view sent, read by `ds_intake`: the shell's kinds only from its own
+/// frame, a page's kinds only from a preview of a component the system holds. Main thread only.
+fn on_ds_message(app: &AppHandle, generation: u64, frame_url: &str, body: &str) {
+    if !admits(app, generation, body) {
+        return;
+    }
+    let Some(shown) = shown_design_system() else {
+        return;
+    };
+    let state = ViewState {
+        is_commenting: COMMENTING.get(),
+        has_marks: DS_MARKS_SENT.get() == generation,
+    };
+    let components = recorded_components(&shown);
+    let intake = RATE.with(|rate| {
+        SHELL_RATE.with(|shell_rate| {
+            ds_intake(
+                frame_url,
+                body,
+                &shown,
+                components.as_deref(),
+                state,
+                &mut rate.borrow_mut(),
+                &mut shell_rate.borrow_mut(),
+                Instant::now(),
+            )
+        })
+    });
+    match &intake {
+        DsIntake::Shell(DsShellMessage::PreviewLoaded(component)) => {
+            let _ = app.emit(
+                DS_VIEW,
+                serde_json::json!({
+                    "sessionId": shown.session_id,
+                    "key": shown.key,
+                    "kind": "preview-loaded",
+                    "component": component,
+                }),
+            );
+        }
+        DsIntake::Shell(message) => {
+            if message.takes_keyboard() {
+                focus_zorvo(app);
+            }
+            if let Some(event) = ds_pick_event(&shown, &intake) {
+                let _ = app.emit(DS_PICK, event);
+            }
+        }
+        DsIntake::Preview { message, .. } => {
+            if message.takes_keyboard() {
+                focus_zorvo(app);
+            }
+            if let Some(event) = ds_pick_event(&shown, &intake) {
+                let _ = app.emit(DS_PICK, event);
+            }
+        }
+        DsIntake::Refused => {}
+    }
+}
+
+/// Turns comment mode on or off for `system`, only while it is shown; the shell passes it on to
+/// each live preview.
+pub fn set_ds_comment_mode(app: &AppHandle, system: ShownDesignSystem, on: bool) {
+    let _ = app.run_on_main_thread(move || {
+        if shown_design_system().as_ref() != Some(&system) {
+            return;
+        }
+        COMMENTING.set(on);
+        if DISPLAY.get().is_loaded {
+            evaluate(&ds_mode_script(on));
+        }
+    });
+}
+
+const COULD_NOT_MARK_PREVIEW: &str = "Zorvo could not mark that preview.";
+
+/// Has the shell post `marks` to one preview of `system`, only while it is shown and loaded.
+pub fn set_ds_marks(
+    app: &AppHandle,
+    system: ShownDesignSystem,
+    component: String,
+    marks: Vec<PageMark>,
+) -> Result<(), String> {
+    let script =
+        ds_marks_script(&component, &marks).ok_or_else(|| COULD_NOT_MARK_PREVIEW.to_string())?;
+    let _ = app.run_on_main_thread(move || {
+        if shown_design_system().as_ref() == Some(&system) && DISPLAY.get().is_loaded {
+            evaluate(&script);
+            DS_MARKS_SENT.set(GENERATION.get());
+        }
+    });
+    Ok(())
+}
+
+/// Shows a design system through Zorvo's shell in a new webview at `bounds`, ending any earlier
+/// one. Only the shell and that system's files may be loaded.
+pub fn show_design_system(
+    app: &AppHandle,
+    served: Arc<Served>,
+    system: ShownDesignSystem,
+    bounds: Bounds,
+) -> Result<(), String> {
+    let url = ds_shell_url(&system.session_id, &system.key);
+    show_view(app, served, ShownView::DesignSystem(system), url, bounds)
+}
+
+/// Keeps `script` (the shell's `apply`) and the system's components for `system`, and runs the
+/// script now when that system is shown and loaded; a view of it made or loaded later gets it then.
+pub fn apply_design_system(
+    app: &AppHandle,
+    system: ShownDesignSystem,
+    components: Vec<String>,
+    script: String,
+) {
+    let _ = app.run_on_main_thread(move || {
+        record_components(&system, components);
+        let is_shown = shown_design_system().as_ref() == Some(&system);
+        keep_state(system, script.clone());
         if is_shown && DISPLAY.get().is_loaded {
             evaluate(&script);
         }
@@ -611,6 +766,18 @@ fn show_view(
                             })
                             .with_navigation_handler(move |url| {
                                 navigation.borrow_mut().allows(&url, &rule)
+                            })
+                    }
+                    ShownView::DesignSystem(system) => {
+                        let navigation = RefCell::new(DsNavigation::default());
+                        wry::WebViewBuilder::new()
+                            .with_initialization_script_for_main_only(PAGE_SCRIPT, false)
+                            .with_ipc_handler(move |request| {
+                                let frame = request.uri().to_string();
+                                on_ds_message(&messages, generation, &frame, request.body())
+                            })
+                            .with_navigation_handler(move |url| {
+                                navigation.borrow_mut().allows(&url, &system)
                             })
                     }
                     ShownView::Motion(motion) => wry::WebViewBuilder::new()

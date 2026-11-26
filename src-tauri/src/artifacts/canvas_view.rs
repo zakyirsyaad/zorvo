@@ -47,6 +47,7 @@ pub fn canvas_message_source(frame_url: &str, canvas: &ShownCanvas) -> Source {
             session_id,
             key,
             relative,
+            ..
         }) if session_id == canvas.session_id && key == canvas.key => Source::Board(relative),
         _ => Source::Other,
     }
@@ -504,6 +505,7 @@ mod tests {
                 title: "s".to_string(),
                 artboards: vec![board("pay-a", "pay/a.html"), board("pay-b", "pay/b.html")],
             }],
+            design_system: None,
         }
     }
 

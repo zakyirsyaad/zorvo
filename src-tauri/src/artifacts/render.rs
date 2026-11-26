@@ -43,6 +43,11 @@ pub struct ThumbJob {
     pub file: String,
     pub width: u32,
     pub height: u32,
+    /// The design system theme the picture is drawn in, when the canvas names a system; `sha256`
+    /// then holds the picture key (`ds_canvas::picture_key`), not the board key alone.
+    pub theme: Option<String>,
+    /// The linked system's folder, to work out the picture key again at the job's turn.
+    pub system_root: Option<PathBuf>,
 }
 
 impl ThumbJob {
@@ -555,6 +560,8 @@ mod tests {
             file: format!("{artboard}.html"),
             width: 1440,
             height: 900,
+            theme: None,
+            system_root: None,
         }
     }
 

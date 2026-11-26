@@ -209,6 +209,9 @@ export function fakeTauriInvoke(cmd: string, args?: unknown): Promise<unknown> {
   if (privateResult) {
     return privateResult;
   }
+  if (cmd === "design_systems_list") {
+    return Promise.resolve({ systems: [], defaultProblem: null });
+  }
   if (cmd === "list_workspaces") {
     return Promise.resolve([
       { name: "ai-perpetual-trading", path: "/Users/test/developer/ai-perpetual-trading" },

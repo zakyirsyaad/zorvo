@@ -268,3 +268,27 @@ mod tests {
         assert_eq!(png_width(1440), 2880);
     }
 }
+
+/// An export file's stem in the chosen theme: `checkout-pay-dark` when the canvas's system has two
+/// themes or more, the stem as it is otherwise.
+pub fn themed_stem(stem: &str, theme: Option<&str>, theme_count: usize) -> String {
+    match theme {
+        Some(theme) if theme_count >= 2 => format!("{stem}-{theme}"),
+        _ => stem.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod themed_tests {
+    use super::themed_stem;
+
+    #[test]
+    fn export_names_carry_the_theme_with_two_themes() {
+        assert_eq!(
+            themed_stem("checkout-pay", Some("dark"), 2),
+            "checkout-pay-dark"
+        );
+        assert_eq!(themed_stem("checkout-pay", Some("dark"), 1), "checkout-pay");
+        assert_eq!(themed_stem("checkout-pay", None, 0), "checkout-pay");
+    }
+}

@@ -4,7 +4,7 @@ import { ARTIFACT_GUIDE } from "../lib/artifacts";
 describe("the artifact guide", () => {
   it("is short enough to read once", () => {
     expect(ARTIFACT_GUIDE.length).toBeGreaterThan(1500);
-    expect(ARTIFACT_GUIDE.length).toBeLessThan(6000);
+    expect(ARTIFACT_GUIDE.length).toBeLessThan(9000);
   });
 
   it("names every host a page may load from, as the tool does", () => {

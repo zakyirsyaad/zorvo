@@ -82,7 +82,7 @@ pub struct ShownMotion<'a> {
 }
 
 impl ArtifactStore {
-    fn read_list<T: DeserializeOwned>(
+    pub(super) fn read_list<T: DeserializeOwned>(
         &self,
         session_id: &str,
         file: &str,
@@ -94,7 +94,7 @@ impl ArtifactStore {
         }
     }
 
-    fn write_list<T: Serialize>(
+    pub(super) fn write_list<T: Serialize>(
         &self,
         session_id: &str,
         file: &str,

@@ -1,5 +1,5 @@
 import { Button } from "../ui/Button";
-import { ArtifactMark } from "../artifacts/ArtifactsPanel";
+import { ArtifactMark, designSystemDetail } from "../artifacts/ArtifactsPanel";
 import { canvasCountLabel } from "../../lib/canvas";
 import { motionDetail } from "../../lib/motion";
 import type { ArtifactCard } from "../../types";
@@ -20,6 +20,8 @@ function detailOf(card: ArtifactCard): string {
       return motionDetail(card.duration, card.formats);
     case "video":
       return "Video file";
+    case "design-system":
+      return `Design system · ${designSystemDetail(card)}`;
     default:
       return `Version ${card.version}`;
   }
@@ -32,9 +34,16 @@ function openLabelOf(card: ArtifactCard): string {
     case "motion":
     case "video":
       return `Open the video ${card.title}`;
+    case "design-system":
+      return `Open the design system ${card.title}`;
     default:
       return `Open ${card.title}, version ${card.version}`;
   }
+}
+
+function markOf(card: ArtifactCard): "page" | "canvas" | "video" | "design-system" {
+  if (card.kind === "canvas" || card.kind === "design-system") return card.kind;
+  return card.kind === "motion" || card.kind === "video" ? "video" : "page";
 }
 
 /**
@@ -47,7 +56,7 @@ export function ArtifactCardRow({ card, state, onOpen }: ArtifactCardRowProps) {
   const openLabel = openLabelOf(card);
   return (
     <div data-artifact-card="" className="flex items-center gap-3 rounded-panel border border-border bg-surface-2 py-2.5 pr-2.5 pl-3">
-      <ArtifactMark kind={card.kind === "canvas" ? "canvas" : card.kind === "motion" || card.kind === "video" ? "video" : "page"} />
+      <ArtifactMark kind={markOf(card)} />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className={`truncate text-ui ${isRemoved ? "text-fg-muted" : "font-medium text-fg"}`}>{card.title}</span>
         <span className="text-caption text-fg-subtle">{detail}</span>

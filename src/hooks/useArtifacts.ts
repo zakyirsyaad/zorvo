@@ -5,6 +5,7 @@ import type { Artifact } from '../types';
 import { parseArtifacts } from '../lib/artifacts';
 import { parseCanvasEntries, type CanvasEntry } from '../lib/canvas';
 import { parseMotionEntries, parseVideoEntries, type MotionEntry, type VideoEntry } from '../lib/motion';
+import { parseDesignSystemEntry, type DesignSystemEntry } from '../lib/design-systems';
 
 /** Emitted by the backend with `{ sessionId }` after a session's artifacts changed. */
 const ARTIFACTS_CHANGED = 'artifacts-changed';
@@ -13,14 +14,36 @@ type BySession = ReadonlyMap<string, readonly Artifact[]>;
 export type CanvasesBySession = ReadonlyMap<string, readonly CanvasEntry[]>;
 export type MotionsBySession = ReadonlyMap<string, readonly MotionEntry[]>;
 export type VideosBySession = ReadonlyMap<string, readonly VideoEntry[]>;
+export type DesignSystemsBySession = ReadonlyMap<string, readonly DesignSystemEntry[]>;
+
+function parseDesignSystemEntries(value: unknown): DesignSystemEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value.map(parseDesignSystemEntry).filter((entry): entry is DesignSystemEntry => entry !== null);
+}
 
 /** One session's answer: its artifacts, whether its index could not be read (then they are not known), and its canvases. */
-type Entry = [sessionId: string, artifacts: Artifact[], failed: boolean, canvases: CanvasEntry[], motions: MotionEntry[], videos: VideoEntry[]];
+type Entry = [
+  sessionId: string,
+  artifacts: Artifact[],
+  failed: boolean,
+  canvases: CanvasEntry[],
+  motions: MotionEntry[],
+  videos: VideoEntry[],
+  designSystems: DesignSystemEntry[],
+];
 
 function parseAnswer(answer: unknown): Entry[] {
   if (!Array.isArray(answer)) return [];
   return answer.flatMap((entry): Entry[] => {
-    const fields = entry as { sessionId?: unknown; artifacts?: unknown; failed?: unknown; canvases?: unknown; motions?: unknown; videos?: unknown } | null;
+    const fields = entry as {
+      sessionId?: unknown;
+      artifacts?: unknown;
+      failed?: unknown;
+      canvases?: unknown;
+      motions?: unknown;
+      videos?: unknown;
+      designSystems?: unknown;
+    } | null;
     const sessionId = fields?.sessionId;
     return typeof sessionId === 'string'
       ? [
@@ -31,6 +54,7 @@ function parseAnswer(answer: unknown): Entry[] {
             parseCanvasEntries(fields?.canvases),
             parseMotionEntries(fields?.motions),
             parseVideoEntries(fields?.videos),
+            parseDesignSystemEntries(fields?.designSystems),
           ],
         ]
       : [];
@@ -48,6 +72,7 @@ export function useArtifacts(sessionIds: readonly string[]): {
   canvasesBySession: CanvasesBySession;
   motionsBySession: MotionsBySession;
   videosBySession: VideosBySession;
+  designSystemsBySession: DesignSystemsBySession;
   error: boolean;
   readSessions: ReadonlySet<string>;
 } {
@@ -55,6 +80,7 @@ export function useArtifacts(sessionIds: readonly string[]): {
   const [canvasesBySession, setCanvasesBySession] = useState<CanvasesBySession>(new Map());
   const [motionsBySession, setMotionsBySession] = useState<MotionsBySession>(new Map());
   const [videosBySession, setVideosBySession] = useState<VideosBySession>(new Map());
+  const [designSystemsBySession, setDesignSystemsBySession] = useState<DesignSystemsBySession>(new Map());
   const [readSessions, setReadSessions] = useState<ReadonlySet<string>>(new Set());
   const [error, setError] = useState(false);
   // The ids as one string, so a new array with the same ids asks nothing.
@@ -97,6 +123,12 @@ export function useArtifacts(sessionIds: readonly string[]): {
       if (isFullList) for (const sessionId of next.keys()) if (!idsRef.current.includes(sessionId)) next.delete(sessionId);
       return next;
     });
+    setDesignSystemsBySession((previous) => {
+      const next = new Map(previous);
+      for (const [sessionId, , failed, , , , systems] of entries) if (!failed) next.set(sessionId, systems);
+      if (isFullList) for (const sessionId of next.keys()) if (!idsRef.current.includes(sessionId)) next.delete(sessionId);
+      return next;
+    });
     setReadSessions((previous) => {
       const next = new Set(previous);
       for (const [sessionId, , failed] of entries) {
@@ -118,6 +150,7 @@ export function useArtifacts(sessionIds: readonly string[]): {
       setCanvasesBySession(new Map());
       setMotionsBySession(new Map());
       setVideosBySession(new Map());
+      setDesignSystemsBySession(new Map());
       setReadSessions(new Set());
       return;
     }
@@ -153,5 +186,5 @@ export function useArtifacts(sessionIds: readonly string[]): {
     };
   }, []);
 
-  return { bySession, canvasesBySession, motionsBySession, videosBySession, error, readSessions };
+  return { bySession, canvasesBySession, motionsBySession, videosBySession, designSystemsBySession, error, readSessions };
 }

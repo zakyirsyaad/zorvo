@@ -1,4 +1,5 @@
-import { ChevronRight, Clapperboard, FileText, LayoutGrid, PanelsTopLeft } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { ChevronRight, Clapperboard, FileText, LayoutGrid, Palette, PanelsTopLeft, X } from "lucide-react";
 import { FOLDER_NOT_FOUND, canvasCountLabel, type CanvasEntry } from "../../lib/canvas";
 import { newestVersion, shownArtifactOf, shownCanvasOf, type ViewedArtifact } from "../../lib/artifacts";
 import { fileNameAndFolder, pathInFolder, type CreatedFile } from "../../lib/created-files";
@@ -12,6 +13,9 @@ import { CanvasViewer } from "./CanvasViewer";
 import { MotionViewer } from "./MotionViewer";
 import { VideoViewer } from "./VideoViewer";
 import { motionDetail, type MotionEntry, type VideoEntry } from "../../lib/motion";
+import type { DesignSystemEntry } from "../../lib/design-systems";
+import { IconButton } from "../ui/IconButton";
+import { DesignSystemViewer } from "./DesignSystemViewer";
 
 export interface ArtifactsPanelProps {
   sessionId: string;
@@ -50,11 +54,22 @@ export interface ArtifactsPanelProps {
   motions?: readonly MotionEntry[];
   /** The video files the session's agent showed, the most recently shown first. */
   videos?: readonly VideoEntry[];
+  /** The design systems the session's agent showed, the most recently shown first. */
+  designSystems?: readonly DesignSystemEntry[];
 }
 
 /** The mark every artifact row and card carries; a canvas has its own. */
-export function ArtifactMark({ kind = "page" }: { kind?: "page" | "canvas" | "video" }) {
-  const icon = kind === "canvas" ? <LayoutGrid size={14} /> : kind === "video" ? <Clapperboard size={14} /> : <PanelsTopLeft size={14} />;
+export function ArtifactMark({ kind = "page" }: { kind?: "page" | "canvas" | "video" | "design-system" }) {
+  const icon =
+    kind === "canvas" ? (
+      <LayoutGrid size={14} />
+    ) : kind === "video" ? (
+      <Clapperboard size={14} />
+    ) : kind === "design-system" ? (
+      <Palette size={14} />
+    ) : (
+      <PanelsTopLeft size={14} />
+    );
   return (
     <span aria-hidden="true" data-mark={kind} className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-chip text-fg-secondary">
       {icon}
@@ -153,6 +168,35 @@ function CanvasRow({ sessionId, canvas, onOpen, onError }: { sessionId: string; 
   );
 }
 
+/** "42 tokens · 12 components". */
+export function designSystemDetail(system: Pick<DesignSystemEntry, "tokens" | "components">): string {
+  const tokens = `${system.tokens} ${system.tokens === 1 ? "token" : "tokens"}`;
+  const components = `${system.components} ${system.components === 1 ? "component" : "components"}`;
+  return `${tokens} · ${components}`;
+}
+
+/** A design system the agent showed: a row that opens it, and Remove, which only forgets it. */
+function DesignSystemRow({ sessionId, system, onOpen, onError }: { sessionId: string; system: DesignSystemEntry; onOpen: () => void; onError: (message: string) => void }) {
+  const remove = () => {
+    invoke("ds_forget", { sessionId, key: system.key }).catch(() => onError("Zorvo could not remove that design system."));
+  };
+  return (
+    <div className="flex items-center gap-1">
+      <button type="button" title={system.folder} onClick={onOpen} className={`focus-ring ${ROW} min-w-0 flex-1 transition-colors hover:bg-surface-hover`}>
+        <ArtifactMark kind="design-system" />
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span className="truncate text-ui text-fg">{system.title}</span>
+          <span className="truncate text-caption text-fg-subtle">{`Design system · ${designSystemDetail(system)}`}</span>
+        </span>
+        <ChevronRight size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
+      </button>
+      <IconButton label={`Remove ${system.title} from Artifacts`} size="row" onClick={remove}>
+        <X size={14} />
+      </IconButton>
+    </div>
+  );
+}
+
 /** The Artifacts tab: the pages and canvases this session's agent showed, one of them open, and the files it created. */
 export function ArtifactsPanel({
   sessionId,
@@ -176,9 +220,10 @@ export function ArtifactsPanel({
   insertBlockedReason,
   motions = [],
   videos = [],
+  designSystems = [],
 }: ArtifactsPanelProps) {
-  // A single page, canvas, motion or video opens by itself, unless something else is listed beside it.
-  const mediaCount = motions.length + videos.length;
+  // A single page, canvas, motion, video or design system opens by itself, unless something else is listed beside it.
+  const mediaCount = motions.length + videos.length + designSystems.length;
   const rowCount = artifacts.length + canvases.length + files.length + mediaCount;
   const isOnly = rowCount === 1;
   const open = shownArtifactOf(artifacts, viewed, files.length + canvases.length + mediaCount);
@@ -193,6 +238,32 @@ export function ArtifactsPanel({
     : !viewed && isOnly && videos.length === 1
       ? videos[0]
       : undefined;
+
+  const openSystem = viewed?.designSystemKey
+    ? designSystems.find((system) => system.key === viewed.designSystemKey)
+    : !viewed && isOnly && designSystems.length === 1
+      ? designSystems[0]
+      : undefined;
+
+  if (openSystem) {
+    return (
+      <DesignSystemViewer
+        key={openSystem.key}
+        sessionId={sessionId}
+        designSystemKey={openSystem.key}
+        cwd={cwd}
+        turnsEnded={turnsEnded}
+        onBack={isOnly ? undefined : () => onView(null)}
+        isExpanded={isExpanded}
+        onToggleExpanded={onToggleExpanded}
+        onError={onError}
+        onInsertText={onInsertText}
+        insertBlockedReason={insertBlockedReason}
+        comments={comments}
+        addReview={addReview}
+      />
+    );
+  }
 
   if (openMotion) {
     return (
@@ -311,6 +382,11 @@ export function ArtifactsPanel({
       {videos.map((video) => (
         <li key={video.key}>
           <MediaRow title={video.title} detail={`Video file · ${video.relative}`} hint={video.path} onOpen={() => onView({ videoKey: video.key })} />
+        </li>
+      ))}
+      {designSystems.map((system) => (
+        <li key={system.key}>
+          <DesignSystemRow sessionId={sessionId} system={system} onOpen={() => onView({ designSystemKey: system.key })} onError={onError} />
         </li>
       ))}
       {canvases.map((canvas) => (

@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Changed
+
+- **Agents design pages and canvases with more care.** The guide an agent reads before it shows you a page or a canvas now tells it to follow your project's own design system when there is one, ask its questions once, write placeholders instead of made-up names and numbers, use real buttons, links and labels, and keep text readable in both themes. On a canvas it builds one artboard at a time, so you watch the screens appear.
+
 ## [0.21.2] - 2026-11-26
 
 ### Fixed

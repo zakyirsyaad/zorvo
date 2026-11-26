@@ -254,7 +254,8 @@ fn start_screen_server(
     server
 }
 
-/// Ends every agent and terminal a previous UI left running. The UI calls this
+/// Ends every agent and terminal a previous UI left running, and closes the native views it
+/// placed (`close_native_views`). The UI calls this
 /// when it loads: a webview reload leaves the backend (and its agents) running,
 /// but the new UI knows none of them and shows their sessions as ended, so they
 /// would only linger, holding sessions the UI may resume in a new process.
@@ -273,8 +274,9 @@ fn end_orphaned_sessions(
     private: State<'_, private_mode::service::PrivateMode>,
     tools: State<'_, Arc<agent_tools::AgentTools>>,
 ) -> usize {
-    browser::close_all(&app);
-    browser_debug::close(&app, None);
+    // The new page starts with no artifact box and no Browser panel; nothing it asks for later
+    // can be closed by this, since the closes run on the main thread in the order they come.
+    close_native_views(&app);
     #[cfg(all(target_os = "macos", debug_assertions))]
     browser::frontend_ready(&app);
     let terminals = pty.session_ids();
@@ -899,11 +901,54 @@ pub fn run() {
                 workspace_terminal::end_all_sessions(&pty);
                 app.state::<Arc<agent_tools::AgentTools>>().shutdown();
                 app.state::<Arc<computer_use::ComputerUse>>().stop_driver();
-                artifacts::view::close(app);
-                browser::close_all(app);
-                browser_debug::close(app, None);
+                close_native_views(app);
             }
         });
+}
+
+/// Closes every native view drawn over the main webview: the artifact view and the Browser
+/// panel's pages, plus the Chromium debug worker. They belong to the page that placed them, so
+/// they go when Zorvo exits and when a reloaded page starts; otherwise a view stays drawn over
+/// the new page at its old place, with no box under it and nothing that could close it.
+fn close_native_views(app: &AppHandle) {
+    artifacts::view::close(app);
+    browser::close_all(app);
+    browser_debug::close(app, None);
+}
+
+/// The native views have no test window to be drawn in here, so these read the wiring itself: a
+/// reload that left the artifact view on screen came from the sweep closing only some of them.
+#[cfg(test)]
+mod native_view_tests {
+    const SOURCE: &str = include_str!("lib.rs");
+
+    /// The body of the top-level `fn name`, up to the closing brace at the start of a line.
+    fn body_of(name: &str) -> &'static str {
+        let start = [format!("\nfn {name}("), format!("\npub fn {name}(")]
+            .iter()
+            .find_map(|head| SOURCE.find(head.as_str()))
+            .unwrap_or_else(|| panic!("no fn {name} in lib.rs"));
+        let rest = &SOURCE[start..];
+        let end = rest.find("\n}\n").expect("the end of the fn");
+        &rest[..end]
+    }
+
+    #[test]
+    fn a_reloaded_page_and_an_exit_close_the_same_native_views() {
+        assert!(body_of("end_orphaned_sessions").contains("close_native_views(&app);"));
+        assert!(body_of("run").contains("close_native_views(app);"));
+        let closes = body_of("close_native_views");
+        for call in [
+            "artifacts::view::close(app);",
+            "browser::close_all(app);",
+            "browser_debug::close(app, None);",
+        ] {
+            assert!(
+                closes.contains(call),
+                "close_native_views does not call {call}"
+            );
+        }
+    }
 }
 
 #[cfg(all(test, target_os = "macos"))]

@@ -17,6 +17,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - **Google Antigravity runs through your own `agy` CLI.** When `agy` 1.5.17 or newer is on your PATH, Zorvo starts Antigravity with `agy acp` instead of its download of the registry's server, so your own subagents and skills from `~/.gemini/config` work in Zorvo too. Sessions you started before still continue. Without `agy`, nothing changes.
 - **Agents design pages and canvases with more care.** The guide an agent reads before it shows you a page or a canvas now tells it to follow your project's own design system when there is one, ask its questions once, write placeholders instead of made-up names and numbers, use real buttons, links and labels, and keep text readable in both themes. On a canvas it builds one artboard at a time, so you watch the screens appear.
 
+### Fixed
+
+- **A reloaded window no longer keeps an artifact drawn over the chat.** When Zorvo's window reloaded, the page, canvas or video shown in the Artifacts tab stayed on screen at its old place, over the chat, with nothing that could close it. A reload now closes it, as it already closed the Browser panel's pages.
+
 ## [0.21.2] - 2026-11-26
 
 ### Fixed

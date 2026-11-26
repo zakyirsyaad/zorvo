@@ -15,6 +15,7 @@ pub mod ds_shell;
 pub mod ds_store;
 pub mod ds_tokens;
 pub mod ds_tokens_css;
+pub mod ds_view;
 pub mod motion;
 pub mod motion_capture;
 pub mod motion_commands;

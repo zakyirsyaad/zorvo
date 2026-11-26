@@ -47,6 +47,7 @@ mod profiles_test;
 mod pty_session_test;
 mod registry_catalog_test;
 mod registry_catalog_view_test;
+mod registry_cli_launch_test;
 mod registry_fetch_test;
 mod registry_history_test;
 mod registry_icons_test;

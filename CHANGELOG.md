@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Changed
+
+- **Google Antigravity runs through your own `agy` CLI.** When `agy` 1.5.17 or newer is on your PATH, Zorvo starts Antigravity with `agy acp` instead of its download of the registry's server, so your own subagents and skills from `~/.gemini/config` work in Zorvo too. Sessions you started before still continue. Without `agy`, nothing changes.
+
 ## [0.21.2] - 2026-11-26
 
 ### Fixed

@@ -6,6 +6,7 @@ pub mod canvas_export;
 pub mod canvas_shell;
 pub mod canvas_view;
 pub mod design_system;
+pub mod ds_tokens;
 pub mod motion;
 pub mod motion_capture;
 pub mod motion_commands;

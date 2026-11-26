@@ -179,6 +179,7 @@
       var block = el("section");
       var heading = el("h2", "family", section.title);
       heading.id = id;
+      if (typeof section.file === "string") heading.setAttribute("data-file", section.file);
       badges(heading, own("sections", section.file));
       var article = el("article");
       if (typeof section.file === "string") article.setAttribute("data-file", section.file);
@@ -411,9 +412,37 @@
     post({ kind: "ds-pick-section", file: article.getAttribute("data-file"), quote: quote, before: before, after: after });
   });
 
+  // A state that differs only in its comment numbers redraws the numbers, never the previews.
+  var lastShape = null;
+
+  function shapeOf(state) {
+    var copy = {};
+    Object.keys(state).forEach(function (key) { if (key !== "ownMarks") copy[key] = state[key]; });
+    return JSON.stringify(copy);
+  }
+
+  function redrawBadges() {
+    contentEl.querySelectorAll(".badge").forEach(function (badge) { badge.remove(); });
+    contentEl.querySelectorAll("button[data-token]").forEach(function (node) {
+      badges(node, own("tokens", node.getAttribute("data-token")));
+    });
+    contentEl.querySelectorAll("button[data-component]").forEach(function (node) {
+      badges(node, own("components", node.getAttribute("data-component")));
+    });
+    contentEl.querySelectorAll("h2[data-file]").forEach(function (node) {
+      badges(node, own("sections", node.getAttribute("data-file")));
+    });
+  }
+
   function apply(state) {
     if (!state || typeof state !== "object") return;
+    var shape = shapeOf(state);
     current = state;
+    if (shape === lastShape) {
+      redrawBadges();
+      return;
+    }
+    lastShape = shape;
     indexEl.textContent = "";
     contentEl.textContent = "";
     titleEl.textContent = typeof state.title === "string" ? state.title : "";

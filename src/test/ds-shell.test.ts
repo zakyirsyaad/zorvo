@@ -249,3 +249,16 @@ describe('a brand book pick', () => {
     ds().mode(false);
   });
 });
+
+describe('new comment numbers', () => {
+  it('redraw the numbers without rebuilding the live previews', () => {
+    const state = { ...empty(), colours: [{ name: 'accent', value: '#2563eb' }], components: [component('Button')] };
+    ds().apply(state);
+    ds().liveIds({ top: 0, height: 100000 });
+    const frame = document.querySelector('iframe');
+    ds().apply({ ...state, ownMarks: { tokens: { accent: [2] }, components: { Button: [1] }, sections: {} } });
+    expect(document.querySelector('iframe')).toBe(frame);
+    expect(document.querySelector('button.swatch .badge')?.textContent).toBe('2');
+    expect(document.querySelector('[data-component="Button"] .badge')?.textContent).toBe('1');
+  });
+});

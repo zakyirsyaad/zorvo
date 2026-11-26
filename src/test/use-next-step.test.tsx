@@ -34,6 +34,7 @@ function setup(over: Partial<NextStepArgs> = {}) {
     messages,
     isBusy: false,
     isWaiting: false,
+    canResume: false,
     blockedReason: undefined,
     pullRequest: null,
     tasks: [],
@@ -107,6 +108,23 @@ describe("useNextStep", () => {
     const wrote = setup({ messages: [USER, edited] });
     await waitFor(() => expect(wrote.hook.result.current).not.toBeNull());
     expect(wrote.hook.result.current?.turnChanged).toBe(true);
+  });
+
+  it("stays active for an ended session a press can continue, as after a restart", async () => {
+    const ended: Session = { ...SESSION, status: "terminated", acpSessionId: "acp-1", endedAt: 5 };
+    const { hook, send, resolve, messages } = setup({ session: ended, sessions: [ended], canResume: true });
+    await waitFor(() => expect(hook.result.current?.facts.changes).toBeDefined());
+    act(() => hook.result.current?.onPress({ kind: "reply", label: "Not yet", message: "Not yet" }));
+    expect(send).toHaveBeenCalledWith("s-1", "Not yet");
+    await act(async () => resolve(true));
+    expect(messages()[1].nextStep?.answered?.label).toBe("Not yet");
+  });
+
+  it("is null for an ended session that cannot be continued, or one that is archived", () => {
+    const ended: Session = { ...SESSION, status: "terminated", acpSessionId: "acp-1", endedAt: 5 };
+    expect(setup({ session: ended, sessions: [ended], canResume: false }).hook.result.current).toBeNull();
+    const archived: Session = { ...ended, archivedAt: 6 };
+    expect(setup({ session: archived, sessions: [archived], canResume: true }).hook.result.current).toBeNull();
   });
 
   it("passes on why Send is blocked", async () => {

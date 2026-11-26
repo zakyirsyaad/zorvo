@@ -4,9 +4,18 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.21.1] - 2026-11-26
+
+### Fixed
+
+- **The next-step box survives a restart.** After Zorvo restarted, the box under a session's last turn went inert or disappeared, since every session reads ended then. It now stays usable while the session can be continued, and a press continues the session with that message, as Send would.
+
+## [0.21.0] - 2026-11-26
+
 ### Added
 
 - **Agents can make videos.** Ask any agent for a video or motion graphics and it writes a composition (a page that moves, with a `motion.json`), shows it beside the chat with a play head, checks stills with motion blur, and renders MP4s of every format you asked for, with sound only when you ask. Zorvo renders with WebKit and AVFoundation on your Mac: nothing is downloaded, and the preview is the same engine as the video. Export saves one format or all of them.
+- **The website shows Zorvo's download numbers.** A Numbers section right after Community shows installer downloads, self-updates and releases since the first one, with a chart of installer downloads by release day, all read from GitHub Releases when the site is built. Zorvo sends no telemetry, and the section says these are the only numbers there are. The quotes section is redrawn with one large quote and a highlighted phrase; it stays hidden until it has real quotes.
 - **Tell us how Zorvo works for you.** The website links to a short feedback form on GitHub, from the footer and from the Community section. It asks whether you still use Zorvo and what got in your way.
 - **Videos play in Zorvo.** An MP4 or MOV an agent shows (a Remotion render, say) gets a card in the chat and a player in Output, and the Files viewer plays videos in your project.
 - **Discard changes to a single file.** Each file in the Changes tab has a two-click Discard (or Delete, for new files) action to undo edits or remove an untracked file without leaving the inspector.
@@ -562,7 +571,9 @@ Tagged but never published; its fix shipped in 0.11.2.
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.20.1...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.21.1...HEAD
+[0.21.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.21.0...v0.21.1
+[0.21.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.20.1...v0.21.0
 [0.20.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.20.0...v0.20.1
 [0.20.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.18.0...v0.19.0

@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+
+- **A reloaded window no longer keeps an artifact drawn over the chat.** When Zorvo's window reloaded, the page, canvas or video shown in the Artifacts tab stayed on screen at its old place, over the chat, with nothing that could close it. A reload now closes it, as it already closed the Browser panel's pages.
+
 ## [0.21.2] - 2026-11-26
 
 ### Fixed

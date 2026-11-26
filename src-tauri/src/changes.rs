@@ -314,7 +314,7 @@ fn bounded(diff: String, is_cut: bool) -> String {
 }
 
 /// True for a plain relative path inside the repository.
-fn is_inside(path: &str) -> bool {
+pub(crate) fn is_inside(path: &str) -> bool {
     let path = Path::new(path);
     !path.as_os_str().is_empty() && path.components().all(|c| matches!(c, Component::Normal(_)))
 }
@@ -417,7 +417,7 @@ pub fn commit_session_changes(
 
 /// Removes an untracked or newly staged file (or symlink) from `toplevel`, verifying the
 /// parent stays inside `toplevel` and never following symlinks or deleting directories.
-fn remove_worktree_file(toplevel: &Path, rel_path: &str) -> Result<(), String> {
+pub(crate) fn remove_worktree_file(toplevel: &Path, rel_path: &str) -> Result<(), String> {
     if !is_inside(rel_path) {
         return Err(format!("{rel_path} is not a file in this repository"));
     }

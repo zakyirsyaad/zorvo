@@ -1,4 +1,5 @@
 import type { ModelPrice } from "../lib/private-credits";
+import type { RewindOptions } from "../hooks/useSessionRewind";
 import type { NextStepView } from "./chat/NextStepBox";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ArrowDown } from "lucide-react";
@@ -89,7 +90,7 @@ export interface ChatCanvasProps {
   /** Which conversation is shown; switching starts at its newest output. */
   conversationId?: string;
   /** Starts again from before one of your messages; Rewind is offered only when given. */
-  onRewind?: (messageId: string) => void;
+  onRewind?: (messageId: string, options?: RewindOptions) => void;
   /** Shown above the conversation, e.g. the folder and branch the session works in. */
   header?: ReactNode;
   /** B's quiet line above its first message: who delegated this session. */
@@ -228,7 +229,10 @@ export function ChatCanvas({
   // These take the message id, so every row gets the same function and an
   // unchanged row is not re-rendered when the host makes a new closure.
   const handleFork = useCallback((id: string) => onForkRef.current?.(id), [onForkRef]);
-  const handleRewind = useCallback((id: string) => onRewindRef.current?.(id), [onRewindRef]);
+  const handleRewind = useCallback(
+    (id: string, options?: RewindOptions) => (options ? onRewindRef.current?.(id, options) : onRewindRef.current?.(id)),
+    [onRewindRef],
+  );
   const handleChooseOption = useCallback(
     (cardId: string, optionId: string, answers?: Record<string, string>) =>
       answers ? onChooseOptionRef.current?.(cardId, optionId, answers) : onChooseOptionRef.current?.(cardId, optionId),

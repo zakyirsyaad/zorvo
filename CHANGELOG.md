@@ -7,6 +7,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 ### Added
 
 - **Discard changes to a single file.** Each file in the Changes tab has a two-click Discard (or Delete, for new files) action to undo edits or remove an untracked file without leaving the inspector.
+- **Restore files when rewinding a chat.** Zorvo takes a lightweight git snapshot before each turn (leaving your index, stash and gitignored files untouched), so Rewind offers a two-click **Rewind + files?** option to bring the repository back to how it was before that message.
 
 ## [0.20.1] - 2026-11-25
 

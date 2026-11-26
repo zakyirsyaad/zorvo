@@ -1,8 +1,15 @@
 import { useRef, useState } from 'react';
 import { keptConfigOf, type AcpChoices, type RewoundOptions } from '../lib/acp-draft';
+import { restoreTurnCheckpoint } from '../lib/turn-checkpoints';
 import type { AcpEngine, FirstMessage } from './session-engine/useAcpEngine';
+import type { NoticeTone } from './useNotice';
 import { writeConversationHandoff } from '../lib/session-handoff';
 import type { AgentProfile, ChatMessage, Session } from '../types';
+
+export interface RewindOptions {
+  /** Also restore the repository's non-ignored files to the pre-turn checkpoint on this message. */
+  restoreFiles?: boolean;
+}
 
 export interface SessionRewindDeps {
   agents: readonly AgentProfile[];
@@ -14,14 +21,16 @@ export interface SessionRewindDeps {
   onRestore: (sessionId: string, text: string, attachments?: readonly string[]) => void;
   /** Gives a message that did not reach the agent back to the composer of the session it was written for. */
   onGiveBack: (sessionId: string, text: string, attachments?: readonly string[]) => void;
-  onNotice: (message: string) => void;
+  onNotice: (message: string, tone?: NoticeTone) => void;
   /** Called once a rewind is done, never when it failed part way. */
   onRewound?: (sessionId: string) => void;
+  /** Called after files are restored to reload the Changes panel. */
+  onFilesRestored?: () => void;
 }
 
 export interface SessionRewind {
   /** Takes an ACP session back to before one of the user's messages, which returns to the composer. */
-  rewind: (session: Session, messageId: string) => void;
+  rewind: (session: Session, messageId: string, options?: RewindOptions) => void;
   /** Continues a rewound session: a fresh agent is handed the conversation left, then gets the message. */
   restart: (session: Session, message: FirstMessage, choices: AcpChoices) => Promise<void>;
   /** True while a restart writes its handoff, before the agent starts: the session takes no other message. */
@@ -45,12 +54,15 @@ const before = (messages: readonly ChatMessage[], messageId: string): ChatMessag
  * Rewinds a session in place. An agent cannot forget part of a conversation,
  * so its agent is ended and the session cannot be resumed; the next message
  * starts a fresh agent for the same session, handed what is left of the
- * conversation in a file. Files the agent changed stay as they are.
+ * conversation in a file. When `restoreFiles` is requested and the message has a
+ * checkpoint, repository files are restored once the old agent has stopped.
  */
 export function useSessionRewind(deps: SessionRewindDeps): SessionRewind {
-  const { agents, transcripts, acp, patchSession, updateMessages, onRestore, onGiveBack, onNotice, onRewound } = deps;
+  const { agents, transcripts, acp, patchSession, updateMessages, onRestore, onGiveBack, onNotice, onRewound, onFilesRestored } = deps;
   // A fresh agent for a session waits until its old one is gone: a late stop would end the new one.
   const stopsRef = useRef(new Map<string, Promise<boolean>>());
+  // A fresh agent also waits until any in-flight checkpoint file restoration has finished.
+  const restoresRef = useRef(new Map<string, Promise<void>>());
   // Read and written at once, so a second send cannot start a second agent.
   const restartingRef = useRef(new Set<string>());
   const cancelledRef = useRef(new Set<string>());
@@ -66,7 +78,7 @@ export function useSessionRewind(deps: SessionRewindDeps): SessionRewind {
     setRestarting(new Set(restartingRef.current));
   };
 
-  const rewind = (session: Session, messageId: string) => {
+  const rewind = (session: Session, messageId: string, options?: RewindOptions) => {
     const message = transcripts[session.id]?.find((m) => m.id === messageId);
     if (message?.role !== 'user') return;
     // Done at once, while this session is still the one shown: its message goes
@@ -94,6 +106,29 @@ export function useSessionRewind(deps: SessionRewindDeps): SessionRewind {
     updateMessages(session.id, (prev) => before(prev, messageId));
     onRestore(session.id, message.content, message.attachments);
     onRewound?.(session.id);
+
+    if (options?.restoreFiles && message.checkpoint) {
+      const checkpoint = message.checkpoint;
+      const restoring = (async () => {
+        await stopsRef.current.get(session.id);
+        try {
+          const changed = await restoreTurnCheckpoint(session.cwd, checkpoint);
+          onFilesRestored?.();
+          onNotice(
+            changed === 0
+              ? 'Rewound chat. No file changes needed restoring.'
+              : `Rewound chat and restored ${changed} ${changed === 1 ? 'file' : 'files'}.`,
+            'info',
+          );
+        } catch (error) {
+          onNotice(`Rewound chat, but could not restore files: ${String(error)}`);
+        }
+      })();
+      restoresRef.current.set(session.id, restoring);
+      void restoring.finally(() => {
+        if (restoresRef.current.get(session.id) === restoring) restoresRef.current.delete(session.id);
+      });
+    }
   };
 
   /** The handoff a fresh agent reads first; undefined when nothing is left of the conversation. */
@@ -121,6 +156,7 @@ export function useSessionRewind(deps: SessionRewindDeps): SessionRewind {
         return;
       }
       await stopsRef.current.get(session.id);
+      await restoresRef.current.get(session.id);
       if (cancelledRef.current.delete(session.id)) return;
       rewoundOptionsRef.current.delete(session.id);
       // Continuing an archived session brings it back into the list.

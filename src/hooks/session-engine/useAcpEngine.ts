@@ -34,6 +34,7 @@ import { elicitationActions, type InFlightAnswer } from './elicitation-actions';
 import { privateModelIdOf, privateOpenError, privateSessionCapOf, withoutModelChanges, type CreditsOutReason } from '../../lib/private-session';
 import { privateOpenOutcome, privateTurnRefusal } from './private-engine';
 import { isCommandsUpdate, sessionTitleOf, turnEndNotice } from './update-readers';
+import { createTurnCheckpoint } from '../../lib/turn-checkpoints';
 
 /** The message a session starts (or resumes) with. */
 export interface FirstMessage {
@@ -434,13 +435,32 @@ export function useAcpEngine({
     onPromptStarted?.(sessionId);
     unsettledTurn.current.add(sessionId);
     settledByExit.current.delete(sessionId);
-    lastPromptRef.current.set(sessionId, { message, context: carried, ...(toolsDue ? { toolsContext: toolsDue } : {}) });
+    const cwd = sessionsRef.current.find((session) => session.id === sessionId)?.cwd;
+    let promptMessage = message;
+    lastPromptRef.current.set(sessionId, { message: promptMessage, context: carried, ...(toolsDue ? { toolsContext: toolsDue } : {}) });
     // A new turn starts: the failure of the last one no longer applies.
     failedPromptRef.current.delete(sessionId);
     onTurnFailed?.(sessionId, null);
+    if (cwd && !promptMessage.checkpoint) {
+      const checkpoint = await createTurnCheckpoint(cwd);
+      if (isStopped(sessionId)) {
+        unsettledTurn.current.delete(sessionId);
+        if (lastPromptRef.current.get(sessionId)?.message.id === promptMessage.id) {
+          lastPromptRef.current.delete(sessionId);
+        }
+        return false;
+      }
+      if (checkpoint) {
+        promptMessage = { ...promptMessage, checkpoint };
+        if (lastPromptRef.current.get(sessionId)?.message.id === promptMessage.id) {
+          lastPromptRef.current.set(sessionId, { message: promptMessage, context: carried, ...(toolsDue ? { toolsContext: toolsDue } : {}) });
+        }
+        updateNow(sessionId, (prev) => prev.map((m) => (m.id === promptMessage.id ? { ...m, checkpoint } : m)));
+      }
+    }
     const hidden = toolsDue ? withToolsContext(carried, toolsDue) : carried;
     try {
-      await acp.prompt(sessionId, hidden ? `${hidden}\n\n${message.content}` : message.content, message.attachments);
+      await acp.prompt(sessionId, hidden ? `${hidden}\n\n${promptMessage.content}` : promptMessage.content, promptMessage.attachments);
       // Only now: a refused prompt leaves it due for the next message. A turn that fails
       // later puts it back (see `onTurnEnd`).
       if (toolsDue) toolsContextDueRef.current.delete(sessionId);

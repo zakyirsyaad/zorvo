@@ -635,6 +635,7 @@ export default function App() {
   const sessionById = (sessionId: string) => sessions.find((s) => s.id === sessionId);
   const { rewind, restart, isRestarting, cancelRestart, rewoundOptionsOf } = useSessionRewind({
     onRewound: (sessionId) => queueRewoundRef.current(sessionId),
+    onFilesRestored: () => inspector.changes.reload(),
     agents,
     transcripts,
     acp,
@@ -1590,7 +1591,7 @@ export default function App() {
                         isComposerDisabled,
                         isHeldElsewhere: review.isHeldFor(activeSessionId),
                       })}
-                      onRewind={(messageId) => { compareRun.dropSignIn(activeSessionId); void rewind(activeSession, messageId); }}
+                      onRewind={(messageId, options) => { compareRun.dropSignIn(activeSessionId); void rewind(activeSession, messageId, options); }}
                       // The sidebar and the top bar say where a session runs; only an imported
                       // session's note sits above its first message.
                       header={

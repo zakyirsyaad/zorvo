@@ -507,6 +507,8 @@ export interface ChatMessage {
   nextStep?: NextStep;
   /** Set on a turn's last reply when the turn ended with `end_turn`: only those get a next-step box. */
   endedNormally?: true;
+  /** Git tree snapshot captured right before this user message's turn, for optional file restore on rewind. */
+  checkpoint?: string;
 }
 
 /** An action a next-step box can offer; the agent may pick one of them in `wrap_up`. */

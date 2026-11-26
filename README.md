@@ -34,13 +34,14 @@
   <img src="docs/assets/zorvo-reel.gif" alt="A short tour of Zorvo: one prompt sent to four agents, keeping the best result, handing a task to another agent, and reviewing a diff line by line." width="600">
 </p>
 
-**New in 0.20:** the Browser tab can take the whole window, and an agent can
-upload a file to a page you are signed in to, once you approve the files and
-the site. A round arrow over the message box brings you back to the newest
-message. 0.19 added a box under a finished turn with the agent's recap and
-buttons for the next step, such as Commit or Create PR. From 0.14.1, Zorvo is
-signed and notarized by Apple, so macOS opens it like any other app you
-download. The [changelog](CHANGELOG.md) has the rest.
+**New in 0.21:** agents can make videos. Ask for motion graphics and the agent
+writes a composition, previews it beside the chat and renders MP4s on your Mac.
+Rewind can put back the files the agent changed, and each file in the Changes
+tab has its own Discard. 0.20 let the Browser tab take the whole window, and
+0.19 added a box under a finished turn with the agent's recap and buttons for
+the next step, such as Commit or Create PR. From 0.14.1, Zorvo is signed and
+notarized by Apple, so macOS opens it like any other app you download. The
+[changelog](CHANGELOG.md) has the rest.
 
 > **NEAR hackathon judges:** start with [docs/hackathon/README.md](docs/hackathon/README.md). The
 > submitted state is the tag
@@ -126,8 +127,9 @@ download. The [changelog](CHANGELOG.md) has the rest.
   **Deny** ends the request.
 - **Agents can open sessions.** An agent can open a new session from a brief
   it writes: in the same folder, in a worktree of its own, or in another
-  folder Zorvo knows, which asks every time. At most three sessions an agent
-  opened work at once, and you stay in the session you are in.
+  folder Zorvo knows, which asks every time. At most four sessions and
+  helpers an agent started work at once, and you stay in the session you are
+  in.
 - **Follow subagents and commands.** A subagent or a shell command an agent
   started opens as a tab beside the chat. With Claude Code and Qwen Code you
   see a subagent's steps as they arrive.
@@ -178,6 +180,13 @@ Private mode is off until you turn it on, and works with Qwen Code.
   screen in your repository, or **Export** artboards as PNG or PDF. The canvas
   is a folder in your project (`canvas.json` and one HTML file per artboard),
   so git keeps it and deleting the session keeps it.
+- **Videos made on your Mac.** Ask an agent for a video or motion graphics and
+  it writes a composition (a page that moves, with a `motion.json`) in your
+  project. Zorvo previews it beside the chat with a play head, and renders an
+  MP4 of each format you asked for, with sound only when you ask. **Export**
+  saves one format or all of them. A video an agent shows, such as a Remotion
+  render, plays in the chat's card and the Artifacts tab, and the Files tab
+  plays the videos in your project.
 - **Reply to part of a reply.** Select text in the chat to copy it, or press
   **Reply** to quote it in your next message.
 - **Read back without losing your place.** The chat follows the agent's reply
@@ -207,8 +216,10 @@ Private mode is off until you turn it on, and works with Qwen Code.
   files git says changed that it did not report. It is the agent's own report,
   and it says so.
 - **See every change.** The Changes tab shows each changed file with its counts
-  and diff, and lets you commit the files you choose. The full diff review opens
-  in the chat's place, with the files listed on the left.
+  and diff, and lets you commit the files you choose. **Discard** (or
+  **Delete**, for a new file) undoes one file, after a second click to confirm.
+  The full diff review opens in the chat's place, with the files listed on the
+  left.
 - **Comment on lines of a diff.** Leave comments on the lines an agent changed,
   in the Changes tab or the full review, add them to your message, read or edit
   it, and send it. The agent gets each comment with its file, its line and the
@@ -220,8 +231,8 @@ Private mode is off until you turn it on, and works with Qwen Code.
   </p>
 
 - **Know when an agent is stuck.** If an agent reports failed requests, or has
-  sent nothing for a minute, Zorvo says so under **Working…**, with a Stop
-  button. If the agent has not stopped ten seconds after **Stop**, **End
+  sent nothing for three minutes (five while a command or tool runs), Zorvo
+  says so under **Working…**, with a Stop button. If the agent has not stopped ten seconds after **Stop**, **End
   agent** ends its process.
 - **Follow your pull requests.** The session's overview lists every pull
   request the agent opened in it, newest first, with how its checks stand; the
@@ -242,7 +253,9 @@ Private mode is off until you turn it on, and works with Qwen Code.
   "Waiting for you", "Finished, unread"). Rename, pin and archive them, or open
   one in its own window. **Hide sidebar** gives the chat the whole window.
 - **Fork and rewind.** Fork any reply into a new session, or rewind to before
-  one of your messages and send it again, edited.
+  one of your messages and send it again, edited. **Rewind + files** also puts
+  back the files the agent reported changing since that message, from a git
+  snapshot Zorvo takes before each turn.
 - **Worktrees.** Run a session in its own git worktree on an `agent/<title>`
   branch, so agents in the same repository never edit the same files.
 - **A terminal where the agent works.** The inspector's **Terminal** tab opens
@@ -397,7 +410,9 @@ in the other. macOS asks again for notification and folder permissions.
    - **Fork** under any reply starts a new session from there.
    - **Rewind** under one of your messages takes the conversation back to
      before it and puts the message in the composer to edit. Files the agent
-     changed stay as they are.
+     changed stay as they are, unless you choose **Rewind + files**, which
+     puts back the files it reported changing. Nothing else in the repository
+     is touched.
 
 Each session starts in the safest permission mode its agent offers (its
 **Default**, **Manual**, **Ask** or **Read-only** mode), so the agent asks
@@ -464,6 +479,15 @@ before it edits files or runs commands. Pick another mode in the composer.
   Zorvo keeps only a list of the canvases a session showed and pictures of
   the artboards on this Mac, and removes a picture no canvas has used for 30
   days.
+- **Videos are rendered on this Mac.** Zorvo draws each frame with WebKit and
+  encodes it with AVFoundation, so rendering downloads nothing. A composition
+  loads the same script and font hosts as a page, and the rendered files stay
+  in the composition's `out/` folder in your project.
+- **Rewind's snapshots stay in your repository.** Before each turn Zorvo
+  records the files git does not ignore (leaving out untracked files over
+  5 MB) in your repository's own git objects. Taking a snapshot leaves your
+  index, your branch and your stash alone; a restore writes only the files
+  the agent reported changing.
 - **No telemetry.** Zorvo sends nothing about you or your work anywhere.
 - **Browser pages.** The Browser inspector loads the HTTP(S) pages you or your agent choose, and their subresources, in a separate WebKit view. Submitted address-bar search text goes to Google. The chat's own webview keeps its network restrictions. Each session has an in-memory browser store; different sessions do not share it. Agents need a browser session grant. An agent's file upload needs a separate approval that names the files and the receiving site; the files must be in the session's folder, and Zorvo sends a private copy of them, never more than 5 MB at once. Chromium debug opens an isolated Chrome or Brave window; its tabs and cookies are separate from WebKit. Optional Lighthouse tools are installed from npm with a pinned integrity lockfile after you click Install audit tools; an audit uses a fresh Chromium profile and a temporary loopback debugging endpoint.
 - **Other connections, all named.** Outside the browser pages, Zorvo itself contacts only:
@@ -549,6 +573,10 @@ others.
 
 ## Feedback and security
 
+- **Tell us how Zorvo works for you.** The
+  [feedback form](https://github.com/zakyirsyaad/zorvo/issues/new?template=feedback.yml)
+  asks whether you still use Zorvo and what got in your way. Short answers are
+  fine.
 - **Found a problem or have an idea?**
   [Open an issue](https://github.com/zakyirsyaad/zorvo/issues/new/choose).
   Never paste API keys, tokens or other secrets into an issue.

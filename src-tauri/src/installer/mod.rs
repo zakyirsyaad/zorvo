@@ -138,13 +138,17 @@ pub fn installed_tools() -> InstalledTools {
 }
 
 /// [`user_cli_versions`] for the CLIs on the login shell's `PATH`, found the
-/// way the resolver finds them.
+/// way the resolver finds them, on the same `PATH` as
+/// `profiles::with_system_tools`.
 fn user_cli_versions_on_path() -> BTreeMap<String, String> {
-    let env = cached_user_env().unwrap_or_else(|_| std::env::vars().collect());
-    let Some(path_var) = env.get("PATH") else {
+    let path_var = cached_user_env()
+        .ok()
+        .and_then(|env| env.get("PATH").cloned())
+        .or_else(|| std::env::var("PATH").ok());
+    let Some(path_var) = path_var else {
         return BTreeMap::new();
     };
-    user_cli_versions(|program| first_user_program(program, path_var))
+    user_cli_versions(|program| first_user_program(program, &path_var))
 }
 
 #[cfg(test)]

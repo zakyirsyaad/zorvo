@@ -116,7 +116,8 @@ static VERSIONS: std::sync::LazyLock<VersionCache> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 /// The version `path` reports, asking it only when the file changed since the
-/// last answer, or a failed answer is over [`FAILED_PROBE_RETRY`] old.
+/// last answer, or a failed answer is over [`FAILED_PROBE_RETRY`] old. The
+/// cache is not held while the program runs, so other callers never wait on it.
 fn version_with(
     cache: &VersionCache,
     path: &Path,
@@ -124,10 +125,12 @@ fn version_with(
     probe: impl FnOnce(&Path) -> Option<String>,
 ) -> Option<String> {
     let current = fingerprint(path)?;
-    let mut versions = cache
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    if let Some(known) = versions.get(path) {
+    let lock = || {
+        cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    };
+    if let Some(known) = lock().get(path) {
         let is_fresh =
             known.version.is_some() || now.saturating_duration_since(known.at) < FAILED_PROBE_RETRY;
         if known.fingerprint == current && is_fresh {
@@ -135,7 +138,7 @@ fn version_with(
         }
     }
     let version = probe(path);
-    versions.insert(
+    lock().insert(
         path.to_path_buf(),
         Probed {
             fingerprint: current,

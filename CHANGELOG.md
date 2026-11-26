@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Changed
+
+- **Fewer false "may be stuck" warnings.** An agent that sends nothing is now flagged after three minutes instead of one, since a model thinking at a high effort (Gemini in Antigravity, say) often works quietly for over a minute.
+
 ## [0.20.1] - 2026-11-25
 
 ### Fixed

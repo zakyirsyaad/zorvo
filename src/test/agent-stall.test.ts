@@ -211,8 +211,10 @@ describe("stallNoticeText", () => {
 
   it("falls back to how long the agent has been silent, with no guess at the cause", () => {
     // "It may be stuck" is the spec's line: it says what you may see, not why.
-    expect(stallNoticeText("Gemini CLI", { silentForMs: 59_999 })).toBeNull();
-    expect(stallNoticeText("Gemini CLI", { silentForMs: 60_000 })).toBe("Gemini CLI hasn't sent anything for 1 minute. It may be stuck.");
+    // A model thinking at a high effort sends nothing for over a minute: that is not yet worth a word.
+    expect(stallNoticeText("Gemini CLI", { silentForMs: 120_000 })).toBeNull();
+    expect(stallNoticeText("Gemini CLI", { silentForMs: 179_999 })).toBeNull();
+    expect(stallNoticeText("Gemini CLI", { silentForMs: 180_000 })).toBe("Gemini CLI hasn't sent anything for 3 minutes. It may be stuck.");
     expect(stallNoticeText("Gemini CLI", { silentForMs: 185_000 })).toBe("Gemini CLI hasn't sent anything for 3 minutes. It may be stuck.");
   });
 
@@ -293,8 +295,8 @@ describe("stallNoticeParts", () => {
       title: "Codex's requests failed 3 times in a row.",
       body: undefined,
     });
-    expect(stallNoticeParts("Codex", { silentForMs: 120_000 })).toEqual({
-      title: "Codex hasn't sent anything for 2 minutes.",
+    expect(stallNoticeParts("Codex", { silentForMs: 240_000 })).toEqual({
+      title: "Codex hasn't sent anything for 4 minutes.",
       body: "It may be stuck.",
     });
     expect(stallNoticeParts("Codex", { silentForMs: 1_000 })).toBeNull();

@@ -65,9 +65,9 @@ describe("stats section", () => {
   });
 
   it("says when the counts were read, and that they are a snapshot when GitHub could not be reached", () => {
-    expect(render().body.textContent).toContain("GitHub could not be reached when this page was built");
+    expect(render().body.textContent).toContain("GitHub's counts could not be read when this page was built");
     const live = render(read(withNewer({})));
-    expect(live.body.textContent).not.toContain("could not be reached");
+    expect(live.body.textContent).not.toContain("could not be read");
     expect(live.body.textContent).toContain("1 Dec 2026");
   });
 });

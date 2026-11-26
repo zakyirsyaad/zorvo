@@ -25,7 +25,7 @@ export function Stats({ stats = releaseStats() }: { stats?: ReleaseStats }) {
           </p>
           {stats.isFallback && (
             <p className="rounded-xl border border-attention-border bg-attention-surface px-4 py-3 text-[14px] leading-5.5 text-fg-secondary">
-              GitHub could not be reached when this page was built. These are the counts read on {formatDay(stats.readOn)}.
+              GitHub&apos;s counts could not be read when this page was built. These are the counts read on {formatDay(stats.readOn)}.
             </p>
           )}
         </header>

@@ -74,7 +74,8 @@ async function readReleases(): Promise<Published | undefined> {
           for (const asset of release.assets) {
             if (asset.name.endsWith(".dmg")) total += asset.download_count;
           }
-          if (release.draft || !release.published_at) continue;
+          // A prerelease's tag (v1.0.0-beta.1) is not one lib/release-stats.ts accepts, and one would drop the whole read.
+          if (release.draft || release.prerelease || !release.published_at) continue;
           perRelease.push({
             tag: release.tag_name,
             publishedOn: release.published_at.slice(0, 10),

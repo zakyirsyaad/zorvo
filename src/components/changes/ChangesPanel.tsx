@@ -104,40 +104,34 @@ function DiscardFileButton({
     ? `Permanently delete ${change.path}`
     : `Discard uncommitted changes to ${change.path}`;
 
-  if (isConfirming) {
-    return (
-      <button
-        type="button"
-        disabled={disabled}
-        aria-label={confirmLabel}
-        title={confirmTitle}
-        onClick={() => {
-          setIsConfirming(false);
-          onDiscard();
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            e.stopPropagation();
-            setIsConfirming(false);
-          }
-        }}
-        className="relative z-10 shrink-0 cursor-pointer rounded-sm bg-danger-surface px-1.5 py-0.5 text-micro font-medium text-danger focus-ring disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        {confirmWord}
-      </button>
-    );
-  }
-
+  // One button for both steps, so keyboard focus stays on it when it asks to confirm and after.
   return (
     <button
       type="button"
       disabled={disabled}
-      onClick={() => setIsConfirming(true)}
-      aria-label={idleLabel}
-      title={idleLabel}
-      className="relative z-10 inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-surface-hover hover:text-danger focus-ring disabled:cursor-not-allowed disabled:opacity-40"
+      aria-label={isConfirming ? confirmLabel : idleLabel}
+      title={isConfirming ? confirmTitle : idleLabel}
+      onClick={() => {
+        if (!isConfirming) {
+          setIsConfirming(true);
+          return;
+        }
+        setIsConfirming(false);
+        onDiscard();
+      }}
+      onKeyDown={(e) => {
+        if (isConfirming && e.key === "Escape") {
+          e.stopPropagation();
+          setIsConfirming(false);
+        }
+      }}
+      className={
+        isConfirming
+          ? "relative z-10 shrink-0 cursor-pointer rounded-sm bg-danger-surface px-1.5 py-0.5 text-micro font-medium text-danger focus-ring disabled:cursor-not-allowed disabled:opacity-40"
+          : "relative z-10 inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-surface-hover hover:text-danger focus-ring disabled:cursor-not-allowed disabled:opacity-40"
+      }
     >
-      <Undo2 size={12} aria-hidden="true" />
+      {isConfirming ? confirmWord : <Undo2 size={12} aria-hidden="true" />}
     </button>
   );
 }

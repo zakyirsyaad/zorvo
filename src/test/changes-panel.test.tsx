@@ -227,6 +227,14 @@ describe("ChangesPanel", () => {
     expect(props.onReload).toHaveBeenCalled();
   });
 
+  it("keeps keyboard focus on the discard button while it asks to confirm", () => {
+    renderPanel();
+    const button = screen.getByRole("button", { name: "Discard changes to src/app.ts" });
+    button.focus();
+    fireEvent.click(button);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Confirm discard src/app.ts" }));
+  });
+
   it("cancels discard confirmation on Escape without invoking the backend", () => {
     const spy = vi.spyOn(tauriInternals(), "invoke").mockResolvedValue(undefined);
     renderPanel();

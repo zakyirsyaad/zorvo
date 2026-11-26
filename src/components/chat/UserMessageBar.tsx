@@ -79,7 +79,7 @@ function RewindButton({ onRewind, canRestoreFiles = false }: { onRewind: (option
           }}
           onKeyDown={onConfirmKeyDown}
           aria-label="Confirm rewind and restore files"
-          title="Remove this message and everything after it, and restore files to before this message"
+          title="Remove this message and everything after it, and put back the files the agent changed since"
           className={CONFIRM_BUTTON}
         >
           Rewind + files?

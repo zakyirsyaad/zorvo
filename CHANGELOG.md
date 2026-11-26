@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Changed
+
+- **The folded session overview is a smaller pill.** It no longer repeats the lines added and removed, which the top bar already shows; it says how many tasks run, or Overview.
+
 ## [0.22.0] - 2026-11-26
 
 ### Added

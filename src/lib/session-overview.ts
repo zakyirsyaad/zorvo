@@ -195,15 +195,7 @@ export function overviewOf(inputs: OverviewInputs): Overview {
   };
 }
 
-/** The collapsed pill's words: "3 running · +42 −11", each part left out when it is zero. */
-export function pillParts(runningCount: number, changes: { added: number; removed: number } | null): {
-  running: string | null;
-  added: number;
-  removed: number;
-} {
-  return {
-    running: runningCount > 0 ? `${runningCount} running` : null,
-    added: changes?.added ?? 0,
-    removed: changes?.removed ?? 0,
-  };
+/** The folded card's words: how many tasks run, or null when none does. */
+export function pillRunning(runningCount: number): string | null {
+  return runningCount > 0 ? `${runningCount} running` : null;
 }

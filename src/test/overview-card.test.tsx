@@ -190,7 +190,8 @@ describe("OverviewCard", () => {
       />,
     );
     expect(screen.queryByRole("region", { name: "Session overview" })).toBeNull();
-    const pill = screen.getByRole("button", { name: "Expand session overview: 3 running, 42 lines added, 11 removed" });
+    const pill = screen.getByRole("button", { name: "Expand session overview: 3 running" });
+    expect(pill.textContent).not.toMatch(/\+42|−11/);
     fireEvent.click(pill);
     expect(onToggleCollapsed).toHaveBeenCalledTimes(1);
   });

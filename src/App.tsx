@@ -727,6 +727,8 @@ export default function App() {
   const {
     sessionArtifacts,
     sessionCanvases,
+    sessionMotions,
+    sessionVideos,
     createdFiles,
     onArtifactShown,
     gallery,
@@ -1967,6 +1969,8 @@ export default function App() {
                     onError={reportError}
                     onNotice={setNotice}
                     canvases={sessionCanvases}
+                    motions={sessionMotions}
+                    videos={sessionVideos}
                     turnsEnded={turnsEnded}
                     comments={artifactComments}
                     addReview={review.addArtifactReview}
@@ -2041,6 +2045,8 @@ export default function App() {
               sessionArtifacts={sessionArtifacts}
               createdFiles={createdFiles}
               sessionCanvases={sessionCanvases}
+              sessionMotions={sessionMotions}
+              sessionVideos={sessionVideos}
               artifactComments={artifactComments}
               onExpandArtifact={expandArtifact}
               canvasInsertText={canvasInsertText}

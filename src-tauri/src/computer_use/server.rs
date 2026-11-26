@@ -690,6 +690,10 @@ impl ScreenServer {
 }
 
 impl ScreenTools for ScreenServer {
+    fn offers(&self, tool: &str) -> bool {
+        crate::agent_tools::protocol::is_screen_tool(tool)
+    }
+
     fn call(&self, call: ScreenCall) {
         let Some(server) = self.me.upgrade() else {
             return;

@@ -61,7 +61,7 @@ function setup(show: (args: Record<string, unknown>) => unknown | Promise<unknow
     messagesOf: async () => [],
     stateOf: () => "idle",
     stopTurn: () => undefined,
-    onArtifactShown: (_sessionId: string, _shown: ShownArtifact | { kind: "canvas"; key: string }) => undefined,
+    onArtifactShown: (_sessionId: string, _shown: ShownArtifact | { kind: "canvas" | "motion" | "video"; key: string }) => undefined,
   };
   renderHook(() => useAgentTools(deps));
   const answers = () =>

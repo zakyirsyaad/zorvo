@@ -36,7 +36,7 @@ const CANVAS_READ = {
 
 function setup(show: (args: Record<string, unknown>) => unknown | Promise<unknown>, sessions: Session[] = [SESSION], queued?: (messages: Record<string, ChatMessage[]>) => void) {
   const messages: Record<string, ChatMessage[]> = { "s-1": [{ id: "m-1", role: "user", content: "show me", timestamp: 1 }] };
-  const shown: Array<{ sessionId: string; shown: ShownArtifact | { kind: "canvas"; key: string } }> = [];
+  const shown: Array<{ sessionId: string; shown: ShownArtifact | { kind: "canvas" | "motion" | "video"; key: string } }> = [];
   const notices: string[] = [];
   const spy = vi.spyOn(internals(), "invoke");
   // The same spy comes back on every call in one test: forget what an earlier setup saw.
@@ -252,5 +252,64 @@ describe("a card after text the agent already sent", () => {
     const env = setup(() => SHOWN, [SESSION], queuedReply);
     await env.call("c-1", "show_artifact", { path: "d", kind: "canvas" });
     expectCardAfterText(env.messages["s-1"]);
+  });
+});
+
+describe("motions and videos", () => {
+  const MOTION_READ = {
+    entry: { key: "m-0123456789abcdef", folder: "/w/promo", relative: "promo", title: "Promo", shownAt: 1, duration: 15, formats: ["wide"] },
+    title: "Promo",
+    duration: 15,
+    fps: 60,
+    poster: 5,
+    tracks: 0,
+    formats: [{ id: "wide", width: 1920, height: 1080, hasRender: false, isUpToDate: false }],
+    jobs: [],
+    error: null,
+    warnings: [],
+  };
+  const VIDEO = { key: "v-0123456789abcdef", path: "/w/out/reel.mp4", relative: "out/reel.mp4", title: "Reel", shownAt: 1 };
+
+  function withMedia(env: ReturnType<typeof setup>, answers: { motion?: unknown; video?: unknown }) {
+    const spy = vi.spyOn(internals(), "invoke");
+    spy.mockImplementation((cmd, args) => {
+      if (cmd === "motion_show") return answers.motion instanceof Error ? Promise.reject(answers.motion.message) : Promise.resolve(answers.motion);
+      if (cmd === "video_show") return Promise.resolve(answers.video);
+      return fakeTauriInvoke(cmd, args);
+    });
+    return { env, spy };
+  }
+
+  it("routes kind motion to motion_show, marks the chat and opens it", async () => {
+    const { env, spy } = withMedia(setup(() => SHOWN), { motion: MOTION_READ });
+    await env.call("c-1", "show_artifact", { path: "promo", kind: "motion" });
+    expect(spy.mock.calls.filter(([cmd]) => cmd === "motion_show").map(([, args]) => args)).toEqual([{ sessionId: "s-1", cwd: SESSION.cwd, path: "promo" }]);
+    expect(JSON.parse(env.answers()[0].text)).toMatchObject({ shown: true, motion: "m-0123456789abcdef", formats: ["wide"] });
+    expect(env.cards()).toEqual([{ kind: "motion", motionKey: "m-0123456789abcdef", title: "Promo", duration: 15, formats: 1 }]);
+    expect(env.shown).toEqual([{ sessionId: "s-1", shown: { kind: "motion", key: "m-0123456789abcdef" } }]);
+  });
+
+  it("routes kind video to video_show with its title", async () => {
+    const { env, spy } = withMedia(setup(() => SHOWN), { video: VIDEO });
+    await env.call("c-1", "show_artifact", { path: "out/reel.mp4", kind: "video", title: "Reel" });
+    expect(spy.mock.calls.filter(([cmd]) => cmd === "video_show").map(([, args]) => args)).toEqual([
+      { sessionId: "s-1", cwd: SESSION.cwd, path: "out/reel.mp4", title: "Reel" },
+    ]);
+    expect(env.cards()).toEqual([{ kind: "video", videoKey: "v-0123456789abcdef", title: "Reel" }]);
+  });
+
+  it("passes a motion refusal on and hides any other error", async () => {
+    const { env } = withMedia(setup(() => SHOWN), { motion: new Error("formats[0].width: must be even") });
+    await env.call("c-1", "show_artifact", { path: "promo", kind: "motion" });
+    expect(env.answers()).toEqual([{ callId: "c-1", ok: false, text: "formats[0].width: must be even" }]);
+    const other = withMedia(setup(() => SHOWN), { motion: new Error("/Users/me/private exploded") });
+    await other.env.call("c-2", "show_artifact", { path: "promo", kind: "motion" });
+    expect(other.env.answers()[0].text).not.toContain("/Users/me");
+  });
+
+  it("answers artifact_guide kind motion with the motion guide", async () => {
+    const env = setup(() => SHOWN);
+    await env.call("c-1", "artifact_guide", { kind: "motion" });
+    expect(env.answers()[0].text).toContain("motion.json");
   });
 });

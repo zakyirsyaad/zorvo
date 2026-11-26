@@ -50,6 +50,14 @@ pub struct ShownPage {
 pub enum ShownView {
     Page(ShownPage),
     Canvas(ShownCanvas),
+    Motion(ShownMotion),
+}
+
+/// A motion the view shows through Zorvo's preview wrapper.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShownMotion {
+    pub session_id: String,
+    pub key: String,
 }
 
 /// What decides whether the view is drawn.
@@ -109,6 +117,9 @@ thread_local! {
     /// The generation canvas marks were last run in, so only that view may say which an
     /// artboard could not find.
     static CANVAS_MARKS_SENT: Cell<u64> = const { Cell::new(0) };
+    /// The last state asked for a motion, as the script that applies it, run again once a view of
+    /// that motion has loaded.
+    static MOTION_STATE: RefCell<Option<(ShownMotion, String)>> = const { RefCell::new(None) };
 }
 
 /// Changes what decides the view's visibility and applies it. Main thread only.
@@ -132,6 +143,7 @@ fn mark_loaded(generation: u64) {
         });
         apply_page_state();
         apply_canvas_state();
+        apply_motion_state();
     }
 }
 
@@ -144,7 +156,7 @@ fn shown_view() -> Option<ShownView> {
 fn shown_page() -> Option<ShownPage> {
     match shown_view()? {
         ShownView::Page(page) => Some(page),
-        ShownView::Canvas(_) => None,
+        ShownView::Canvas(_) | ShownView::Motion(_) => None,
     }
 }
 
@@ -152,7 +164,7 @@ fn shown_page() -> Option<ShownPage> {
 fn shown_canvas() -> Option<ShownCanvas> {
     match shown_view()? {
         ShownView::Canvas(canvas) => Some(canvas),
-        ShownView::Page(_) => None,
+        ShownView::Page(_) | ShownView::Motion(_) => None,
     }
 }
 
@@ -359,6 +371,7 @@ pub fn is_showing(shown: Option<&ShownView>, session_id: &str, artifact_id: Opti
     let (session, id) = match shown {
         Some(ShownView::Page(page)) => (&page.session_id, &page.artifact_id),
         Some(ShownView::Canvas(canvas)) => (&canvas.session_id, &canvas.key),
+        Some(ShownView::Motion(motion)) => (&motion.session_id, &motion.key),
         None => return false,
     };
     session == session_id && artifact_id.is_none_or(|wanted| id == wanted)
@@ -485,6 +498,65 @@ pub fn apply_canvas(
     Ok(())
 }
 
+/// The motion the view on screen shows, when it shows one. Main thread only.
+fn shown_motion() -> Option<ShownMotion> {
+    match shown_view()? {
+        ShownView::Motion(motion) => Some(motion),
+        ShownView::Page(_) | ShownView::Canvas(_) => None,
+    }
+}
+
+/// Hands the motion wrapper on screen the last state asked for it. Main thread only.
+fn apply_motion_state() {
+    let Some(motion) = shown_motion() else {
+        return;
+    };
+    let script = MOTION_STATE.with(|state| {
+        state
+            .borrow()
+            .as_ref()
+            .filter(|(of, _)| *of == motion)
+            .map(|(_, script)| script.clone())
+    });
+    if let Some(script) = script {
+        evaluate(&script);
+    }
+}
+
+/// Shows a motion through Zorvo's preview wrapper in a new webview at `bounds`, ending any
+/// earlier one. The motion runtime runs in every frame; only the wrapper and that motion's files
+/// may be loaded.
+pub fn show_motion(
+    app: &AppHandle,
+    served: Arc<Served>,
+    motion: ShownMotion,
+    bounds: Bounds,
+) -> Result<(), String> {
+    let url = super::motion_protocol::motion_shell_url(&motion.session_id, &motion.key);
+    show_view(app, served, ShownView::Motion(motion), url, bounds)
+}
+
+/// Keeps `script` (the wrapper's `apply`) for `motion` and runs it now when that motion is shown
+/// and loaded; a view of it made or loaded later gets it then.
+pub fn apply_motion(app: &AppHandle, motion: ShownMotion, script: String) {
+    let _ = app.run_on_main_thread(move || {
+        let is_shown = shown_motion().as_ref() == Some(&motion);
+        MOTION_STATE.with(|state| *state.borrow_mut() = Some((motion, script.clone())));
+        if is_shown && DISPLAY.get().is_loaded {
+            evaluate(&script);
+        }
+    });
+}
+
+/// Runs one wrapper command (built from a fixed list) while that motion is shown and loaded.
+pub fn motion_command(app: &AppHandle, motion: ShownMotion, script: String) {
+    let _ = app.run_on_main_thread(move || {
+        if shown_motion().as_ref() == Some(&motion) && DISPLAY.get().is_loaded {
+            evaluate(&script);
+        }
+    });
+}
+
 /// Runs one of the wrapper's commands, only while that canvas is shown and loaded; a name
 /// outside the list is refused.
 pub fn canvas_command(app: &AppHandle, canvas: ShownCanvas, name: String) -> Result<(), String> {
@@ -541,6 +613,18 @@ fn show_view(
                                 navigation.borrow_mut().allows(&url, &rule)
                             })
                     }
+                    ShownView::Motion(motion) => wry::WebViewBuilder::new()
+                        .with_initialization_script_for_main_only(
+                            super::motion_protocol::MOTION_RUNTIME,
+                            false,
+                        )
+                        .with_navigation_handler(move |url| {
+                            super::motion_protocol::is_allowed_motion_navigation(
+                                &url,
+                                &motion.session_id,
+                                &motion.key,
+                            )
+                        }),
                 };
                 builder
                     .with_incognito(true)

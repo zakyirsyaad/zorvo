@@ -64,6 +64,8 @@ export interface AppInspectorPaneProps {
   sessionArtifacts: ComponentProps<typeof ArtifactsPanel>['artifacts'];
   createdFiles: NonNullable<ComponentProps<typeof ArtifactsPanel>['files']>;
   sessionCanvases: ComponentProps<typeof ArtifactsPanel>['canvases'];
+  sessionMotions?: ComponentProps<typeof ArtifactsPanel>['motions'];
+  sessionVideos?: ComponentProps<typeof ArtifactsPanel>['videos'];
   artifactComments: ComponentProps<typeof ArtifactsPanel>['comments'];
   onExpandArtifact: () => void;
   canvasInsertText: (text: string) => void;
@@ -119,6 +121,8 @@ export function AppInspectorPane({
   sessionArtifacts,
   createdFiles,
   sessionCanvases,
+  sessionMotions,
+  sessionVideos,
   artifactComments,
   onExpandArtifact,
   canvasInsertText,
@@ -257,6 +261,8 @@ export function AppInspectorPane({
           cwd={activeSession.cwd}
           files={createdFiles}
           canvases={sessionCanvases}
+          motions={sessionMotions}
+          videos={sessionVideos}
           turnsEnded={turnsEnded}
           onInsertText={canvasInsertText}
           insertBlockedReason={canvasInsertBlockedReason}

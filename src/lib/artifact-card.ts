@@ -2,6 +2,7 @@ import type { ArtifactCard, ChatMessage } from '../types';
 import { openReplyIndex, withOpenReply, type AcpReducerContext } from './acp-events';
 import type { ShownArtifact } from './artifacts';
 import { artboardCount, type CanvasRead } from './canvas';
+import type { MotionRead, VideoEntry } from './motion';
 
 /**
  * Marks in the chat where the agent showed a page: on its open reply, or on a
@@ -17,6 +18,16 @@ export function withCanvasCard(messages: ChatMessage[], read: CanvasRead, ctx: A
   const title = read.canvas?.title ?? read.entry.title;
   const artboards = read.canvas ? artboardCount(read.canvas) : read.entry.artboards;
   return withCard(messages, { kind: 'canvas', canvasKey: read.entry.key, title, artboards }, ctx);
+}
+
+/** Marks in the chat where the agent showed a motion, with its length and format count then. */
+export function withMotionCard(messages: ChatMessage[], read: MotionRead, ctx: AcpReducerContext): ChatMessage[] {
+  return withCard(messages, { kind: 'motion', motionKey: read.entry.key, title: read.title, duration: read.duration, formats: read.formats.length }, ctx);
+}
+
+/** Marks in the chat where the agent showed a video file. */
+export function withVideoCard(messages: ChatMessage[], entry: VideoEntry, ctx: AcpReducerContext): ChatMessage[] {
+  return withCard(messages, { kind: 'video', videoKey: entry.key, title: entry.title }, ctx);
 }
 
 function withCard(messages: ChatMessage[], card: ArtifactCard, ctx: AcpReducerContext): ChatMessage[] {

@@ -42,6 +42,8 @@ pub struct SessionArtifacts {
     /// The index exists but could not be read: `artifacts` is empty, not known to be.
     pub failed: bool,
     pub canvases: Vec<ListedCanvas>,
+    pub motions: Vec<super::motion_store::MotionEntry>,
+    pub videos: Vec<super::motion_store::VideoEntry>,
 }
 
 /// A canvas in `artifact_list`: its entry, and whether its folder is gone. Only the folder is
@@ -398,10 +400,16 @@ pub fn list_sessions(artifacts: &ArtifactStore, session_ids: &[String]) -> Vec<S
         .map(|session_id| {
             let listed = artifacts.list_checked(session_id);
             let canvases = artifacts.canvases(session_id);
+            let motions = artifacts.motions(session_id);
+            let videos = artifacts.videos(session_id);
+            // Any file unreadable: the answer says nothing about what is gone.
+            let failed =
+                listed.is_err() || canvases.is_err() || motions.is_err() || videos.is_err();
             SessionArtifacts {
+                motions: motions.unwrap_or_default(),
+                videos: videos.unwrap_or_default(),
                 session_id: session_id.clone(),
-                // Either file unreadable: the answer says nothing about what is gone.
-                failed: listed.is_err() || canvases.is_err(),
+                failed,
                 artifacts: listed.unwrap_or_default(),
                 canvases: canvases
                     .unwrap_or_default()
@@ -622,8 +630,10 @@ pub fn artifact_delete(
 pub fn artifact_delete_session(
     app: AppHandle,
     artifacts: State<'_, Arc<ArtifactStore>>,
+    renderer: State<'_, Arc<super::motion_render::MotionRenderer>>,
     session_id: String,
 ) -> Result<(), String> {
+    renderer.forget(&session_id, true);
     delete_then_close(
         || artifacts.delete_session(&session_id),
         || view::close_for(&app, session_id.clone(), None),
@@ -802,7 +812,7 @@ pub fn canvas_export(
 }
 
 /// The rectangle clipped to the main window, or `None` when it cannot be shown.
-fn bounds_in_window(app: &AppHandle, bounds: Bounds) -> Option<Bounds> {
+pub(super) fn bounds_in_window(app: &AppHandle, bounds: Bounds) -> Option<Bounds> {
     let window = app.get_webview_window(MAIN_WINDOW)?;
     let scale = window.scale_factor().ok()?;
     let size = window.inner_size().ok()?.to_logical::<f64>(scale);

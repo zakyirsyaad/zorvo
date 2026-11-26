@@ -1,4 +1,4 @@
-import { ChevronRight, FileText, LayoutGrid, PanelsTopLeft } from "lucide-react";
+import { ChevronRight, Clapperboard, FileText, LayoutGrid, PanelsTopLeft } from "lucide-react";
 import { FOLDER_NOT_FOUND, canvasCountLabel, type CanvasEntry } from "../../lib/canvas";
 import { newestVersion, shownArtifactOf, shownCanvasOf, type ViewedArtifact } from "../../lib/artifacts";
 import { fileNameAndFolder, pathInFolder, type CreatedFile } from "../../lib/created-files";
@@ -9,6 +9,9 @@ import type { Artifact } from "../../types";
 import { ArtifactViewer } from "./ArtifactViewer";
 import { CanvasMenu } from "./CanvasMenu";
 import { CanvasViewer } from "./CanvasViewer";
+import { MotionViewer } from "./MotionViewer";
+import { VideoViewer } from "./VideoViewer";
+import { motionDetail, type MotionEntry, type VideoEntry } from "../../lib/motion";
 
 export interface ArtifactsPanelProps {
   sessionId: string;
@@ -43,14 +46,33 @@ export interface ArtifactsPanelProps {
   onInsertText?: (text: string) => void;
   /** Why the message box cannot take text now. */
   insertBlockedReason?: string;
+  /** The motions the session's agent showed, the most recently shown first. */
+  motions?: readonly MotionEntry[];
+  /** The video files the session's agent showed, the most recently shown first. */
+  videos?: readonly VideoEntry[];
 }
 
 /** The mark every artifact row and card carries; a canvas has its own. */
-export function ArtifactMark({ kind = "page" }: { kind?: "page" | "canvas" }) {
+export function ArtifactMark({ kind = "page" }: { kind?: "page" | "canvas" | "video" }) {
+  const icon = kind === "canvas" ? <LayoutGrid size={14} /> : kind === "video" ? <Clapperboard size={14} /> : <PanelsTopLeft size={14} />;
   return (
     <span aria-hidden="true" data-mark={kind} className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-chip text-fg-secondary">
-      {kind === "canvas" ? <LayoutGrid size={14} /> : <PanelsTopLeft size={14} />}
+      {icon}
     </span>
+  );
+}
+
+/** A motion or a video the agent showed: a row that opens its viewer. */
+function MediaRow({ title, detail, hint, onOpen }: { title: string; detail: string; hint: string; onOpen: () => void }) {
+  return (
+    <button type="button" title={hint} onClick={onOpen} className={`focus-ring ${ROW} transition-colors hover:bg-surface-hover`}>
+      <ArtifactMark kind="video" />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-ui text-fg">{title}</span>
+        <span className="truncate text-caption text-fg-subtle">{detail}</span>
+      </span>
+      <ChevronRight size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
+    </button>
   );
 }
 
@@ -152,12 +174,57 @@ export function ArtifactsPanel({
   turnsEnded,
   onInsertText,
   insertBlockedReason,
+  motions = [],
+  videos = [],
 }: ArtifactsPanelProps) {
-  // A single page or canvas opens by itself, unless something else is listed beside it.
-  const rowCount = artifacts.length + canvases.length + files.length;
+  // A single page, canvas, motion or video opens by itself, unless something else is listed beside it.
+  const mediaCount = motions.length + videos.length;
+  const rowCount = artifacts.length + canvases.length + files.length + mediaCount;
   const isOnly = rowCount === 1;
-  const open = shownArtifactOf(artifacts, viewed, files.length + canvases.length);
-  const openCanvas = shownCanvasOf(canvases, viewed, artifacts.length + files.length);
+  const open = shownArtifactOf(artifacts, viewed, files.length + canvases.length + mediaCount);
+  const openCanvas = shownCanvasOf(canvases, viewed, artifacts.length + files.length + mediaCount);
+  const openMotion = viewed?.motionKey
+    ? motions.find((motion) => motion.key === viewed.motionKey)
+    : !viewed && isOnly && motions.length === 1
+      ? motions[0]
+      : undefined;
+  const openVideo = viewed?.videoKey
+    ? videos.find((video) => video.key === viewed.videoKey)
+    : !viewed && isOnly && videos.length === 1
+      ? videos[0]
+      : undefined;
+
+  if (openMotion) {
+    return (
+      <MotionViewer
+        key={openMotion.key}
+        sessionId={sessionId}
+        motionKey={openMotion.key}
+        title={openMotion.title}
+        turnsEnded={turnsEnded}
+        onBack={isOnly ? undefined : () => onView(null)}
+        onView={onView}
+        isExpanded={isExpanded}
+        onToggleExpanded={onToggleExpanded}
+        onError={onError}
+      />
+    );
+  }
+
+  if (openVideo) {
+    return (
+      <VideoViewer
+        key={openVideo.key}
+        sessionId={sessionId}
+        video={openVideo}
+        onBack={isOnly ? undefined : () => onView(null)}
+        onView={onView}
+        isExpanded={isExpanded}
+        onToggleExpanded={onToggleExpanded}
+        onError={onError}
+      />
+    );
+  }
 
   if (openCanvas) {
     return (
@@ -231,6 +298,21 @@ export function ArtifactsPanel({
           </li>
         );
       })}
+      {motions.map((motion) => (
+        <li key={motion.key}>
+          <MediaRow
+            title={motion.title}
+            detail={`${motionDetail(motion.duration, motion.formats.length)} · ${motion.relative}`}
+            hint={motion.folder}
+            onOpen={() => onView({ motionKey: motion.key })}
+          />
+        </li>
+      ))}
+      {videos.map((video) => (
+        <li key={video.key}>
+          <MediaRow title={video.title} detail={`Video file · ${video.relative}`} hint={video.path} onOpen={() => onView({ videoKey: video.key })} />
+        </li>
+      ))}
       {canvases.map((canvas) => (
         <li key={canvas.key}>
           <CanvasRow sessionId={sessionId} canvas={canvas} onOpen={() => onView({ canvasKey: canvas.key })} onError={onError} />

@@ -69,6 +69,15 @@ export function useArtifactsWiring({
     () => (activeSession ? artifacts.canvasesBySession.get(activeSession.id) ?? [] : []),
     [artifacts.canvasesBySession, activeSession],
   );
+  const sessionMotions = useMemo(
+    () => (activeSession ? artifacts.motionsBySession.get(activeSession.id) ?? [] : []),
+    [artifacts.motionsBySession, activeSession],
+  );
+  const sessionVideos = useMemo(
+    () => (activeSession ? artifacts.videosBySession.get(activeSession.id) ?? [] : []),
+    [artifacts.videosBySession, activeSession],
+  );
+  const sessionMediaCount = sessionMotions.length + sessionVideos.length;
   const activeCwd = activeSession?.cwd;
   const createdFiles = useMemo(
     () => createdFilesOf(activeTranscript ?? [], activeCwd),
@@ -107,13 +116,32 @@ export function useArtifactsWiring({
     inspector.show('artifacts');
   };
 
+  // Artifact ids, canvas, motion and video keys never look alike, so one set tells a card whether its output is still listed.
   const artifactIds = useMemo(
-    () => new Set([...sessionArtifacts.map((artifact) => artifact.id), ...sessionCanvases.map((canvas) => canvas.key)]),
-    [sessionArtifacts, sessionCanvases],
+    () =>
+      new Set([
+        ...sessionArtifacts.map((artifact) => artifact.id),
+        ...sessionCanvases.map((canvas) => canvas.key),
+        ...sessionMotions.map((motion) => motion.key),
+        ...sessionVideos.map((video) => video.key),
+      ]),
+    [sessionArtifacts, sessionCanvases, sessionMotions, sessionVideos],
   );
 
   /** A chat card's Open: the version it marks, in the Artifacts tab (the newest is followed, not pinned), or the canvas. */
   const openArtifactCard = (card: ArtifactCard) => {
+    if (card.kind === 'motion') {
+      if (!sessionMotions.some((motion) => motion.key === card.motionKey)) return;
+      inspector.viewArtifact({ motionKey: card.motionKey });
+      inspector.show('artifacts');
+      return;
+    }
+    if (card.kind === 'video') {
+      if (!sessionVideos.some((video) => video.key === card.videoKey)) return;
+      inspector.viewArtifact({ videoKey: card.videoKey });
+      inspector.show('artifacts');
+      return;
+    }
     if (card.kind === 'canvas') {
       if (!sessionCanvases.some((canvas) => canvas.key === card.canvasKey)) return;
       inspector.viewArtifact({ canvasKey: card.canvasKey });
@@ -132,11 +160,11 @@ export function useArtifactsWiring({
   const isArtifactExpanded =
     inspector.isArtifactExpanded &&
     inspectorTab === 'artifacts' &&
-    sessionArtifacts.length + sessionCanvases.length > 0;
+    sessionArtifacts.length + sessionCanvases.length + sessionMediaCount > 0;
 
   const shownArtifact =
     inspectorTab === 'artifacts'
-      ? shownArtifactOf(sessionArtifacts, inspector.viewedArtifact, createdFiles.length + sessionCanvases.length)
+      ? shownArtifactOf(sessionArtifacts, inspector.viewedArtifact, createdFiles.length + sessionCanvases.length + sessionMediaCount)
       : undefined;
   const viewedVersion =
     inspector.viewedArtifact?.artifactId === shownArtifact?.id ? inspector.viewedArtifact?.version : null;
@@ -148,7 +176,7 @@ export function useArtifactsWiring({
 
   const shownCanvasEntry =
     inspectorTab === 'artifacts' && !shownArtifact
-      ? shownCanvasOf(sessionCanvases, inspector.viewedArtifact, sessionArtifacts.length + createdFiles.length)
+      ? shownCanvasOf(sessionCanvases, inspector.viewedArtifact, sessionArtifacts.length + createdFiles.length + sessionMediaCount)
       : undefined;
   const shownCanvas = useMemo(() => {
     if (!activeSession || !shownCanvasEntry) return null;
@@ -185,18 +213,25 @@ export function useArtifactsWiring({
       inspector.viewArtifact({ artifactId: shownArtifact.id, version: null });
     }
     const onlyCanvas =
-      sessionCanvases.length === 1 && sessionArtifacts.length === 0 && createdFiles.length === 0
+      sessionCanvases.length === 1 && sessionArtifacts.length === 0 && createdFiles.length === 0 && sessionMediaCount === 0
         ? sessionCanvases[0]
         : undefined;
     if (!inspector.viewedArtifact && onlyCanvas) {
       inspector.viewArtifact({ canvasKey: onlyCanvas.key });
     }
+    // And a motion or a video that is the only thing listed.
+    const isOnlyMedia =
+      sessionMediaCount === 1 && sessionCanvases.length === 0 && sessionArtifacts.length === 0 && createdFiles.length === 0;
+    if (!inspector.viewedArtifact && isOnlyMedia && sessionMotions[0]) inspector.viewArtifact({ motionKey: sessionMotions[0].key });
+    if (!inspector.viewedArtifact && isOnlyMedia && sessionVideos[0]) inspector.viewArtifact({ videoKey: sessionVideos[0].key });
     inspector.setArtifactExpanded(true);
   };
 
   return {
     sessionArtifacts,
     sessionCanvases,
+    sessionMotions,
+    sessionVideos,
     createdFiles,
     onArtifactShown,
     gallery,

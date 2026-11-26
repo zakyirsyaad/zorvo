@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { canvasOpeningFor, openingFor, type ShownArtifact, type ViewedArtifact } from '../lib/artifacts';
 
 /** What an agent showed: a page, or a canvas by its key. */
-export type ShownOutput = ShownArtifact | { kind: 'canvas'; key: string };
+export type ShownOutput = ShownArtifact | { kind: 'canvas' | 'motion' | 'video'; key: string };
 import { useLatest } from './useLatest';
 
 export interface ArtifactOpeningDeps {
@@ -27,6 +27,18 @@ export function useArtifactOpening(deps: ArtifactOpeningDeps): (sessionId: strin
     (sessionId, shown) => {
       const { activeSessionId, viewed, showTab, view } = latest.current;
       const isOnScreen = activeSessionId !== null && sessionId === activeSessionId;
+      if ('kind' in shown && shown.kind === 'motion') {
+        if (!isOnScreen || viewed?.motionKey === shown.key) return;
+        view({ motionKey: shown.key });
+        showTab();
+        return;
+      }
+      if ('kind' in shown && shown.kind === 'video') {
+        if (!isOnScreen || viewed?.videoKey === shown.key) return;
+        view({ videoKey: shown.key });
+        showTab();
+        return;
+      }
       if ('kind' in shown) {
         if (canvasOpeningFor({ isOnScreen, key: shown.key, viewed }) !== 'show-tab') return;
         view({ canvasKey: shown.key });

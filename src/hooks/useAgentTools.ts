@@ -39,9 +39,10 @@ import {
 import type { MentionAgentStatus } from '../lib/delegation';
 import { createId } from '../lib/ids';
 import { CANVAS_GUIDE, CANVAS_REFUSALS, canvasResultText, parseCanvasRead } from '../lib/canvas';
+import { MOTION_GUIDE, MOTION_PARSE_ERROR, MOTION_REFUSALS, motionResultText, parseMotionRead, parseVideoEntry, videoResultText } from '../lib/motion';
 import { toolsRoleOf } from '../lib/workers';
 import { ARTIFACT_GUIDE, ARTIFACT_REFUSALS, parseShown, shownResultText, type ShownArtifact } from '../lib/artifacts';
-import { withArtifactCard, withCanvasCard } from '../lib/artifact-card';
+import { withArtifactCard, withCanvasCard, withMotionCard, withVideoCard } from '../lib/artifact-card';
 import { VISUAL_GUIDE, VISUAL_REFUSALS, VISUAL_SHOWN_TEXT, parseVisualEntry } from '../lib/visuals';
 import { withVisualPart } from '../lib/visual-part';
 import { parseNextStep } from '../lib/next-step';
@@ -88,7 +89,7 @@ export interface AgentToolsDeps {
   /** Tells the user what an agent is not told: why Zorvo itself failed. */
   onNotice?: (message: string) => void;
   /** An agent showed a page: the window decides whether anything opens. */
-  onArtifactShown: (sessionId: string, shown: ShownArtifact | { kind: 'canvas'; key: string }) => void;
+  onArtifactShown: (sessionId: string, shown: ShownArtifact | { kind: 'canvas' | 'motion' | 'video'; key: string }) => void;
 }
 
 /** A `start_worker`, `send` or `start_session` call that waits for the user's answer on a card. */
@@ -480,6 +481,49 @@ export function useAgentTools(deps: AgentToolsDeps): {
   );
 
   /**
+   * `show_artifact` with `kind: "motion"` or `"video"`: the backend reads the composition (or checks the
+   * video file) inside the session's folder and remembers it; nothing is copied.
+   */
+  const handleShowMedia = useCallback(
+    async (session: Session, call: AgentToolCall, path: string, kind: 'motion' | 'video', title: string) => {
+      try {
+        const args = { sessionId: session.id, cwd: session.cwd, path, ...(title === '' ? {} : { title }) };
+        const answer = kind === 'motion' ? await invoke('motion_show', args) : await invoke('video_show', args);
+        latest.current.flushUpdates?.();
+        if (kind === 'motion') {
+          const read = parseMotionRead(answer);
+          if (read === null) {
+            respond(call.callId, false, FAILED);
+            return;
+          }
+          latest.current.updateMessages(session.id, (prev) => withMotionCard(prev, read, { sessionId: session.id, now: Date.now(), createId }));
+          latest.current.onArtifactShown(session.id, { kind: 'motion', key: read.entry.key });
+          respond(call.callId, true, motionResultText(read));
+          return;
+        }
+        const entry = parseVideoEntry(answer);
+        if (entry === null) {
+          respond(call.callId, false, FAILED);
+          return;
+        }
+        latest.current.updateMessages(session.id, (prev) => withVideoCard(prev, entry, { sessionId: session.id, now: Date.now(), createId }));
+        latest.current.onArtifactShown(session.id, { kind: 'video', key: entry.key });
+        respond(call.callId, true, videoResultText(entry));
+      } catch (error) {
+        const text = typeof error === 'string' ? error : '';
+        if (MOTION_REFUSALS.has(text) || MOTION_PARSE_ERROR.test(text)) {
+          respond(call.callId, false, text);
+          return;
+        }
+        // Never the error itself: it can name a folder the agent was not told about.
+        respond(call.callId, false, FAILED);
+        latest.current.onNotice?.(kind === 'motion' ? 'Zorvo could not show the motion an agent made.' : 'Zorvo could not show the video an agent made.');
+      }
+    },
+    [latest],
+  );
+
+  /**
    * `show_artifact`: the backend reads the agent's file under its path rules and keeps a version;
    * no card to answer and no grant, since the page only reaches the user who is already here.
    */
@@ -496,6 +540,10 @@ export function useAgentTools(deps: AgentToolsDeps): {
       }
       // A title is shown in Zorvo's own interface, so its control and bidi characters are spelled out.
       const title = typeof args.title === 'string' ? escapeVisible(args.title).trim() : '';
+      if (args.kind === 'motion' || args.kind === 'video') {
+        await handleShowMedia(session, call, args.path, args.kind, title);
+        return;
+      }
       try {
         const answer = await invoke('artifact_show', {
           sessionId: session.id,
@@ -528,7 +576,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
         latest.current.onNotice?.('Zorvo could not show the page an agent made.');
       }
     },
-    [latest, handleShowCanvas],
+    [latest, handleShowCanvas, handleShowMedia],
   );
 
   /**
@@ -723,7 +771,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
         }
         if (call.tool === 'artifact_guide') {
           const kind = (call.args as Record<string, unknown> | null)?.kind;
-          respond(call.callId, true, kind === 'canvas' ? CANVAS_GUIDE : kind === 'visual' ? VISUAL_GUIDE : ARTIFACT_GUIDE);
+          const guides: Record<string, string> = { canvas: CANVAS_GUIDE, visual: VISUAL_GUIDE, motion: MOTION_GUIDE };
+          respond(call.callId, true, (typeof kind === 'string' ? guides[kind] : undefined) ?? ARTIFACT_GUIDE);
           return;
         }
         if (call.tool === 'show_artifact') {

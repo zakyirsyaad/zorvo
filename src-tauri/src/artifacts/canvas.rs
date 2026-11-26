@@ -32,6 +32,10 @@ pub const SERVED_TYPES: &[(&str, &str)] = &[
     ("woff2", "font/woff2"),
     ("ttf", "font/ttf"),
     ("otf", "font/otf"),
+    ("mp3", "audio/mpeg"),
+    ("wav", "audio/wav"),
+    ("m4a", "audio/mp4"),
+    ("aac", "audio/aac"),
 ];
 
 /// A canvas folder: its canonical path, and its path relative to the session's folder.
@@ -127,6 +131,12 @@ pub fn folder_digest(root: &Path) -> String {
 }
 
 fn folder_digest_within(root: &Path, max_entries: usize) -> String {
+    digest_where(root, max_entries, &is_shared_file)
+}
+
+/// The digest `folder_digest` makes, over the servable files `keep` accepts (by relative path).
+/// Folders `keep` refuses with a trailing slash (`out/`) are not walked.
+pub(crate) fn digest_where(root: &Path, max_entries: usize, keep: &dyn Fn(&str) -> bool) -> String {
     let mut lines = Vec::new();
     let mut seen = 0usize;
     let mut folders = vec![(root.to_path_buf(), String::new(), 0usize)];
@@ -150,12 +160,12 @@ fn folder_digest_within(root: &Path, max_entries: usize) -> String {
                 continue;
             };
             if kind.is_dir() {
-                if depth + 1 < MAX_DIGEST_DEPTH {
+                if depth + 1 < MAX_DIGEST_DEPTH && keep(&format!("{relative}/")) {
                     subfolders.push((entry.path(), format!("{relative}/"), depth + 1));
                 }
                 continue;
             }
-            if !is_shared_file(&relative) {
+            if !keep(&relative) {
                 continue;
             }
             let Some((path, _)) = canvas_file(root, &relative) else {
@@ -258,7 +268,7 @@ pub(crate) fn is_id(text: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-type Fields = serde_json::Map<String, serde_json::Value>;
+pub(crate) type Fields = serde_json::Map<String, serde_json::Value>;
 
 fn object<'a>(value: &'a serde_json::Value, path: &str) -> Result<&'a Fields, String> {
     value
@@ -294,7 +304,7 @@ fn id(fields: &Fields, name: &str, path: &str) -> Result<String, String> {
 
 /// Refuses a field not in `known`. The name is echoed only when it is short and plain, so a
 /// file cannot make an error carry its own text.
-fn only_known(fields: &Fields, known: &[&str], path: &str) -> Result<(), String> {
+pub(crate) fn only_known(fields: &Fields, known: &[&str], path: &str) -> Result<(), String> {
     let Some(unknown) = fields.keys().find(|key| !known.contains(&key.as_str())) else {
         return Ok(());
     };

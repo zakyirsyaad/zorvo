@@ -40,6 +40,9 @@ pub enum FileContent {
     /// An image or a PDF by its header, within the preview cap: the UI fetches the bytes with
     /// `read_workspace_preview`.
     Preview { mime: &'static str, size: u64 },
+    /// A video by its header (MP4 or QuickTime), of any size: the UI plays it through
+    /// `zorvo-media` with `media_url_for_file`, which reads it in ranges.
+    Video { mime: &'static str, size: u64 },
     /// An image or a PDF by its header, over the preview cap; not read.
     PreviewTooLarge {
         mime: &'static str,
@@ -58,6 +61,9 @@ pub fn read_view_file(root: &str, relative: &str) -> Result<FileContent, String>
         return Err(format!("{relative:?} is not a file"));
     }
     let size = metadata.len();
+    if let Some(mime) = crate::media::video_type(&target) {
+        return Ok(FileContent::Video { mime, size });
+    }
     // Only the first bytes: a large screenshot or PDF is told apart without being read.
     if let Some(mime) = crate::file_preview::viewable_type(&target)? {
         return Ok(if size > MAX_PREVIEW_BYTES {
@@ -508,6 +514,29 @@ mod tests {
             FileContent::TooLarge {
                 size: MAX_VIEW_BYTES + 1,
                 limit: MAX_VIEW_BYTES
+            }
+        );
+    }
+
+    #[test]
+    fn offers_a_video_of_any_size_by_its_header() {
+        let ws = TempWorkspace::new("view-video");
+        let mut bytes = vec![0, 0, 0, 24];
+        bytes.extend_from_slice(b"ftypisom");
+        bytes.extend_from_slice(&[0; 12]);
+        fs::write(ws.path.join("reel.bin"), &bytes).expect("write");
+        let file = fs::OpenOptions::new()
+            .write(true)
+            .open(ws.path.join("reel.bin"))
+            .expect("open");
+        file.set_len(MAX_PREVIEW_BYTES * 3)
+            .expect("grow sparse file");
+
+        assert_eq!(
+            read_view_file(ws.root(), "reel.bin").expect("read"),
+            FileContent::Video {
+                mime: "video/mp4",
+                size: MAX_PREVIEW_BYTES * 3
             }
         );
     }

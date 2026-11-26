@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
+  DESIGN_SYSTEM_REFUSALS,
   DS_KEY,
+  designSystemResultText,
   SEARCH_SCOPE,
   droppedLine,
   parseSystemList,
@@ -154,5 +157,24 @@ describe('guideAnswer', () => {
         throw new Error('sync');
       }),
     ).toBe(ARTIFACT_GUIDE);
+  });
+});
+
+describe("design system refusals and answers", () => {
+  it("keeps DESIGN_SYSTEM_REFUSALS equal to the Rust sentences", () => {
+    const rust = ["src-tauri/src/artifacts/design_system.rs", "src-tauri/src/artifacts/ds_store.rs"].map((file) => readFileSync(file, "utf8")).join("\n");
+    const oneLine = rust.replace(/"\s*\n\s*"/g, "").replace(/=\s*\n\s*"/g, '= "');
+    for (const refusal of DESIGN_SYSTEM_REFUSALS) expect(oneLine).toContain(`"${refusal}"`);
+    expect(DESIGN_SYSTEM_REFUSALS.size).toBe(5);
+  });
+
+  it("names the key and the dropped tokens in the show answer", () => {
+    const read = {
+      entry: { key: "d-0123456789abcdef", folder: "/w", relative: ".", title: "Acme", tokens: 1, components: 0, shownAt: 1 },
+      content: null,
+      error: null,
+      googleFontsUrl: null,
+    };
+    expect(designSystemResultText(read)).toBe("Shown: `Acme` (key d-0123456789abcdef), 1 token, 0 components.");
   });
 });

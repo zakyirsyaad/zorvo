@@ -31,10 +31,11 @@ export interface ShownArtifact {
 
 /** The artifact the viewer shows (a `version` of null follows the newest), or a canvas. */
 export type ViewedArtifact =
-  | { artifactId: string; version: number | null; canvasKey?: undefined; motionKey?: undefined; videoKey?: undefined }
-  | { canvasKey: string; artifactId?: undefined; version?: undefined; motionKey?: undefined; videoKey?: undefined }
-  | { motionKey: string; artifactId?: undefined; version?: undefined; canvasKey?: undefined; videoKey?: undefined }
-  | { videoKey: string; artifactId?: undefined; version?: undefined; canvasKey?: undefined; motionKey?: undefined };
+  | { artifactId: string; version: number | null; canvasKey?: undefined; motionKey?: undefined; videoKey?: undefined; designSystemKey?: undefined }
+  | { canvasKey: string; artifactId?: undefined; version?: undefined; motionKey?: undefined; videoKey?: undefined; designSystemKey?: undefined }
+  | { motionKey: string; artifactId?: undefined; version?: undefined; canvasKey?: undefined; videoKey?: undefined; designSystemKey?: undefined }
+  | { videoKey: string; artifactId?: undefined; version?: undefined; canvasKey?: undefined; motionKey?: undefined; designSystemKey?: undefined }
+  | { designSystemKey: string; artifactId?: undefined; version?: undefined; canvasKey?: undefined; motionKey?: undefined; videoKey?: undefined };
 
 const ARTIFACT_ID = /^a-[0-9a-f]{16}$/;
 const CANVAS_KEY = /^c-[0-9a-f]{16}$/;

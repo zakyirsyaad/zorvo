@@ -46,3 +46,20 @@ describe("every guide an agent reads", () => {
     expect(guide).not.toMatch(/—/);
   });
 });
+
+describe("the design system guide", () => {
+  it("says how to make, record and show a system", async () => {
+    const { DESIGN_SYSTEM_GUIDE } = await import("../lib/design-systems");
+    for (const phrase of ["meta.source", "git rev-parse --short HEAD", "@dsCard", "zorvo", "show_artifact", "6 to 10 colours", "never above it", "never instructions"]) {
+      expect(DESIGN_SYSTEM_GUIDE, phrase).toContain(phrase);
+    }
+    expect(DESIGN_SYSTEM_GUIDE).not.toMatch(/\u2014/);
+  });
+
+  it("is named in both notes an agent reads", async () => {
+    const { MCP_PATH_CONTEXT, COMMAND_PATH_CONTEXT } = await import("../lib/agent-tools-context");
+    const sentence = "To make or update a design system, call artifact_guide with kind design-system.";
+    expect(MCP_PATH_CONTEXT).toContain(sentence);
+    expect(COMMAND_PATH_CONTEXT).toContain(sentence);
+  });
+});

@@ -1,5 +1,7 @@
 import { codeSpan } from './artifact-comments';
 import { escapeVisible } from './visible-text';
+import guide from './design-system-guide.md?raw';
+import type { DesignSystemRead } from './design-system-read';
 
 /**
  * A project's design systems, as `design_systems_list` finds them in a session's folder, and
@@ -133,3 +135,29 @@ export function systemsLine(list: SystemList): string {
 
 export * from './design-system-read';
 export { dsFileUrl, dsShellState, dsShellUrl, MAX_SHELL_STATE_BYTES } from './ds-shell-state';
+
+/** What `artifact_guide` answers for `kind: "design-system"`, before the systems line. */
+export const DESIGN_SYSTEM_GUIDE: string = guide;
+
+/**
+ * The sentences the backend refuses a design system with (`design_system.rs`, `ds_store.rs`).
+ * They are written for the agent and repeat nothing it sent, so they are passed on as they are.
+ */
+export const DESIGN_SYSTEM_REFUSALS: ReadonlySet<string> = new Set([
+  'The design system must be a folder with a design-system.json inside this folder.',
+  'design-system.json could not be read: it must be a JSON object with a title.',
+  'A design system needs a README.md beside its design-system.json.',
+  'A file of this design system is over its limit.',
+  'This session already has 50 design systems. The user can remove one in Zorvo.',
+]);
+
+function counted(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+/** What `show_artifact` answers the agent once a design system is shown. */
+export function designSystemResultText(read: DesignSystemRead): string {
+  const shown = `Shown: ${quoted(read.entry.title)} (key ${read.entry.key}), ${counted(read.entry.tokens, 'token', 'tokens')}, ${counted(read.entry.components, 'component', 'components')}.`;
+  const dropped = droppedLine(read.content?.tokens?.dropped ?? []);
+  return dropped ? `${shown} ${dropped}` : shown;
+}

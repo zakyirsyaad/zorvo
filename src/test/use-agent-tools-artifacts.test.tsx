@@ -17,6 +17,7 @@ import { NO_SESSION } from "../lib/agent-tools";
 import { ARTIFACT_GUIDE, ARTIFACT_REFUSALS, type ShownArtifact } from "../lib/artifacts";
 import { CANVAS_GUIDE } from "../lib/canvas";
 import { MOTION_GUIDE } from "../lib/motion";
+import { DESIGN_SYSTEM_GUIDE } from "../lib/design-systems";
 import { fakeTauriInvoke } from "./setup";
 import { makeProfile } from "./fixtures/agents";
 import type { ChatMessage, Session } from "../types";
@@ -37,7 +38,7 @@ const CANVAS_READ = {
 
 function setup(show: (args: Record<string, unknown>) => unknown | Promise<unknown>, sessions: Session[] = [SESSION], queued?: (messages: Record<string, ChatMessage[]>) => void) {
   const messages: Record<string, ChatMessage[]> = { "s-1": [{ id: "m-1", role: "user", content: "show me", timestamp: 1 }] };
-  const shown: Array<{ sessionId: string; shown: ShownArtifact | { kind: "canvas" | "motion" | "video"; key: string } }> = [];
+  const shown: Array<{ sessionId: string; shown: ShownArtifact | { kind: "canvas" | "motion" | "video" | "design-system"; key: string } }> = [];
   const notices: string[] = [];
   const spy = vi.spyOn(internals(), "invoke");
   // The same spy comes back on every call in one test: forget what an earlier setup saw.
@@ -343,5 +344,45 @@ describe("motions and videos", () => {
     const env = setup(() => SHOWN);
     await env.call("c-1", "artifact_guide", { kind: "motion" });
     expect(env.answers()[0].text).toContain("motion.json");
+  });
+});
+
+describe("design systems", () => {
+  const DS_READ = {
+    entry: { key: "d-0123456789abcdef", folder: "/w/ds", relative: "ds", title: "Acme", tokens: 42, components: 12, shownAt: 1 },
+    content: null,
+    error: null,
+    googleFontsUrl: null,
+  };
+
+  it("routes show_artifact kind design-system to design_system_show and answers with the key", async () => {
+    const env = setup(() => SHOWN);
+    const spy = vi.spyOn(internals(), "invoke");
+    spy.mockImplementation((cmd, args) => (cmd === "design_system_show" ? Promise.resolve(DS_READ) : fakeTauriInvoke(cmd, args)));
+    await env.call("c-1", "show_artifact", { path: "ds", kind: "design-system" });
+    expect(spy.mock.calls.filter(([cmd]) => cmd === "design_system_show").map(([, args]) => args)).toEqual([{ sessionId: "s-1", cwd: SESSION.cwd, path: "ds" }]);
+    expect(env.answers()).toEqual([{ callId: "c-1", ok: true, text: "Shown: `Acme` (key d-0123456789abcdef), 42 tokens, 12 components." }]);
+    expect(env.shown).toEqual([{ sessionId: "s-1", shown: { kind: "design-system", key: "d-0123456789abcdef" } }]);
+  });
+
+  it("passes a refusal on and hides any other error", async () => {
+    const env = setup(() => SHOWN);
+    const spy = vi.spyOn(internals(), "invoke");
+    const refusal = "A design system needs a README.md beside its design-system.json.";
+    spy.mockImplementation((cmd) => (cmd === "design_system_show" ? Promise.reject(refusal) : Promise.resolve(null)));
+    await env.call("c-1", "show_artifact", { path: "ds", kind: "design-system" });
+    spy.mockImplementation((cmd) => (cmd === "design_system_show" ? Promise.reject("/private/x is not one of your workspaces") : Promise.resolve(null)));
+    await env.call("c-2", "show_artifact", { path: "ds", kind: "design-system" });
+    expect(env.answers()).toEqual([
+      { callId: "c-1", ok: false, text: refusal },
+      { callId: "c-2", ok: false, text: "Zorvo could not show that design system." },
+    ]);
+    expect(env.notices).toEqual(["Zorvo could not show the design system an agent made."]);
+  });
+
+  it("answers artifact_guide kind design-system with its guide and the line", async () => {
+    const env = setup(() => SHOWN);
+    await env.call("c-1", "artifact_guide", { kind: "design-system" });
+    expect(env.answers()[0].text).toBe(`${DESIGN_SYSTEM_GUIDE}\n\n${NO_SYSTEM}`);
   });
 });

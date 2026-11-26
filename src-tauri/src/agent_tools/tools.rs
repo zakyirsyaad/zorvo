@@ -135,12 +135,12 @@ pub fn tool_list() -> Value {
         },
         {
             "name": "show_artifact",
-            "description": "Show the user a web page you wrote, beside the chat. Use it without being asked whenever your answer is better seen than read: a report, a summary of what changed, a comparison, a chart, a diagram, a dashboard, a mockup of a screen, or something the user can click through. Do not use it for an answer that is short text or code. Write one self-contained .html file in this folder or the temporary folder, then call this with its path. Calling it again for the same path shows a new version. Scripts may come only from cdnjs.cloudflare.com, cdn.jsdelivr.net/npm/, unpkg.com, cdn.tailwindcss.com and code.jquery.com, with an exact version; fonts from Google Fonts; images as data URIs. The page cannot fetch anything or keep data. Call artifact_guide before your first page. For several screens, a flow or variants, make a canvas: call artifact_guide with kind canvas first. For a video or motion graphics, make a motion composition and show it with kind motion (call artifact_guide with kind motion first); to show a video file you made some other way, use kind video.",
+            "description": "Show the user a web page you wrote, beside the chat. Use it without being asked whenever your answer is better seen than read: a report, a summary of what changed, a comparison, a chart, a diagram, a dashboard, a mockup of a screen, or something the user can click through. Do not use it for an answer that is short text or code. Write one self-contained .html file in this folder or the temporary folder, then call this with its path. Calling it again for the same path shows a new version. Scripts may come only from cdnjs.cloudflare.com, cdn.jsdelivr.net/npm/, unpkg.com, cdn.tailwindcss.com and code.jquery.com, with an exact version; fonts from Google Fonts; images as data URIs. The page cannot fetch anything or keep data. Call artifact_guide before your first page. For several screens, a flow or variants, make a canvas: call artifact_guide with kind canvas first. For a video or motion graphics, make a motion composition and show it with kind motion (call artifact_guide with kind motion first); to show a video file you made some other way, use kind video. To make or update a design system, call artifact_guide with kind design-system.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "path": { "type": "string", "maxLength": MAX_PATH_CHARS, "description": "The .html file, absolute or relative to this folder. For a canvas, the folder or its canvas.json." },
-                    "kind": { "type": "string", "enum": ["page", "canvas", "motion", "video"], "description": "page (default): one .html file. canvas: a folder with canvas.json and one .html file per artboard; path names the folder or its canvas.json. motion: a folder with motion.json and its page; path names the folder or its motion.json. video: an .mp4, .mov or .m4v file in this folder." },
+                    "kind": { "type": "string", "enum": ["page", "canvas", "motion", "video", "design-system"], "description": "page (default): one .html file. canvas: a folder with canvas.json and one .html file per artboard; path names the folder or its canvas.json. motion: a folder with motion.json and its page; path names the folder or its motion.json. video: an .mp4, .mov or .m4v file in this folder. design-system: a folder holding design-system.json; path names the folder or that file." },
                     "title": { "type": "string", "maxLength": MAX_TITLE_CHARS, "description": "A short name for the page. Needed the first time a path is shown; later it renames." }
                 },
                 "required": ["path"],
@@ -149,11 +149,11 @@ pub fn tool_list() -> Value {
         },
         {
             "name": "artifact_guide",
-            "description": "How to design a page for show_artifact: colours for light and dark, layout, charts. Read it once before your first page. With kind canvas, how to lay out several screens. With kind visual, how to draw a picture for show_visual. With kind motion, how to make a video Zorvo renders.",
+            "description": "How to design a page for show_artifact: colours for light and dark, layout, charts. Read it once before your first page. With kind canvas, how to lay out several screens. With kind visual, how to draw a picture for show_visual. With kind motion, how to make a video Zorvo renders. With kind design-system, how to make a project's design system. To make or update a design system, call artifact_guide with kind design-system.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "kind": { "type": "string", "enum": ["page", "canvas", "visual", "motion"], "description": "page (default), canvas, visual or motion." }
+                    "kind": { "type": "string", "enum": ["page", "canvas", "visual", "motion", "design-system"], "description": "page (default), canvas, visual, motion or design-system." }
                 },
                 "additionalProperties": false
             }
@@ -593,14 +593,17 @@ fn put_kind(
             if kind == "page"
                 || kind == "canvas"
                 || kind == "motion"
+                || kind == "design-system"
                 || (allow_visual && kind == "visual")
                 || (!allow_visual && kind == "video") =>
         {
             out.insert("kind".to_string(), json!(kind));
             Ok(())
         }
-        Some(_) if allow_visual => Err("kind must be page, canvas, visual or motion.".to_string()),
-        Some(_) => Err("kind must be page, canvas, motion or video.".to_string()),
+        Some(_) if allow_visual => {
+            Err("kind must be page, canvas, visual, motion or design-system.".to_string())
+        }
+        Some(_) => Err("kind must be page, canvas, motion, video or design-system.".to_string()),
     }
 }
 
@@ -898,7 +901,7 @@ mod tests {
         );
         assert_eq!(
             validate("artifact_guide", &json!({"kind": "sheet"})).unwrap_err(),
-            "kind must be page, canvas, visual or motion."
+            "kind must be page, canvas, visual, motion or design-system."
         );
         assert_eq!(
             validate("artifact_guide", &json!({"kind": "motion"})).unwrap(),
@@ -914,9 +917,9 @@ mod tests {
         assert_eq!(ok, json!({"path": "d", "kind": "canvas"}));
         assert_eq!(
             validate("show_artifact", &json!({"path": "d", "kind": "sheet"})).unwrap_err(),
-            "kind must be page, canvas, motion or video."
+            "kind must be page, canvas, motion, video or design-system."
         );
-        for kind in ["motion", "video"] {
+        for kind in ["motion", "video", "design-system"] {
             assert!(validate("show_artifact", &json!({"path": "d", "kind": kind})).is_ok());
         }
         assert!(validate("show_artifact", &json!({"path": "d", "kind": "visual"})).is_err());
@@ -1376,5 +1379,22 @@ mod tests {
         ] {
             assert!(d.contains(part), "{part}");
         }
+    }
+
+    #[test]
+    fn artifact_guide_takes_kind_design_system() {
+        assert_eq!(
+            validate("artifact_guide", &json!({"kind": "design-system"})).unwrap(),
+            json!({"kind": "design-system"})
+        );
+    }
+
+    #[test]
+    fn both_descriptions_say_how_to_make_a_design_system() {
+        let listed = tool_list();
+        let text = serde_json::to_string(&listed).unwrap();
+        let sentence =
+            "To make or update a design system, call artifact_guide with kind design-system.";
+        assert_eq!(text.matches(sentence).count(), 2);
     }
 }

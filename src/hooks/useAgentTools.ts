@@ -54,7 +54,7 @@ import type { StartWorkerInput, StartWorkerResult } from '../lib/delegation-help
 import { workerByHandle } from '../lib/workers';
 import type { OpenRequest, OpenResult } from './useOpenedSessions';
 import { useLatest } from './useLatest';
-import { guideAnswer } from '../lib/design-system-tool';
+import { guideAnswer, showDesignSystem } from '../lib/design-system-tool';
 
 /** Answered when something went wrong on Zorvo's side; never the error itself, which could hold the task. */
 const FAILED = 'Zorvo could not do that.';
@@ -90,7 +90,7 @@ export interface AgentToolsDeps {
   /** Tells the user what an agent is not told: why Zorvo itself failed. */
   onNotice?: (message: string) => void;
   /** An agent showed a page: the window decides whether anything opens. */
-  onArtifactShown: (sessionId: string, shown: ShownArtifact | { kind: 'canvas' | 'motion' | 'video'; key: string }) => void;
+  onArtifactShown: (sessionId: string, shown: ShownArtifact | { kind: 'canvas' | 'motion' | 'video' | 'design-system'; key: string }) => void;
 }
 
 /** A `start_worker`, `send` or `start_session` call that waits for the user's answer on a card. */
@@ -537,6 +537,18 @@ export function useAgentTools(deps: AgentToolsDeps): {
       }
       if (args.kind === 'canvas') {
         await handleShowCanvas(session, call, args.path);
+        return;
+      }
+      if (args.kind === 'design-system') {
+        const path = args.path;
+        const shown = await showDesignSystem(() => invoke('design_system_show', { sessionId: session.id, cwd: session.cwd, path }));
+        if (shown.ok) {
+          latest.current.flushUpdates?.();
+          latest.current.onArtifactShown(session.id, { kind: 'design-system', key: shown.read.entry.key });
+        } else if (shown.notice) {
+          latest.current.onNotice?.(shown.notice);
+        }
+        respond(call.callId, shown.ok, shown.text);
         return;
       }
       // A title is shown in Zorvo's own interface, so its control and bidi characters are spelled out.

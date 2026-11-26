@@ -15,7 +15,9 @@ import type { BoardState, Canvas, CanvasEntry } from "../../lib/canvas";
 import { MAX_COMMENT_LENGTH } from "../../lib/review-comments";
 import type { ArtifactCommentsState } from "../../hooks/useArtifactComments";
 import type { AddArtifactReview } from "../../hooks/useReviewWiring";
-import type { Artifact, ArtifactComment } from "../../types";
+import type { Artifact, ArtifactComment, DesignSystemTarget } from "../../types";
+import { dsCommentStatus, targetLabel } from "../../lib/design-system-comments";
+import type { DesignSystemRead } from "../../lib/design-system-read";
 
 /** A canvas on screen, with its files' hashes as read now. */
 export interface CanvasCommentSource {
@@ -38,13 +40,16 @@ export type ArtifactCommentStripProps = StripCommon &
         /** The version the viewer shows. */
         shownVersion: number;
         canvasSource?: undefined;
+        systemSource?: undefined;
       }
-    | { canvasSource: CanvasCommentSource; artifact?: undefined; shownVersion?: undefined }
+    | { canvasSource: CanvasCommentSource; artifact?: undefined; shownVersion?: undefined; systemSource?: undefined }
+    | { systemSource: DesignSystemRead; canvasSource?: undefined; artifact?: undefined; shownVersion?: undefined }
   );
 
 const FULL = "This session has 200 artifact comments. Delete some, or clear the sent ones.";
 const HELD = "Finish or cancel this comment first.";
 const FILE_CHANGED = "The artboard's file changed after this was written.";
+const SYSTEM_CHANGED = "It changed after this was written.";
 
 /** What the strip needs of what it is under: a page of an artifact, or a canvas. */
 interface StripSubject {
@@ -52,7 +57,7 @@ interface StripSubject {
   label: string;
   statusOf: (comment: ArtifactComment) => ArtifactCommentStatus;
   /** Where a comment is, with the artboard's title on a canvas. */
-  summaryOf: (comment: Pick<ArtifactComment, "anchor"> & { artboardId?: string }) => string;
+  summaryOf: (comment: Pick<ArtifactComment, "anchor"> & { artboardId?: string; target?: DesignSystemTarget }) => string;
   noteOf: (comment: ArtifactComment) => string;
   isMissing: (comment: ArtifactComment, number: number) => boolean;
   add: (picked: CheckedArtifactComment[]) => void;
@@ -62,6 +67,19 @@ interface StripSubject {
 
 function subjectOf(props: ArtifactCommentStripProps): StripSubject {
   const { comments, addReview, cwd } = props;
+  if (props.systemSource) {
+    const read = props.systemSource;
+    return {
+      id: read.entry.key,
+      label: "Comments on this design system",
+      statusOf: (comment) => dsCommentStatus(comment, read),
+      summaryOf: ({ anchor, target }) => (target === undefined ? anchorSummary(anchor) : `${targetLabel(target).replace(/`/g, "")} · ${anchorSummary(anchor)}`),
+      noteOf: () => SYSTEM_CHANGED,
+      isMissing: () => false,
+      add: (picked) => addReview.addDesignSystem?.(picked, read.entry),
+      notFound: "Not found in the preview",
+    };
+  }
   if (props.canvasSource) {
     const { entry, canvas, boards } = props.canvasSource;
     const titles = new Map(canvas.sections.flatMap((section) => section.artboards).map((board) => [board.id, board.title]));
@@ -119,7 +137,7 @@ function CandidateBox({ comments, number, subject }: { comments: ArtifactComment
   const [body, setBody] = useState(comments.candidateBody);
   const [refusal, setRefusal] = useState<string | null>(null);
   const boxRef = useRef<HTMLTextAreaElement>(null);
-  const summary = subject.summaryOf({ anchor: candidate.anchor, artboardId: candidate.artboardId });
+  const summary = subject.summaryOf({ anchor: candidate.anchor, artboardId: candidate.artboardId, target: candidate.designSystem?.target });
   // The page had the keyboard while the user picked: take it, on a new pick and on a refused one,
   // so what they type next is the comment and never reaches the page.
   useEffect(() => {
@@ -291,7 +309,7 @@ export function ArtifactCommentStrip(props: ArtifactCommentStripProps) {
               key={entry.comment.id}
               checked={entry}
               notFound={subject.notFound}
-              summary={subject.summaryOf({ anchor: entry.comment.anchor, artboardId: entry.comment.canvas?.artboardId })}
+              summary={subject.summaryOf({ anchor: entry.comment.anchor, artboardId: entry.comment.canvas?.artboardId, target: entry.comment.designSystem?.target })}
               word={statusWord(entry.comment, isCurrent, isInMessage)}
               note={isCurrent ? undefined : subject.noteOf(entry.comment)}
               isMissing={subject.isMissing(entry.comment, entry.number)}

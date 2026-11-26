@@ -1,0 +1,41 @@
+{
+  "name": "Mixed",
+  "version": 1,
+  "meta": {
+    "source": { "kind": "code", "paths": ["src/app.css"], "commit": "a1b2c3d" }
+  },
+  "color": {
+    "note": "Colours of the mixed fixture: one token for each reason a token drops.",
+    "themes": [
+      { "id": "dark", "name": "Dark" },
+      { "id": "light", "name": "Light" }
+    ],
+    "tokens": [
+      { "name": "accent", "value": { "dark": "#111", "light": "#eee" }, "usage": "Links and focus rings." },
+      { "name": "link", "value": "{accent}" },
+      { "name": "red", "value": "red" },
+      { "name": "brand", "value": "var(--brand)" },
+      { "name": "mixed", "value": "color-mix(in srgb, #000, #fff)" },
+      { "name": "ghost", "value": "{nope}" },
+      { "name": "self", "value": "{self}" },
+      { "name": "loop-a", "value": "{loop-b}" },
+      { "name": "loop-b", "value": "{loop-a}" },
+      { "name": "accent", "value": "#222222" },
+      { "name": "empty" }
+    ]
+  },
+  "spacing": {
+    "tokens": [
+      { "name": "space-1", "value": "4px" },
+      { "name": "space-odd", "value": "12pt" }
+    ]
+  },
+  "elevation": {
+    "sm": { "$value": "4px" }
+  },
+  "type": {
+    "fonts": [{ "family": "Acme Sans", "file": "fonts/AcmeSans.woff2", "weight": 400 }],
+    "families": { "sans": "\"Acme Sans\", sans-serif" },
+    "groups": []
+  }
+}

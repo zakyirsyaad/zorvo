@@ -6,7 +6,11 @@ import type { BoardState } from '../lib/canvas';
 import type { CanvasesBySession } from './useArtifacts';
 import { createId } from '../lib/ids';
 import { MAX_COMMENT_LENGTH } from '../lib/review-comments';
-import type { Artifact, ArtifactAnchor, ArtifactComment, PageMessage, PageRef, Session } from '../types';
+import type { Artifact, ArtifactAnchor, ArtifactComment, DesignSystemCommentRef, PageMessage, PageRef, Session } from '../types';
+import { parseDsCancel, parseDsPick } from '../lib/design-system-picks';
+import { targetHash } from '../lib/design-system-comments';
+import type { DesignSystemRead } from '../lib/design-system-read';
+import type { DesignSystemsBySession } from './useArtifacts';
 import { enqueueArtifactViewCall } from './useArtifactView';
 import { useLatest } from './useLatest';
 
@@ -14,6 +18,8 @@ import { useLatest } from './useLatest';
 const ARTIFACT_PAGE_PICK = 'artifact-page-pick';
 /** Emitted by the backend when an artboard of the canvas on screen reports one of those. */
 const CANVAS_PICK = 'canvas-pick';
+/** Emitted by the backend when the design system on screen reports a comment pick. */
+const DS_PICK = 'ds-pick';
 const COULD_NOT_MARK = 'Zorvo could not mark that page.';
 const COULD_NOT_COMMENT = 'Zorvo could not turn comment mode on for that page.';
 
@@ -28,6 +34,8 @@ export interface ArtifactCandidate {
   artboardId?: string;
   /** On a canvas: the artboard's file hash when the pick arrived, which the comment keeps. */
   fileHash?: string;
+  /** On a design system: what it is on, with the hash of that when the pick arrived. */
+  designSystem?: DesignSystemCommentRef;
   anchor: ArtifactAnchor;
   /** A newer pick arrived while text was typed here, so it was not taken. */
   isPickHeld: boolean;
@@ -69,6 +77,15 @@ export interface ShownCanvasRef {
   boardsNow: () => readonly BoardState[];
 }
 
+/** The design system the viewer shows, for its comments. */
+export interface ShownDesignSystemRef {
+  sessionId: string;
+  key: string;
+  /** The system as last read, asked when a pick arrives: a comment keeps the hash of what it is on. */
+  readNow: () => DesignSystemRead | null;
+}
+
+const systemKeyOf = (system: Pick<ShownDesignSystemRef, 'sessionId' | 'key'> | null) => (system === null ? null : `ds:${system.sessionId}/${system.key}`);
 const keyOf = (page: PageRef | null) => (page === null ? null : `${page.sessionId}/${page.artifactId}/${page.version}`);
 const canvasKeyOf = (canvas: Pick<ShownCanvasRef, "sessionId" | "key"> | null) => (canvas === null ? null : `canvas:${canvas.sessionId}/${canvas.key}`);
 /** A canvas has no versions: its comments' place is the canvas key with this version. */
@@ -96,6 +113,7 @@ export function useArtifactComments({
   update,
   shownPage,
   shownCanvas = null,
+  shownDesignSystem = null,
   forget,
   onError,
 }: {
@@ -106,12 +124,14 @@ export function useArtifactComments({
   shownPage: PageRef | null;
   /** Null unless the viewer shows a canvas of the session on screen. */
   shownCanvas?: ShownCanvasRef | null;
+  /** Null unless the viewer shows a design system of the session on screen. */
+  shownDesignSystem?: ShownDesignSystemRef | null;
   forget: (ids: readonly string[]) => void;
   onError: (message: string) => void;
 }): ArtifactCommentsState {
   const session = sessionId ?? '';
   const list = comments ?? [];
-  const shownKey = keyOf(shownPage) ?? canvasKeyOf(shownCanvas);
+  const shownKey = keyOf(shownPage) ?? canvasKeyOf(shownCanvas) ?? systemKeyOf(shownDesignSystem);
   const [commenting, setCommentingPage] = useState<string | null>(null);
   // Another page on screen (another artifact, version or session) starts with comment mode off.
   const [lastShownKey, setLastShownKey] = useState(shownKey);
@@ -130,7 +150,7 @@ export function useArtifactComments({
   const [missing, setMissing] = useState<{ key: string; numbers: ReadonlySet<number> } | null>(null);
   const [canvasMissing, setCanvasMissing] = useState<{ key: string; byBoard: ReadonlyMap<string, ReadonlySet<number>> } | null>(null);
 
-  const latest = useLatest({ shownPage, shownCanvas, shownKey, isCommenting, marksKey });
+  const latest = useLatest({ shownPage, shownCanvas, shownDesignSystem, shownKey, isCommenting, marksKey });
 
   const dropCandidate = (owner: string) => {
     delete bodies.current[owner];
@@ -211,10 +231,38 @@ export function useArtifactComments({
       const page = { sessionId: pick.sessionId, artifactId: pick.key, version: CANVAS_VERSION };
       takeMessage.current(page, pick.artboardId, pick.message);
     });
+    const stopSystem = listen<unknown>(DS_PICK, (event) => {
+      if (isGone) return;
+      const cancel = parseDsCancel(event.payload);
+      if (cancel !== null) {
+        // Escape in a preview: a candidate with nothing typed goes, as on a page.
+        if (systemKeyOf(cancel) !== latest.current.shownKey || !latest.current.isCommenting) return;
+        const owner = cancel.sessionId;
+        setCandidates((prev) => {
+          if (!(owner in prev) || (bodies.current[owner] ?? '').trim() !== '') return prev;
+          delete bodies.current[owner];
+          const next = { ...prev };
+          delete next[owner];
+          return next;
+        });
+        return;
+      }
+      const pick = parseDsPick(event.payload);
+      const now = latest.current;
+      if (pick === null || systemKeyOf(pick) !== now.shownKey || !now.isCommenting) return;
+      const read = now.shownDesignSystem?.readNow() ?? null;
+      const hash = read === null ? null : targetHash(pick.target, read);
+      if (hash === null) return;
+      const owner = pick.sessionId;
+      const page = { sessionId: owner, artifactId: pick.key, version: CANVAS_VERSION };
+      const isBlank = () => (bodies.current[owner] ?? '').trim() === '';
+      offerCandidate(owner, { page, anchor: pick.anchor, designSystem: { key: pick.key, target: pick.target, hash }, isPickHeld: false }, isBlank);
+    });
     return () => {
       isGone = true;
       void stopPage.then((stop) => stop());
       void stopCanvas.then((stop) => stop());
+      void stopSystem.then((stop) => stop());
     };
   }, [latest, takeMessage]);
 
@@ -242,6 +290,12 @@ export function useArtifactComments({
       );
       return;
     }
+    if (shownDesignSystem !== null) {
+      setCommentingPage(on ? shownKey : null);
+      const system = shownDesignSystem;
+      enqueueArtifactViewCall(() => invoke('ds_comment_mode', { sessionId: system.sessionId, key: system.key, on }), reportFailure);
+      return;
+    }
     if (shownCanvas === null) return;
     setCommentingPage(on ? shownKey : null);
     const canvas = shownCanvas;
@@ -263,7 +317,7 @@ export function useArtifactComments({
     const body = (bodies.current[session] ?? '').trim().slice(0, MAX_COMMENT_LENGTH);
     if (!waiting || body === '') return 'empty';
     if (list.length >= MAX_ARTIFACT_COMMENTS) return 'full';
-    const { artboardId, fileHash } = waiting;
+    const { artboardId, fileHash, designSystem } = waiting;
     const comment: ArtifactComment = {
       id: createId('ac'),
       artifactId: waiting.page.artifactId,
@@ -272,6 +326,7 @@ export function useArtifactComments({
       body,
       createdAt: Date.now(),
       ...(artboardId !== undefined && fileHash !== undefined ? { canvas: { key: waiting.page.artifactId, artboardId, fileHash } } : {}),
+      ...(designSystem ? { designSystem } : {}),
     };
     update(session, (prev) => [...prev, comment]);
     dropCandidate(session);
@@ -321,6 +376,7 @@ export function useArtifactCommentSweep(
   readSessions: ReadonlySet<string>,
   update: (sessionId: string, change: ArtifactCommentsChange) => void,
   forget: (ids: readonly string[]) => void,
+  designSystemsBySession?: DesignSystemsBySession,
 ): void {
   const updateRef = useLatest(update);
   const forgetRef = useLatest(forget);
@@ -330,11 +386,12 @@ export function useArtifactCommentSweep(
       const artifacts = bySession.get(session.id);
       const canvases = canvasesBySession.get(session.id);
       if (!comments || comments.length === 0 || !artifacts || !canvases || !readSessions.has(session.id)) continue;
-      const kept = withoutMissingArtifacts(comments, artifacts, canvases);
+      const systems = designSystemsBySession?.get(session.id) ?? [];
+      const kept = withoutMissingArtifacts(comments, artifacts, canvases, systems);
       if (kept === comments) continue;
       const keptIds = new Set(kept.map((comment) => comment.id));
       forgetRef.current(comments.filter((comment) => !keptIds.has(comment.id)).map((comment) => comment.id));
-      updateRef.current(session.id, (prev) => withoutMissingArtifacts(prev, artifacts, canvases));
+      updateRef.current(session.id, (prev) => withoutMissingArtifacts(prev, artifacts, canvases, systems));
     }
-  }, [sessions, bySession, canvasesBySession, readSessions, updateRef, forgetRef]);
+  }, [sessions, bySession, canvasesBySession, readSessions, designSystemsBySession, updateRef, forgetRef]);
 }

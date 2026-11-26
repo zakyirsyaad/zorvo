@@ -187,6 +187,19 @@ Private mode is off until you turn it on, and works with Qwen Code.
   saves one format or all of them. A video an agent shows, such as a Remotion
   render, plays in the chat's card and the Artifacts tab, and the Files tab
   plays the videos in your project.
+- **Your project's design system, read first.** A folder with a
+  `design-system.json` (a brand book, tokens and components, as Claude Design
+  lays them out) is a design system. Before an agent designs a page, a canvas
+  or a motion, Zorvo tells it which systems the session's folder holds and
+  which is the default. Zorvo looks only in that folder and below it, never
+  above it, so a session in a subfolder does not see a system at the
+  repository's root. An agent can also make one for you, from your code or
+  from brand files you give it, and Zorvo shows it beside the chat: its brand
+  book, colours and type in each theme, and every component's live preview.
+  A canvas that names the system loads its tokens, and **Theme** switches
+  every artboard. Comment on a token, a component or a passage of the brand
+  book, and when the system was made from your code Zorvo says when that code
+  changed; **Sync again** puts a message for the agent in your composer.
 - **Reply to part of a reply.** Select text in the chat to copy it, or press
   **Reply** to quote it in your next message.
 - **Read back without losing your place.** The chat follows the agent's reply
@@ -479,6 +492,13 @@ before it edits files or runs commands. Pick another mode in the composer.
   Zorvo keeps only a list of the canvases a session showed and pictures of
   the artboards on this Mac, and removes a picture no canvas has used for 30
   days.
+- **A design system reaches no new host, but may load fonts and React.**
+  Zorvo's own page around a design system loads nothing from the network by
+  itself. Opening one, like opening a page, may load the Google Fonts its
+  tokens name and React from `cdn.jsdelivr.net` for its component previews,
+  a system that came with a cloned repository included. Zorvo keeps only a
+  list of the systems a session showed, and checks whether the code a system
+  was made from changed with your own `git`, read-only.
 - **Videos are rendered on this Mac.** Zorvo draws each frame with WebKit and
   encodes it with AVFoundation, so rendering downloads nothing. A composition
   loads the same script and font hosts as a page, and the rendered files stay

@@ -1,3 +1,5 @@
+import { DESIGN_SYSTEM_QUOTE_RULE, designSystemHeading, designSystemMessage } from '../lib/design-system-comments';
+import type { DesignSystemEntry } from '../lib/design-system-read';
 import type { RefObject } from 'react';
 import { flushSync } from 'react-dom';
 import type { ComposerHandle } from '../components/ComposerDock';
@@ -30,6 +32,8 @@ export interface AddArtifactReview {
   add: (checked: readonly CheckedArtifactComment[], artifact: Artifact, cwd: string) => void;
   /** The same for comments on a canvas's artboards: a heading per artboard, in canvas order. */
   addCanvas: (checked: readonly CheckedArtifactComment[], entry: CanvasEntry, canvas: Canvas, cwd: string) => void;
+  /** The same for comments on a design system: a heading, then the comments by what they are on. */
+  addDesignSystem?: (checked: readonly CheckedArtifactComment[], entry: DesignSystemEntry) => void;
 }
 
 type ArtifactCommentsChange = (prev: ArtifactComment[]) => ArtifactComment[];
@@ -168,6 +172,18 @@ export function useReviewWiring({
     message.addArtifact(session.id, ids, `${entry.key}/${lastArtboardId ?? first?.id ?? ''}`);
   };
 
+  const addDesignSystem: NonNullable<AddArtifactReview['addDesignSystem']> = (checked, entry) => {
+    const composer = composerRef.current;
+    if (!session || !composer || blockedReason || checked.length === 0) return;
+    flushSync(() => collapseArtifact?.());
+    const heading = designSystemHeading(entry) + DESIGN_SYSTEM_QUOTE_RULE;
+    const withHeading = message.needsArtifactHeading(session.id, entry.key, heading);
+    composer.insertText(designSystemMessage(checked, entry, withHeading));
+    const ids = checked.map(({ comment }) => comment.id);
+    changeArtifact(session.id, ids, unsent);
+    message.addArtifact(session.id, ids, entry.key);
+  };
+
   const insertCanvasText = (text: string) => {
     flushSync(() => collapseArtifact?.());
     composerRef.current?.insertText(text);
@@ -192,7 +208,7 @@ export function useReviewWiring({
       },
     },
     addReview: { inMessage, blockedReason, add },
-    addArtifactReview: { inMessage: message.inMessageArtifact, blockedReason, add: addArtifact, addCanvas },
+    addArtifactReview: { inMessage: message.inMessageArtifact, blockedReason, add: addArtifact, addCanvas, addDesignSystem },
     forget: message.forget,
     slot,
     reviewOwner: blocksSend

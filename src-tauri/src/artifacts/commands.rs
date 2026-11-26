@@ -11,11 +11,15 @@ use tauri_plugin_dialog::DialogExt;
 
 use super::canvas::{board_key, board_key_in, folder_digest, read_canvas, resolve_canvas, Canvas};
 use super::canvas_export::{
-    export_boards, pdf_file_name, png_width, split_drawn, without_missing, write_new_file,
-    ExportBoard, ExportFormat, ExportOutcome, COULD_NOT_EXPORT, COULD_NOT_SAVE,
+    export_boards, pdf_file_name, png_width, split_drawn, themed_stem, without_missing,
+    write_new_file, ExportBoard, ExportFormat, ExportOutcome, COULD_NOT_EXPORT, COULD_NOT_SAVE,
+};
+use super::ds_canvas::{
+    canvas_system, chosen_theme, linked_system, picture_key, session_folder_of, system_digest,
+    CanvasSystem,
 };
 use super::picks::{checked_marks, PageMark};
-use super::protocol::{canvas_file_url, page_url, Served};
+use super::protocol::{canvas_file_url, canvas_themed_file_url, page_url, Served};
 use super::render::{self, Ended, Pushed, ThumbJob, ThumbQueue};
 use super::source::{read_source, temp_roots};
 use super::store::{
@@ -44,6 +48,7 @@ pub struct SessionArtifacts {
     pub canvases: Vec<ListedCanvas>,
     pub motions: Vec<super::motion_store::MotionEntry>,
     pub videos: Vec<super::motion_store::VideoEntry>,
+    pub design_systems: Vec<super::ds_store::DesignSystemEntry>,
 }
 
 /// A canvas in `artifact_list`: its entry, and whether its folder is gone. Only the folder is
@@ -63,7 +68,11 @@ pub struct ListedCanvas {
 #[serde(rename_all = "camelCase")]
 pub struct BoardState {
     pub id: String,
+    /// The artboard's own key, which a comment records as its `fileHash`.
     pub sha256: Option<String>,
+    /// What its picture and live frame are keyed by: `sha256` itself, or, when the canvas names a
+    /// design system, that with the system's digest and the theme (`ds_canvas::picture_key`).
+    pub picture_key: Option<String>,
 }
 
 /// A canvas as read now. `canvas` is `None` with `error` when it cannot be read.
@@ -74,21 +83,67 @@ pub struct CanvasRead {
     pub canvas: Option<Canvas>,
     pub error: Option<String>,
     pub boards: Vec<BoardState>,
+    /// What `canvas.json`'s `designSystem` links, when it names one.
+    pub design_system: Option<CanvasSystem>,
+    /// The theme the boards' picture keys are for, when the canvas links a system.
+    pub theme: Option<String>,
+    /// The linked system's folder, for drawing pictures; never sent to the webview.
+    #[serde(skip)]
+    pub system_root: Option<std::path::PathBuf>,
 }
 
 const FOLDER_NOT_FOUND: &str = "Folder not found";
 
-fn board_states(root: &Path, canvas: &Canvas) -> Vec<BoardState> {
+fn board_states(root: &Path, canvas: &Canvas, system: Option<(&str, &str)>) -> Vec<BoardState> {
     let folder = folder_digest(root);
     canvas
         .sections
         .iter()
         .flat_map(|section| &section.artboards)
-        .map(|board| BoardState {
-            id: board.id.clone(),
-            sha256: board_key_in(root, &folder, &board.file, board.width, board.height),
+        .map(|board| {
+            let sha256 = board_key_in(root, &folder, &board.file, board.width, board.height);
+            BoardState {
+                id: board.id.clone(),
+                picture_key: sha256.as_deref().map(|key| picture_key(key, system)),
+                sha256,
+            }
         })
         .collect()
+}
+
+/// The linked system of a canvas being read: what the header shows, the theme its pictures are
+/// for (the one asked for, else the first), and the system's folder and digest.
+struct LinkedRead {
+    system: Option<CanvasSystem>,
+    theme: Option<String>,
+    root: Option<std::path::PathBuf>,
+    digest: Option<String>,
+}
+
+fn linked_read(root: &Path, relative: &str, canvas: &Canvas, theme: Option<&str>) -> LinkedRead {
+    let none = LinkedRead {
+        system: None,
+        theme: None,
+        root: None,
+        digest: None,
+    };
+    let Some(session) = session_folder_of(root, relative) else {
+        return none;
+    };
+    let system = canvas_system(root, &session, canvas);
+    let linked = canvas
+        .design_system
+        .as_deref()
+        .and_then(|path| linked_system(root, &session, path));
+    match linked {
+        Some(linked) => LinkedRead {
+            theme: chosen_theme(&linked.themes, theme),
+            digest: Some(system_digest(&linked.root)),
+            root: Some(linked.root),
+            system,
+        },
+        None => LinkedRead { system, ..none },
+    }
 }
 
 fn artboard_count(canvas: &Canvas) -> u32 {
@@ -125,8 +180,11 @@ pub fn show_canvas(
         artboard_count(&canvas),
         now_ms,
     )?;
-    let boards = board_states(&folder.root, &canvas);
+    let boards = board_states(&folder.root, &canvas, None);
     Ok(CanvasRead {
+        design_system: None,
+        theme: None,
+        system_root: None,
         entry,
         canvas: Some(canvas),
         error: None,
@@ -164,6 +222,17 @@ pub fn read_canvas_entry(
     session_id: &str,
     key: &str,
 ) -> Result<CanvasRead, String> {
+    read_canvas_entry_in(artifacts, is_known, session_id, key, None)
+}
+
+/// `read_canvas_entry` with the theme a canvas that names a design system is read in.
+pub fn read_canvas_entry_in(
+    artifacts: &ArtifactStore,
+    is_known: impl Fn(&Path) -> bool,
+    session_id: &str,
+    key: &str,
+    theme: Option<&str>,
+) -> Result<CanvasRead, String> {
     let entry = artifacts
         .canvas(session_id, key)
         .ok_or_else(|| FAILED.to_string())?;
@@ -173,13 +242,18 @@ pub fn read_canvas_entry(
         canvas: None,
         error: Some(error.to_string()),
         boards: Vec::new(),
+        design_system: None,
+        theme: None,
+        system_root: None,
     };
     if !is_inside_known_session_folder(&root, &entry.relative, &is_known) {
         return Ok(failed(entry, FOLDER_NOT_FOUND));
     }
     Ok(match read_canvas(&root) {
         Ok(canvas) => {
-            let boards = board_states(&root, &canvas);
+            let linked = linked_read(&root, &entry.relative, &canvas, theme);
+            let system = linked.digest.as_deref().zip(linked.theme.as_deref());
+            let boards = board_states(&root, &canvas, system);
             // The count as the folder holds it now; the index keeps the one from the last show.
             let entry = CanvasEntry {
                 artboards: artboard_count(&canvas),
@@ -190,6 +264,9 @@ pub fn read_canvas_entry(
                 canvas: Some(canvas),
                 error: None,
                 boards,
+                design_system: linked.system,
+                theme: linked.theme,
+                system_root: linked.root,
             }
         }
         Err(error) => failed(entry, &error),
@@ -219,7 +296,7 @@ pub fn list_thumbs(
     let hashes: std::collections::HashMap<&str, &str> = read
         .boards
         .iter()
-        .filter_map(|board| Some((board.id.as_str(), board.sha256.as_deref()?)))
+        .filter_map(|board| Some((board.id.as_str(), board.picture_key.as_deref()?)))
         .collect();
     let mut thumbs = Vec::new();
     let mut jobs = Vec::new();
@@ -243,6 +320,8 @@ pub fn list_thumbs(
                 file: board.file.clone(),
                 width: board.width,
                 height: board.height,
+                theme: read.theme.clone(),
+                system_root: read.system_root.clone(),
             });
         }
         thumbs.push(BoardThumb {
@@ -276,7 +355,15 @@ impl Drop for WorkerGuard<'_> {
 /// outside the lock, before drawing and again after it: a picture is saved only for the file
 /// it shows, and only while its canvas is remembered.
 fn draw_thumbs(app: &AppHandle, served: &Arc<Served>, queue: &Thumbs) {
-    let current_hash = |job: &ThumbJob| board_key(&job.root, &job.file, job.width, job.height);
+    // The job's picture key worked out now: its board's key, then its system's digest and theme.
+    let current_hash = |job: &ThumbJob| {
+        let board = board_key(&job.root, &job.file, job.width, job.height)?;
+        let digest = job.system_root.as_deref().map(system_digest);
+        Some(picture_key(
+            &board,
+            digest.as_deref().zip(job.theme.as_deref()),
+        ))
+    };
     let is_known = |job: &ThumbJob| served.store.canvas(&job.session_id, &job.key).is_some();
     drain_thumbs(
         queue,
@@ -326,6 +413,14 @@ fn drain_thumbs(
     }
 }
 
+/// The URL a picture is drawn from: in the job's theme when its canvas names a design system.
+pub fn job_url(job: &ThumbJob) -> String {
+    match job.theme.as_deref() {
+        Some(theme) => canvas_themed_file_url(&job.session_id, &job.key, theme, &job.file),
+        None => canvas_file_url(&job.session_id, &job.key, &job.file),
+    }
+}
+
 /// Draws one job and saves its picture when the file and its canvas are still the same.
 fn draw_thumb(
     app: &AppHandle,
@@ -334,7 +429,7 @@ fn draw_thumb(
     current_hash: &impl Fn(&ThumbJob) -> Option<String>,
     is_known: &impl Fn(&ThumbJob) -> bool,
 ) -> Ended {
-    let url = canvas_file_url(&job.session_id, &job.key, &job.file);
+    let url = job_url(job);
     let png = render::snapshot_png(
         app,
         Arc::clone(served),
@@ -402,10 +497,15 @@ pub fn list_sessions(artifacts: &ArtifactStore, session_ids: &[String]) -> Vec<S
             let canvases = artifacts.canvases(session_id);
             let motions = artifacts.motions(session_id);
             let videos = artifacts.videos(session_id);
+            let design_systems = artifacts.design_systems(session_id);
             // Any file unreadable: the answer says nothing about what is gone.
-            let failed =
-                listed.is_err() || canvases.is_err() || motions.is_err() || videos.is_err();
+            let failed = listed.is_err()
+                || canvases.is_err()
+                || motions.is_err()
+                || videos.is_err()
+                || design_systems.is_err();
             SessionArtifacts {
+                design_systems: design_systems.unwrap_or_default(),
                 motions: motions.unwrap_or_default(),
                 videos: videos.unwrap_or_default(),
                 session_id: session_id.clone(),
@@ -526,18 +626,21 @@ pub fn canvas_read(
     artifacts: State<'_, Arc<ArtifactStore>>,
     session_id: String,
     key: String,
+    theme: Option<String>,
 ) -> Result<CanvasRead, String> {
-    read_canvas_entry(
+    read_canvas_entry_in(
         &artifacts,
         |root| store.is_known_workspace(root).unwrap_or(false),
         &session_id,
         &key,
+        theme.as_deref(),
     )
 }
 
 /// The canvas's pictures: those cached, and the missing ones queued to be drawn (one at a time,
 /// in a hidden view); `canvas-thumb` says when each is ready.
 #[tauri::command(async)]
+#[allow(clippy::too_many_arguments)]
 pub fn canvas_thumbs(
     app: AppHandle,
     store: State<'_, AppStore>,
@@ -546,12 +649,14 @@ pub fn canvas_thumbs(
     thumbs: State<'_, Thumbs>,
     session_id: String,
     key: String,
+    theme: Option<String>,
 ) -> Result<Vec<BoardThumb>, String> {
-    let read = read_canvas_entry(
+    let read = read_canvas_entry_in(
         &artifacts,
         |root| store.is_known_workspace(root).unwrap_or(false),
         &session_id,
         &key,
+        theme.as_deref(),
     )?;
     let (listed, jobs) = list_thumbs(&session_id, &read, &served.thumbs, SystemTime::now());
     let queue = Arc::clone(&thumbs);
@@ -709,15 +814,17 @@ fn choose_export_place(
 fn draw_for_export(
     app: &AppHandle,
     served: &Arc<Served>,
-    session_id: &str,
-    key: &str,
+    (session_id, key, theme): (&str, &str, Option<&str>),
     format: ExportFormat,
     boards: Vec<ExportBoard>,
 ) -> Vec<(ExportBoard, Result<Vec<u8>, String>)> {
     boards
         .into_iter()
         .map(|board| {
-            let url = canvas_file_url(session_id, key, &board.artboard.file);
+            let url = match theme {
+                Some(theme) => canvas_themed_file_url(session_id, key, theme, &board.artboard.file),
+                None => canvas_file_url(session_id, key, &board.artboard.file),
+            };
             let (width, height) = (board.artboard.width, board.artboard.height);
             let served = Arc::clone(served);
             let drawn = match format {
@@ -774,16 +881,29 @@ pub fn canvas_export(
     key: String,
     artboard_ids: Option<Vec<String>>,
     format: String,
+    theme: Option<String>,
 ) -> Result<Option<ExportOutcome>, String> {
     let format = ExportFormat::parse(&format)?;
-    let read = read_canvas_entry(
+    let read = read_canvas_entry_in(
         &artifacts,
         |root| store.is_known_workspace(root).unwrap_or(false),
         &session_id,
         &key,
+        theme.as_deref(),
     )?;
+    let theme_count = read
+        .design_system
+        .as_ref()
+        .map_or(0, |system| system.themes.len());
+    let chosen = read.theme.clone();
     let canvas = read.canvas.ok_or_else(|| COULD_NOT_EXPORT.to_string())?;
-    let boards = export_boards(&canvas, artboard_ids.as_deref())?;
+    let boards: Vec<ExportBoard> = export_boards(&canvas, artboard_ids.as_deref())?
+        .into_iter()
+        .map(|board| ExportBoard {
+            stem: themed_stem(&board.stem, chosen.as_deref(), theme_count),
+            ..board
+        })
+        .collect();
     // An artboard whose file is gone would be drawn as a blank page and counted as written.
     let missing: Vec<String> = read
         .boards
@@ -801,7 +921,13 @@ pub fn canvas_export(
     let Some(place) = choose_export_place(&app, format, &boards, &canvas.title)? else {
         return Ok(None);
     };
-    let drawn = draw_for_export(&app, &served, &session_id, &key, format, boards);
+    let drawn = draw_for_export(
+        &app,
+        &served,
+        (&session_id, &key, chosen.as_deref()),
+        format,
+        boards,
+    );
     let (ready, mut failed) = split_drawn(drawn);
     failed.extend(absent);
     let written = write_export(place, format, ready)?;
@@ -1040,6 +1166,8 @@ mod tests {
                 file: format!("{id}.html"),
                 width: 400,
                 height: 300,
+                theme: None,
+                system_root: None,
             };
             queue.lock().unwrap().push(job, false);
         }
@@ -1402,6 +1530,14 @@ mod tests {
         std::fs::create_dir_all(data.0.join("badc-4")).unwrap();
         std::fs::write(data.0.join("badc-4").join("canvases.json"), b"{").unwrap();
         assert!(list_sessions(&artifacts, &["badc-4".to_string()])[0].failed);
+        // And so does an unreadable design-systems.json.
+        std::fs::create_dir_all(data.0.join("badd-5")).unwrap();
+        std::fs::write(data.0.join("badd-5").join("design-systems.json"), b"{").unwrap();
+        assert!(list_sessions(&artifacts, &["badd-5".to_string()])[0].failed);
+        assert_eq!(
+            serde_json::to_value(&listed[0]).unwrap()["designSystems"],
+            serde_json::json!([])
+        );
         // No index at all is a session with no pages, not a failure.
         assert!(!listed[2].failed);
         assert_eq!(
@@ -1462,5 +1598,88 @@ mod tests {
         );
         assert!(stored_page(&artifacts, SESSION, &id, 2).is_err());
         assert!(stored_page(&artifacts, "../x", &id, 1).is_err());
+    }
+
+    /// `canvas_work` whose canvas names `../../ds`, a system with two themes.
+    fn linked_work() -> Temp {
+        let work = canvas_work();
+        let json = CANVAS_JSON.replacen('{', r#"{"designSystem":"../../ds","#, 1);
+        std::fs::write(work.0.join("design/x/canvas.json"), json).unwrap();
+        let ds = work.0.join("ds");
+        std::fs::create_dir_all(&ds).unwrap();
+        std::fs::write(ds.join("design-system.json"), r#"{"title":"Acme"}"#).unwrap();
+        std::fs::write(
+            ds.join("tokens.json"),
+            r##"{"color":{"themes":[{"id":"dark","name":"Dark"},{"id":"light","name":"Light"}],"tokens":[{"name":"accent","value":"#111111"}]}}"##,
+        )
+        .unwrap();
+        work
+    }
+
+    #[test]
+    fn a_canvas_read_in_a_theme_keys_pictures_by_it_while_sha256_stays() {
+        let data = Temp::new("data");
+        let work = linked_work();
+        let artifacts = ArtifactStore::new(data.0.clone());
+        let shown =
+            show_canvas(&artifacts, |_| true, SESSION, text(&work.0), "design/x", 5).unwrap();
+        let key = shown.entry.key;
+        let dark = read_canvas_entry_in(&artifacts, |_| true, SESSION, &key, Some("dark")).unwrap();
+        let light =
+            read_canvas_entry_in(&artifacts, |_| true, SESSION, &key, Some("light")).unwrap();
+        let odd = read_canvas_entry_in(&artifacts, |_| true, SESSION, &key, Some("sepia")).unwrap();
+        assert_eq!(dark.boards[0].sha256, light.boards[0].sha256);
+        assert_ne!(dark.boards[0].picture_key, light.boards[0].picture_key);
+        assert_ne!(dark.boards[0].picture_key, dark.boards[0].sha256);
+        assert_eq!(odd.theme.as_deref(), Some("dark"));
+        let system = dark.design_system.expect("named");
+        assert!(!system.is_missing);
+        assert_eq!(system.themes, vec!["dark".to_string(), "light".to_string()]);
+        assert!(dark.system_root.is_some());
+    }
+
+    #[test]
+    fn without_a_system_the_picture_key_is_the_board_key() {
+        let data = Temp::new("data");
+        let work = canvas_work();
+        let artifacts = ArtifactStore::new(data.0.clone());
+        let read =
+            show_canvas(&artifacts, |_| true, SESSION, text(&work.0), "design/x", 5).unwrap();
+        assert_eq!(read.boards[0].picture_key, read.boards[0].sha256);
+        assert_eq!(read.design_system, None);
+    }
+
+    #[test]
+    fn a_canvas_read_reports_a_missing_system() {
+        let data = Temp::new("data");
+        let work = linked_work();
+        std::fs::remove_dir_all(work.0.join("ds")).unwrap();
+        let artifacts = ArtifactStore::new(data.0.clone());
+        let read =
+            show_canvas(&artifacts, |_| true, SESSION, text(&work.0), "design/x", 5).unwrap();
+        let again = read_canvas_entry(&artifacts, |_| true, SESSION, &read.entry.key).unwrap();
+        let system = again.design_system.expect("named");
+        assert!(system.is_missing);
+        assert_eq!(system.path, "../../ds");
+        assert_eq!(again.boards[0].picture_key, again.boards[0].sha256);
+    }
+
+    #[test]
+    fn a_job_is_drawn_with_the_url_of_its_theme() {
+        let job = ThumbJob {
+            session_id: SESSION.into(),
+            key: format!("c-{}", "0".repeat(16)),
+            artboard_id: "a".into(),
+            sha256: "a".repeat(64),
+            root: std::path::PathBuf::from("/nowhere"),
+            file: "a.html".into(),
+            width: 400,
+            height: 300,
+            theme: Some("light".into()),
+            system_root: None,
+        };
+        assert!(job_url(&job).contains("/t/light/f/a.html"));
+        let plain = ThumbJob { theme: None, ..job };
+        assert!(job_url(&plain).ends_with("/f/a.html") && !job_url(&plain).contains("/t/"));
     }
 }

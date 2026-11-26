@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { canvasThumbUrl, parseCanvasRead, type BoardState, type Canvas, type CanvasRead } from '../lib/canvas';
+import { canvasThumbUrl, parseCanvasRead, pictureKeyOf, type BoardState, type Canvas, type CanvasRead } from '../lib/canvas';
 
 /** Emitted by the backend with `{ sessionId }` after a session's artifacts changed. */
 const ARTIFACTS_CHANGED = 'artifacts-changed';
@@ -97,7 +97,7 @@ function parseViewEvent(payload: unknown, sessionId: string, key: string): Parti
  * (`turnsEnded` moves) and when the window comes to the front. A `canvas.json` that no longer
  * parses keeps the last good canvas, which the viewer goes on showing.
  */
-export function useCanvas(sessionId: string, key: string | null, turnsEnded = 0): CanvasState {
+export function useCanvas(sessionId: string, key: string | null, turnsEnded = 0, theme: string | null = null): CanvasState {
   const memoryKey = key === null ? null : `${sessionId}/${key}`;
   const [{ read, shown }, setReads] = useState<ReadMemory>(() => (memoryKey === null ? NO_READ : (lastReads.get(memoryKey) ?? NO_READ)));
   const [view, setView] = useState<ViewMemory>(() => (memoryKey === null ? DEFAULT_VIEW : (memory.get(memoryKey) ?? DEFAULT_VIEW)));
@@ -110,7 +110,7 @@ export function useCanvas(sessionId: string, key: string | null, turnsEnded = 0)
   const refresh = useCallback(() => {
     if (key === null) return;
     const request = ++lastRequest.current;
-    invoke('canvas_read', { sessionId, key })
+    invoke('canvas_read', { sessionId, key, ...(theme ? { theme } : {}) })
       .then((answer) => {
         const parsed = parseCanvasRead(answer);
         if (parsed === null || request < lastApplied.current) return;
@@ -122,7 +122,7 @@ export function useCanvas(sessionId: string, key: string | null, turnsEnded = 0)
         });
       })
       .catch(() => undefined);
-  }, [sessionId, key]);
+  }, [sessionId, key, theme]);
 
   // Another canvas in the same viewer starts from what is known of that one.
   const shownKey = useRef(memoryKey);
@@ -140,7 +140,8 @@ export function useCanvas(sessionId: string, key: string | null, turnsEnded = 0)
   }, []);
 
   // The files' hashes, as one string: an equal read asks for nothing again.
-  const hashes = shown?.boards.map((board) => board.sha256 ?? '').join(',') ?? null;
+  // Pictures are keyed by the picture key, which follows the canvas's design system and theme.
+  const hashes = shown?.boards.map((board) => pictureKeyOf(board) ?? '').join(',') ?? null;
   // The hashes whose pictures this canvas waits for, read by the `canvas-thumb` listener.
   const wantedHashes = useRef<ReadonlySet<string>>(new Set());
   useEffect(() => {
@@ -149,16 +150,18 @@ export function useCanvas(sessionId: string, key: string | null, turnsEnded = 0)
   useEffect(() => {
     if (key === null || hashes === null) return;
     // The backend queues the missing pictures and says through `canvas-thumb` when each is drawn.
-    invoke('canvas_thumbs', { sessionId, key })
+    const shownTheme = shown?.theme;
+    invoke('canvas_thumbs', { sessionId, key, ...(shownTheme ? { theme: shownTheme } : {}) })
       .then((answer) => addReady(readyHashes(answer)))
       .catch(() => undefined);
-  }, [sessionId, key, hashes, addReady]);
+  }, [sessionId, key, hashes, addReady, shown?.theme]);
 
   const thumbs = useMemo(() => {
     if (shown === null || readyPictures.size === 0) return NO_PICTURES;
     const pictures = new Map<string, string>();
     for (const board of shown.boards) {
-      if (board.sha256 !== null && readyPictures.has(board.sha256)) pictures.set(board.id, canvasThumbUrl(board.sha256));
+      const picture = pictureKeyOf(board);
+      if (picture !== null && readyPictures.has(picture)) pictures.set(board.id, canvasThumbUrl(picture));
     }
     return pictures.size === 0 ? NO_PICTURES : pictures;
   }, [shown, readyPictures]);

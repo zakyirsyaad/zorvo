@@ -555,7 +555,18 @@ export type PageAnchor =
     };
 
 /** A page anchor, or (on a canvas artboard only) the whole artboard, which has no mark. */
-export type ArtifactAnchor = PageAnchor | { kind: 'artboard' };
+/** `system`: a design system comment on a whole token or component, which has no mark in a page. */
+export type ArtifactAnchor = PageAnchor | { kind: 'artboard' } | { kind: 'system' };
+
+/** What a design system comment is on: a token, a component, or a section of the brand book. */
+export type DesignSystemTarget = { kind: 'token'; name: string } | { kind: 'component'; name: string } | { kind: 'section'; file: string };
+
+/** Which part of a design system a comment is on, and the hash of what it was written on. */
+export interface DesignSystemCommentRef {
+  key: string;
+  target: DesignSystemTarget;
+  hash: string;
+}
 
 /** Which canvas artboard a comment is on, and the SHA-256 of its file when it was written. */
 export interface CanvasCommentRef {
@@ -577,6 +588,8 @@ export interface ArtifactComment {
   sentAt?: number;
   /** Set on a canvas comment: `artifactId` is then the canvas key and `version` is 0. */
   canvas?: CanvasCommentRef;
+  /** Set on a design system comment: `artifactId` is then the system key and `version` is 0. */
+  designSystem?: DesignSystemCommentRef;
 }
 
 /** One version of one artifact, as the page view shows it. */
@@ -612,7 +625,8 @@ export type ArtifactCard =
   | { kind?: undefined; artifactId: string; title: string; version: number }
   | { kind: 'canvas'; canvasKey: string; title: string; artboards: number }
   | { kind: 'motion'; motionKey: string; title: string; duration: number; formats: number }
-  | { kind: 'video'; videoKey: string; title: string };
+  | { kind: 'video'; videoKey: string; title: string }
+  | { kind: 'design-system'; designSystemKey: string; title: string; tokens: number; components: number };
 
 export interface ElicitationChoice {
   value: string;

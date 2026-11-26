@@ -6,6 +6,7 @@ import { VISUAL_GUIDE } from "../lib/visuals";
 
 const CRAFT_PHRASES = [
   "design system",
+  "look for a `design-system.json` in this folder",
   "ask once",
   "[price]",
   "<button>",

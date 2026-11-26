@@ -187,6 +187,13 @@ Private mode is off until you turn it on, and works with Qwen Code.
   saves one format or all of them. A video an agent shows, such as a Remotion
   render, plays in the chat's card and the Artifacts tab, and the Files tab
   plays the videos in your project.
+- **Your project's design system, read first.** A folder with a
+  `design-system.json` (a brand book, tokens and components, as Claude Design
+  lays them out) is a design system. Before an agent designs a page, a canvas
+  or a motion, Zorvo tells it which systems the session's folder holds and
+  which is the default. Zorvo looks only in that folder and below it, never
+  above it, so a session in a subfolder does not see a system at the
+  repository's root.
 - **Reply to part of a reply.** Select text in the chat to copy it, or press
   **Reply** to quote it in your next message.
 - **Read back without losing your place.** The chat follows the agent's reply

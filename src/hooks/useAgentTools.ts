@@ -38,12 +38,12 @@ import {
 } from '../lib/agent-tools';
 import type { MentionAgentStatus } from '../lib/delegation';
 import { createId } from '../lib/ids';
-import { CANVAS_GUIDE, CANVAS_REFUSALS, canvasResultText, parseCanvasRead } from '../lib/canvas';
-import { MOTION_GUIDE, MOTION_PARSE_ERROR, MOTION_REFUSALS, motionResultText, parseMotionRead, parseVideoEntry, videoResultText } from '../lib/motion';
+import { CANVAS_REFUSALS, canvasResultText, parseCanvasRead } from '../lib/canvas';
+import { MOTION_PARSE_ERROR, MOTION_REFUSALS, motionResultText, parseMotionRead, parseVideoEntry, videoResultText } from '../lib/motion';
 import { toolsRoleOf } from '../lib/workers';
-import { ARTIFACT_GUIDE, ARTIFACT_REFUSALS, parseShown, shownResultText, type ShownArtifact } from '../lib/artifacts';
+import { ARTIFACT_REFUSALS, parseShown, shownResultText, type ShownArtifact } from '../lib/artifacts';
 import { withArtifactCard, withCanvasCard, withMotionCard, withVideoCard } from '../lib/artifact-card';
-import { VISUAL_GUIDE, VISUAL_REFUSALS, VISUAL_SHOWN_TEXT, parseVisualEntry } from '../lib/visuals';
+import { VISUAL_REFUSALS, VISUAL_SHOWN_TEXT, parseVisualEntry } from '../lib/visuals';
 import { withVisualPart } from '../lib/visual-part';
 import { parseNextStep } from '../lib/next-step';
 import { WRAP_UP_SHOWN_TEXT, withNextStep } from '../lib/next-step-part';
@@ -54,6 +54,7 @@ import type { StartWorkerInput, StartWorkerResult } from '../lib/delegation-help
 import { workerByHandle } from '../lib/workers';
 import type { OpenRequest, OpenResult } from './useOpenedSessions';
 import { useLatest } from './useLatest';
+import { guideAnswer } from '../lib/design-system-tool';
 
 /** Answered when something went wrong on Zorvo's side; never the error itself, which could hold the task. */
 const FAILED = 'Zorvo could not do that.';
@@ -771,8 +772,9 @@ export function useAgentTools(deps: AgentToolsDeps): {
         }
         if (call.tool === 'artifact_guide') {
           const kind = (call.args as Record<string, unknown> | null)?.kind;
-          const guides: Record<string, string> = { canvas: CANVAS_GUIDE, visual: VISUAL_GUIDE, motion: MOTION_GUIDE };
-          respond(call.callId, true, (typeof kind === 'string' ? guides[kind] : undefined) ?? ARTIFACT_GUIDE);
+          void guideAnswer(kind, () => invoke('design_systems_list', { sessionId: session.id, cwd: session.cwd })).then((text) =>
+            respond(call.callId, true, text),
+          );
           return;
         }
         if (call.tool === 'show_artifact') {

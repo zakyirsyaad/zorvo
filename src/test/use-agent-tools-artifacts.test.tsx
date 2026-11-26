@@ -16,6 +16,7 @@ import { useAgentTools, type AgentToolsDeps } from "../hooks/useAgentTools";
 import { NO_SESSION } from "../lib/agent-tools";
 import { ARTIFACT_GUIDE, ARTIFACT_REFUSALS, type ShownArtifact } from "../lib/artifacts";
 import { CANVAS_GUIDE } from "../lib/canvas";
+import { MOTION_GUIDE } from "../lib/motion";
 import { fakeTauriInvoke } from "./setup";
 import { makeProfile } from "./fixtures/agents";
 import type { ChatMessage, Session } from "../types";
@@ -87,11 +88,42 @@ function setup(show: (args: Record<string, unknown>) => unknown | Promise<unknow
   return { answers, shows, call, cards, shown, notices, messages };
 }
 
+/** The line every design guide ends with when the folder holds no design system. */
+const NO_SYSTEM = "No design system in this folder. Zorvo looks only in this folder and below it, never above it.";
+
 describe("artifact_guide", () => {
   it("answers the guide", async () => {
     const env = setup(() => SHOWN);
     await env.call("c-1", "artifact_guide");
-    expect(env.answers()).toEqual([{ callId: "c-1", ok: true, text: ARTIFACT_GUIDE }]);
+    expect(env.answers()).toEqual([{ callId: "c-1", ok: true, text: `${ARTIFACT_GUIDE}\n\n${NO_SYSTEM}` }]);
+  });
+
+  it("ends the motion guide with the systems the session's folder holds", async () => {
+    const env = setup(() => SHOWN);
+    const spy = vi.spyOn(internals(), "invoke");
+    spy.mockImplementation((cmd, args) =>
+      cmd === "design_systems_list"
+        ? Promise.resolve({
+            systems: [{ key: "d-0123456789abcdef", relative: "docs/design-system", title: "Zorvo", isDefault: true, dropped: [] }],
+            defaultProblem: null,
+          })
+        : fakeTauriInvoke(cmd, args),
+    );
+    await env.call("c-1", "artifact_guide", { kind: "motion" });
+    expect(env.answers()[0]).toEqual({
+      callId: "c-1",
+      ok: true,
+      text: `${MOTION_GUIDE}\n\nDesign systems in this folder: \`docs/design-system\` (\`Zorvo\`, default). Read its README.md and tokens.json before you design. Zorvo looks only in this folder and below it, never above it.`,
+    });
+    expect(spy.mock.calls.filter(([cmd]) => cmd === "design_systems_list").map(([, args]) => args)).toEqual([{ sessionId: "s-1", cwd: SESSION.cwd }]);
+  });
+
+  it("answers the guide alone when the search fails", async () => {
+    const env = setup(() => SHOWN);
+    const spy = vi.spyOn(internals(), "invoke");
+    spy.mockImplementation((cmd, args) => (cmd === "design_systems_list" ? Promise.reject("/Users/test is not one of your workspaces") : fakeTauriInvoke(cmd, args)));
+    await env.call("c-1", "artifact_guide", { kind: "canvas" });
+    expect(env.answers()).toEqual([{ callId: "c-1", ok: true, text: CANVAS_GUIDE }]);
   });
 });
 
@@ -112,7 +144,7 @@ describe("canvases", () => {
     const env = setup(() => SHOWN);
     await env.call("c-1", "artifact_guide", { kind: "canvas" });
     await env.call("c-2", "artifact_guide", { kind: "page" });
-    expect(env.answers().map((a) => a.text)).toEqual([CANVAS_GUIDE, ARTIFACT_GUIDE]);
+    expect(env.answers().map((a) => a.text)).toEqual([`${CANVAS_GUIDE}\n\n${NO_SYSTEM}`, `${ARTIFACT_GUIDE}\n\n${NO_SYSTEM}`]);
   });
 
   it("passes a canvas refusal or parse error on to the agent", async () => {

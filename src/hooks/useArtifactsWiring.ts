@@ -77,7 +77,12 @@ export function useArtifactsWiring({
     () => (activeSession ? artifacts.videosBySession.get(activeSession.id) ?? [] : []),
     [artifacts.videosBySession, activeSession],
   );
-  const sessionMediaCount = sessionMotions.length + sessionVideos.length;
+  const sessionDesignSystems = useMemo(
+    () => (activeSession ? artifacts.designSystemsBySession.get(activeSession.id) ?? [] : []),
+    [artifacts.designSystemsBySession, activeSession],
+  );
+  // Motions, videos and design systems each open by themselves when nothing else is listed.
+  const sessionMediaCount = sessionMotions.length + sessionVideos.length + sessionDesignSystems.length;
   const activeCwd = activeSession?.cwd;
   const createdFiles = useMemo(
     () => createdFilesOf(activeTranscript ?? [], activeCwd),
@@ -98,8 +103,9 @@ export function useArtifactsWiring({
         artifacts.bySession,
         (profileId) => agentNameOr(agents.find((agent) => agent.id === profileId)),
         artifacts.canvasesBySession,
+        artifacts.designSystemsBySession,
       ),
-    [sessions, artifacts.bySession, artifacts.canvasesBySession, agents],
+    [sessions, artifacts.bySession, artifacts.canvasesBySession, artifacts.designSystemsBySession, agents],
   );
   const isGalleryShown = isGalleryOpen && gallery.length > 0;
 
@@ -107,6 +113,12 @@ export function useArtifactsWiring({
     onSelectSession(sessionId);
     // For the session about to show, whose id is its view: the one on screen now may be another.
     inspector.viewArtifact({ artifactId, version: null }, sessionId);
+    inspector.show('artifacts');
+  };
+
+  const openDesignSystemFromGallery = (sessionId: string, designSystemKey: string) => {
+    onSelectSession(sessionId);
+    inspector.viewArtifact({ designSystemKey }, sessionId);
     inspector.show('artifacts');
   };
 
@@ -124,8 +136,9 @@ export function useArtifactsWiring({
         ...sessionCanvases.map((canvas) => canvas.key),
         ...sessionMotions.map((motion) => motion.key),
         ...sessionVideos.map((video) => video.key),
+        ...sessionDesignSystems.map((system) => system.key),
       ]),
-    [sessionArtifacts, sessionCanvases, sessionMotions, sessionVideos],
+    [sessionArtifacts, sessionCanvases, sessionMotions, sessionVideos, sessionDesignSystems],
   );
 
   /** A chat card's Open: the version it marks, in the Artifacts tab (the newest is followed, not pinned), or the canvas. */
@@ -139,6 +152,12 @@ export function useArtifactsWiring({
     if (card.kind === 'video') {
       if (!sessionVideos.some((video) => video.key === card.videoKey)) return;
       inspector.viewArtifact({ videoKey: card.videoKey });
+      inspector.show('artifacts');
+      return;
+    }
+    if (card.kind === 'design-system') {
+      if (!sessionDesignSystems.some((system) => system.key === card.designSystemKey)) return;
+      inspector.viewArtifact({ designSystemKey: card.designSystemKey });
       inspector.show('artifacts');
       return;
     }
@@ -224,6 +243,7 @@ export function useArtifactsWiring({
       sessionMediaCount === 1 && sessionCanvases.length === 0 && sessionArtifacts.length === 0 && createdFiles.length === 0;
     if (!inspector.viewedArtifact && isOnlyMedia && sessionMotions[0]) inspector.viewArtifact({ motionKey: sessionMotions[0].key });
     if (!inspector.viewedArtifact && isOnlyMedia && sessionVideos[0]) inspector.viewArtifact({ videoKey: sessionVideos[0].key });
+    if (!inspector.viewedArtifact && isOnlyMedia && sessionDesignSystems[0]) inspector.viewArtifact({ designSystemKey: sessionDesignSystems[0].key });
     inspector.setArtifactExpanded(true);
   };
 
@@ -232,12 +252,14 @@ export function useArtifactsWiring({
     sessionCanvases,
     sessionMotions,
     sessionVideos,
+    sessionDesignSystems,
     createdFiles,
     onArtifactShown,
     gallery,
     isGalleryShown,
     openFromGallery,
     openCanvasFromGallery,
+    openDesignSystemFromGallery,
     artifactIds,
     openArtifactCard,
     isArtifactExpanded,

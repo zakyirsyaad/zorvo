@@ -42,7 +42,7 @@ import { CANVAS_REFUSALS, canvasResultText, parseCanvasRead } from '../lib/canva
 import { MOTION_PARSE_ERROR, MOTION_REFUSALS, motionResultText, parseMotionRead, parseVideoEntry, videoResultText } from '../lib/motion';
 import { toolsRoleOf } from '../lib/workers';
 import { ARTIFACT_REFUSALS, parseShown, shownResultText, type ShownArtifact } from '../lib/artifacts';
-import { withArtifactCard, withCanvasCard, withMotionCard, withVideoCard } from '../lib/artifact-card';
+import { withArtifactCard, withCanvasCard, withDesignSystemCard, withMotionCard, withVideoCard } from '../lib/artifact-card';
 import { VISUAL_REFUSALS, VISUAL_SHOWN_TEXT, parseVisualEntry } from '../lib/visuals';
 import { withVisualPart } from '../lib/visual-part';
 import { parseNextStep } from '../lib/next-step';
@@ -544,6 +544,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
         const shown = await showDesignSystem(() => invoke('design_system_show', { sessionId: session.id, cwd: session.cwd, path }));
         if (shown.ok) {
           latest.current.flushUpdates?.();
+          const read = shown.read;
+          latest.current.updateMessages(session.id, (prev) => withDesignSystemCard(prev, read, { sessionId: session.id, now: Date.now(), createId }));
           latest.current.onArtifactShown(session.id, { kind: 'design-system', key: shown.read.entry.key });
         } else if (shown.notice) {
           latest.current.onNotice?.(shown.notice);

@@ -7,7 +7,7 @@ import { AgentTile } from "../ui/AgentTile";
 import { filterGallery, newestVersion, rowTitle, type GalleryRow } from "../../lib/artifacts";
 import { canvasCountLabel } from "../../lib/canvas";
 import { formatRelativeTime } from "../../lib/relative-time";
-import { ArtifactMark } from "./ArtifactsPanel";
+import { ArtifactMark, designSystemDetail } from "./ArtifactsPanel";
 import { CanvasMenu } from "./CanvasMenu";
 
 export interface ArtifactGalleryProps {
@@ -17,6 +17,8 @@ export interface ArtifactGalleryProps {
   onOpen: (sessionId: string, artifactId: string) => void;
   /** Selects the session and shows the canvas in its Artifacts tab. */
   onOpenCanvas?: (sessionId: string, key: string) => void;
+  /** Opens a design system of a session in its Artifacts tab. */
+  onOpenDesignSystem?: (sessionId: string, key: string) => void;
   /**
    * Brings the sidebar back; given only while it is hidden. The top bar, which has this button for
    * every other view, is not drawn under the gallery, so without it there would be no way back.
@@ -33,13 +35,25 @@ const plural = (count: number, word: string, many = `${word}s`) => `${count} ${c
 
 function countLine(rows: readonly GalleryRow[]): string {
   const canvases = rows.filter((row) => row.kind === "canvas").length;
-  const pages = plural(rows.length - canvases, "page");
+  const systems = rows.filter((row) => row.kind === "design-system").length;
+  const pages = plural(rows.length - canvases - systems, "page");
   const sessions = plural(new Set(rows.map((row) => row.sessionId)).size, "session");
-  return canvases === 0 ? `${pages} in ${sessions}` : `${pages} and ${plural(canvases, "canvas", "canvases")} in ${sessions}`;
+  const others = [...(canvases > 0 ? [plural(canvases, "canvas", "canvases")] : []), ...(systems > 0 ? [plural(systems, "design system")] : [])];
+  return others.length === 0 ? `${pages} in ${sessions}` : `${[pages, ...others].join(" and ")} in ${sessions}`;
 }
 
 /** Every page every session's agent showed, in the chat's place: find one again by its title. */
-export function ArtifactGallery({ rows, onOpen, onOpenCanvas, onShowSidebar, notice, onError = () => undefined }: ArtifactGalleryProps) {
+function rowKey(row: GalleryRow): string {
+  if (row.kind === "design-system") return row.system.key;
+  return row.kind === "canvas" ? row.canvas.key : row.artifact.id;
+}
+
+function rowDetail(row: GalleryRow): string {
+  if (row.kind === "design-system") return designSystemDetail(row.system);
+  return row.kind === "canvas" ? canvasCountLabel(row.canvas.artboards) : `Version ${newestVersion(row.artifact)}`;
+}
+
+export function ArtifactGallery({ rows, onOpen, onOpenCanvas, onOpenDesignSystem, onShowSidebar, notice, onError = () => undefined }: ArtifactGalleryProps) {
   const [query, setQuery] = useState("");
   const shown = filterGallery(rows, query);
 
@@ -83,11 +97,17 @@ export function ArtifactGallery({ rows, onOpen, onOpenCanvas, onShowSidebar, not
               </div>
               <ul aria-label="Artifacts" className="-mt-2 flex flex-col gap-0.5">
                 {shown.map((row) => (
-                  <li key={`${row.sessionId}/${row.kind === "canvas" ? row.canvas.key : row.artifact.id}`} className="flex items-center gap-1">
+                  <li key={`${row.sessionId}/${rowKey(row)}`} className="flex items-center gap-1">
                     <button
                       type="button"
                       aria-label={`${rowTitle(row)}, in ${row.sessionName}`}
-                      onClick={() => (row.kind === "canvas" ? onOpenCanvas?.(row.sessionId, row.canvas.key) : onOpen(row.sessionId, row.artifact.id))}
+                      onClick={() =>
+                        row.kind === "design-system"
+                          ? onOpenDesignSystem?.(row.sessionId, row.system.key)
+                          : row.kind === "canvas"
+                            ? onOpenCanvas?.(row.sessionId, row.canvas.key)
+                            : onOpen(row.sessionId, row.artifact.id)
+                      }
                       className={`${COLUMNS} focus-ring min-w-0 flex-1 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-surface-hover`}
                     >
                       <span className="flex min-w-0 items-center gap-3">
@@ -98,7 +118,7 @@ export function ArtifactGallery({ rows, onOpen, onOpenCanvas, onShowSidebar, not
                             {row.isArchived && <span className="shrink-0 rounded bg-chip px-1.5 text-caption text-fg-muted">Archived</span>}
                           </span>
                           <span className="truncate text-caption text-fg-subtle">
-                            {`${row.sessionName} · ${row.kind === "canvas" ? canvasCountLabel(row.canvas.artboards) : `Version ${newestVersion(row.artifact)}`}`}
+                            {`${row.sessionName} · ${rowDetail(row)}`}
                           </span>
                         </span>
                       </span>

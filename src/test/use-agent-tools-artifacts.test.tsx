@@ -363,6 +363,7 @@ describe("design systems", () => {
     expect(spy.mock.calls.filter(([cmd]) => cmd === "design_system_show").map(([, args]) => args)).toEqual([{ sessionId: "s-1", cwd: SESSION.cwd, path: "ds" }]);
     expect(env.answers()).toEqual([{ callId: "c-1", ok: true, text: "Shown: `Acme` (key d-0123456789abcdef), 42 tokens, 12 components." }]);
     expect(env.shown).toEqual([{ sessionId: "s-1", shown: { kind: "design-system", key: "d-0123456789abcdef" } }]);
+    expect(env.cards()).toEqual([{ kind: "design-system", designSystemKey: "d-0123456789abcdef", title: "Acme", tokens: 42, components: 12 }]);
   });
 
   it("passes a refusal on and hides any other error", async () => {

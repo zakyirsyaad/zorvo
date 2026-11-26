@@ -729,12 +729,14 @@ export default function App() {
     sessionCanvases,
     sessionMotions,
     sessionVideos,
+    sessionDesignSystems,
     createdFiles,
     onArtifactShown,
     gallery,
     isGalleryShown,
     openFromGallery,
     openCanvasFromGallery,
+    openDesignSystemFromGallery,
     artifactIds,
     openArtifactCard,
     isArtifactExpanded,
@@ -1492,6 +1494,7 @@ export default function App() {
               rows={gallery}
               onOpen={openFromGallery}
               onOpenCanvas={openCanvasFromGallery}
+              onOpenDesignSystem={openDesignSystemFromGallery}
               onError={reportError}
               onShowSidebar={isSidebarHidden ? () => setSidebarHidden(false) : undefined}
               notice={settingsPage.section === null && noticeToast}
@@ -1981,6 +1984,7 @@ export default function App() {
                     canvases={sessionCanvases}
                     motions={sessionMotions}
                     videos={sessionVideos}
+                    designSystems={sessionDesignSystems}
                     turnsEnded={turnsEnded}
                     comments={artifactComments}
                     addReview={review.addArtifactReview}
@@ -2057,6 +2061,7 @@ export default function App() {
               sessionCanvases={sessionCanvases}
               sessionMotions={sessionMotions}
               sessionVideos={sessionVideos}
+              sessionDesignSystems={sessionDesignSystems}
               artifactComments={artifactComments}
               onExpandArtifact={expandArtifact}
               canvasInsertText={canvasInsertText}

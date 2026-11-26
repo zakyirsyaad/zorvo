@@ -612,7 +612,8 @@ export type ArtifactCard =
   | { kind?: undefined; artifactId: string; title: string; version: number }
   | { kind: 'canvas'; canvasKey: string; title: string; artboards: number }
   | { kind: 'motion'; motionKey: string; title: string; duration: number; formats: number }
-  | { kind: 'video'; videoKey: string; title: string };
+  | { kind: 'video'; videoKey: string; title: string }
+  | { kind: 'design-system'; designSystemKey: string; title: string; tokens: number; components: number };
 
 export interface ElicitationChoice {
   value: string;

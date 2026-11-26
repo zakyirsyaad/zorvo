@@ -35,6 +35,7 @@ export function SiteFooter({ anchorBase = "" }: { anchorBase?: "" | "/" }) {
         <div className="flex flex-col">
           <span className="text-fg-subtle pb-1.5">Project</span>
           <a className="focus-ring min-h-8" href={LINKS.repository}>Source</a>
+          <a className="focus-ring min-h-8" href={LINKS.feedback}>Send feedback</a>
           <a className="focus-ring min-h-8" href={LINKS.discord} target="_blank" rel="noopener noreferrer">Discord</a>
           <a className="focus-ring min-h-8" href={LINKS.x} target="_blank" rel="noopener noreferrer">X</a>
           <a className="focus-ring min-h-8" href={LINKS.releases}>Releases</a>

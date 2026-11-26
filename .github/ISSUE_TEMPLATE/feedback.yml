@@ -1,0 +1,37 @@
+name: Feedback
+description: Tell us how Zorvo works for you, or why you stopped using it.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Short answers are fine. Never paste API keys, tokens or other secrets here, since issues are public.
+  - type: dropdown
+    id: still-using
+    attributes:
+      label: Do you still use Zorvo?
+      options:
+        - "Yes"
+        - Sometimes
+        - No, I stopped
+        - I only tried it once
+    validations:
+      required: true
+  - type: textarea
+    id: what-for
+    attributes:
+      label: What you used it for
+      description: The kind of work, and which agents.
+      placeholder: Reviewing Claude Code's changes in a work repository.
+  - type: textarea
+    id: feedback
+    attributes:
+      label: What worked, and what got in your way
+      description: If you stopped, what made you stop.
+    validations:
+      required: true
+  - type: input
+    id: zorvo-version
+    attributes:
+      label: Zorvo version
+      description: Shown at the bottom of the sidebar. Leave it empty if you don't know.
+      placeholder: v0.21.1

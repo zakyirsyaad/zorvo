@@ -9,6 +9,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - **Discard changes to a single file.** Each file in the Changes tab has a two-click Discard (or Delete, for new files) action to undo edits or remove an untracked file without leaving the inspector.
 - **Restore files when rewinding a chat.** Zorvo takes a lightweight git snapshot before each turn (leaving your index, stash and gitignored files untouched, and skipping untracked files over 5 MB), so Rewind offers a two-click **Rewind + files?** option that puts back the files the agent reported changing since that message. Nothing else in the repository is touched.
 
+### Changed
+
+- **Fewer false "may be stuck" warnings.** An agent that sends nothing is now flagged after three minutes instead of one, since a model thinking at a high effort (Gemini in Antigravity, say) often works quietly for over a minute.
+
 ## [0.20.1] - 2026-11-25
 
 ### Fixed

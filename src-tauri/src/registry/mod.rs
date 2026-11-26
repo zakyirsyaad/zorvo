@@ -7,6 +7,7 @@
 
 mod cache;
 pub mod catalog_view;
+pub mod cli_launch;
 pub mod fetch;
 pub mod history;
 pub mod icons;

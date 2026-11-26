@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { keptConfigOf, type AcpChoices, type RewoundOptions } from '../lib/acp-draft';
-import { restoreTurnCheckpoint } from '../lib/turn-checkpoints';
+import { changedFilesOf, restoreTurnCheckpoint } from '../lib/turn-checkpoints';
 import type { AcpEngine, FirstMessage } from './session-engine/useAcpEngine';
 import type { NoticeTone } from './useNotice';
 import { writeConversationHandoff } from '../lib/session-handoff';
@@ -81,6 +81,10 @@ export function useSessionRewind(deps: SessionRewindDeps): SessionRewind {
   const rewind = (session: Session, messageId: string, options?: RewindOptions) => {
     const message = transcripts[session.id]?.find((m) => m.id === messageId);
     if (message?.role !== 'user') return;
+    // Read before the messages go: only the files the agent reported changing from this message on
+    // are restored, never anything else in the repository (another session's work, the user's own).
+    const transcript = transcripts[session.id] ?? [];
+    const changedFiles = changedFilesOf(transcript.slice(transcript.findIndex((m) => m.id === messageId)));
     // Done at once, while this session is still the one shown: its message goes
     // back into its own composer. The old agent's late events are ignored.
     const configOptions = acp.info[session.id]?.configOptions ?? [];
@@ -111,8 +115,12 @@ export function useSessionRewind(deps: SessionRewindDeps): SessionRewind {
       const checkpoint = message.checkpoint;
       const restoring = (async () => {
         await stopsRef.current.get(session.id);
+        if (changedFiles.length === 0) {
+          onNotice('Rewound chat. The agent reported no file changes after that message.', 'info');
+          return;
+        }
         try {
-          const changed = await restoreTurnCheckpoint(session.cwd, checkpoint);
+          const changed = await restoreTurnCheckpoint(session.cwd, checkpoint, changedFiles);
           onFilesRestored?.();
           onNotice(
             changed === 0
@@ -121,6 +129,8 @@ export function useSessionRewind(deps: SessionRewindDeps): SessionRewind {
             'info',
           );
         } catch (error) {
+          // A partial restore still changed files: the Changes panel shows them as they are now.
+          onFilesRestored?.();
           onNotice(`Rewound chat, but could not restore files: ${String(error)}`);
         }
       })();

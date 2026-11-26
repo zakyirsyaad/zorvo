@@ -169,6 +169,9 @@ export function useAcpEngine({
   // Sessions with a turn running that no turn end or exit has settled yet. A ref, not state: both
   // events can reach the page before React renders, and `acp.isBusy` would still read the old render.
   const unsettledTurn = useRef(new Set<string>());
+  /** Sessions whose prompt waits for its pre-turn checkpoint, and those of them the user stopped meanwhile. */
+  const awaitingCheckpoint = useRef(new Set<string>());
+  const stoppedBeforeSend = useRef(new Set<string>());
   // Sessions whose turn an exit settled first: the turn end that follows settles nothing again.
   const settledByExit = useRef(new Set<string>());
   const forgetStopAsked = (sessionId: string) =>
@@ -442,7 +445,19 @@ export function useAcpEngine({
     failedPromptRef.current.delete(sessionId);
     onTurnFailed?.(sessionId, null);
     if (cwd && !promptMessage.checkpoint) {
+      awaitingCheckpoint.current.add(sessionId);
+      stoppedBeforeSend.current.delete(sessionId);
       const checkpoint = await createTurnCheckpoint(cwd);
+      awaitingCheckpoint.current.delete(sessionId);
+      // Stop pressed while the checkpoint was taken: the message never goes out, and comes back
+      // to the composer like any message the agent did not take.
+      if (stoppedBeforeSend.current.delete(sessionId)) {
+        unsettledTurn.current.delete(sessionId);
+        if (lastPromptRef.current.get(sessionId)?.message.id === promptMessage.id) lastPromptRef.current.delete(sessionId);
+        if (context) unsentContextRef.current.set(sessionId, context);
+        updateNow(sessionId, (prev) => withoutMessage(prev, message.id));
+        return false;
+      }
       if (isStopped(sessionId)) {
         unsettledTurn.current.delete(sessionId);
         if (lastPromptRef.current.get(sessionId)?.message.id === promptMessage.id) {
@@ -897,6 +912,11 @@ export function useAcpEngine({
    * starting, stopping ends the session instead.
    */
   const interrupt = (sessionId: string, messages: ChatMessage[] | undefined) => {
+    // The prompt has not gone out yet (its checkpoint is still being taken): it never will.
+    if (awaitingCheckpoint.current.has(sessionId)) {
+      stoppedBeforeSend.current.add(sessionId);
+      return;
+    }
     if (starting.has(sessionId)) {
       void stop(sessionId);
       patchSession(sessionId, { status: 'terminated', endedAt: Date.now() });

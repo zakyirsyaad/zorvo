@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChatCanvas } from '../components/ChatCanvas';
 import { useSessionRewind, type SessionRewindDeps } from '../hooks/useSessionRewind';
 import { NO_CHOICES } from '../lib/acp-draft';
-import { createTurnCheckpoint, isValidCheckpoint } from '../lib/turn-checkpoints';
+import { changedFilesOf, createTurnCheckpoint, isValidCheckpoint } from '../lib/turn-checkpoints';
 import type { ChatMessage, Session } from '../types';
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
@@ -51,6 +51,10 @@ describe('useSessionRewind file restore', () => {
     role: 'agent',
     content: 'done',
     timestamp: 20,
+    tools: [
+      { id: 't1', name: 'Edit', kind: 'edit', status: 'completed', details: [{ kind: 'diff', path: '/w/repo/src/app.ts', isNewFile: false, rows: [] }] },
+      { id: 't2', name: 'Read', kind: 'read', status: 'completed', details: [{ kind: 'changed', path: '/w/repo/README.md' }] },
+    ],
   };
 
   function setup(overrides: Partial<SessionRewindDeps> = {}) {
@@ -113,7 +117,7 @@ describe('useSessionRewind file restore', () => {
     });
     expect(spy).toHaveBeenCalledWith(
       'restore_turn_checkpoint',
-      { path: '/w/repo', checkpoint: VALID_SHA },
+      { path: '/w/repo', checkpoint: VALID_SHA, files: ['/w/repo/src/app.ts', '/w/repo/README.md'] },
       undefined,
     );
 
@@ -152,6 +156,46 @@ describe('useSessionRewind file restore', () => {
 
     expect(deps.onRewound).toHaveBeenCalledWith('s1');
     expect(deps.onNotice).toHaveBeenCalledWith('Rewound chat, but could not restore files: missing tree object');
+  });
+});
+
+describe('restore scope', () => {
+  it('restores nothing when the agent reported no changed files', async () => {
+    const spy = vi.spyOn(tauriInternals(), 'invoke').mockResolvedValue(undefined);
+    const deps: SessionRewindDeps = {
+      agents: [],
+      transcripts: { s1: [{ id: 'm1', role: 'user', content: 'look', timestamp: 1, checkpoint: VALID_SHA }, { id: 'm2', role: 'agent', content: 'ok', timestamp: 2 }] },
+      acp: { info: {}, start: vi.fn().mockResolvedValue(true), stop: vi.fn().mockResolvedValue(true) },
+      patchSession: vi.fn(),
+      updateMessages: vi.fn(),
+      onRestore: vi.fn(),
+      onGiveBack: vi.fn(),
+      onNotice: vi.fn(),
+    };
+    const { result } = renderHook(() => useSessionRewind(deps));
+    await act(async () => {
+      result.current.rewind(session, 'm1', { restoreFiles: true });
+      await Promise.resolve();
+    });
+    expect(spy).not.toHaveBeenCalledWith('restore_turn_checkpoint', expect.anything(), undefined);
+    expect(deps.onNotice).toHaveBeenCalledWith('Rewound chat. The agent reported no file changes after that message.', 'info');
+  });
+
+  it('lists only files the agent changed, never ones it read', () => {
+    const messages: ChatMessage[] = [
+      {
+        id: 'a',
+        role: 'agent',
+        content: '',
+        timestamp: 1,
+        tools: [
+          { id: '1', name: 'Write', kind: 'edit', status: 'completed', details: [{ kind: 'diff', path: 'new.ts', isNewFile: true, rows: [] }] },
+          { id: '2', name: 'Read', kind: 'read', status: 'completed', locations: ['docs.md'] },
+          { id: '3', name: 'Edit', kind: 'edit', status: 'failed', details: [{ kind: 'diff', path: 'new.ts', isNewFile: false, rows: [] }] },
+        ],
+      },
+    ];
+    expect(changedFilesOf(messages)).toEqual(['new.ts']);
   });
 });
 

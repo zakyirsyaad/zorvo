@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useDesignSystem } from "../../hooks/useDesignSystem";
+import { useDesignSystemTheme } from "../../hooks/useDesignSystemTheme";
+import { ThemeMenu } from "./ThemeMenu";
 import { enqueueArtifactViewCall } from "../../hooks/useArtifactView";
 import { useLatest } from "../../hooks/useLatest";
 import { FOLDER_NOT_FOUND } from "../../lib/canvas";
@@ -34,7 +36,10 @@ export function DesignSystemViewer({ sessionId, designSystemKey, cwd, turnsEnded
   const onErrorRef = useLatest(onError);
   const { read, lastGood, list } = system;
   const shown = lastGood;
-  const theme = shown?.content?.tokens?.themes[0]?.id ?? "default";
+  const themeIds = useMemo(() => shown?.content?.tokens?.themes.map((theme) => theme.id) ?? [], [shown]);
+  const picked = useDesignSystemTheme(sessionId, designSystemKey, themeIds);
+  const theme = picked.theme ?? "default";
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   const notes = useMemo(() => {
     const lines: string[] = [];
@@ -78,7 +83,9 @@ export function DesignSystemViewer({ sessionId, designSystemKey, cwd, turnsEnded
         onReveal={isFolderGone ? undefined : reveal}
         onReload={shown !== null && !isFolderGone ? () => setReload((count) => count + 1) : undefined}
         notes={headerNotes}
-      />
+      >
+        {picked.theme !== null && <ThemeMenu themes={themeIds} theme={picked.theme} onPick={picked.setTheme} onMenuOpen={setIsMenuOpen} />}
+      </DesignSystemHeader>
       {isFolderGone ? (
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 p-4 text-center">
           <span className="text-ui font-semibold text-fg">Folder not found</span>
@@ -88,7 +95,7 @@ export function DesignSystemViewer({ sessionId, designSystemKey, cwd, turnsEnded
         <ArtifactPageBox
           target={{ kind: "design-system", sessionId, key: designSystemKey, reload }}
           title={`The design system ${title}`}
-          isCovered={isCovered}
+          isCovered={isCovered || isMenuOpen}
           onError={onError}
         />
       ) : (

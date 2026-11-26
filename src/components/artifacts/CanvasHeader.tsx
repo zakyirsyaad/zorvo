@@ -6,6 +6,7 @@ import { IconButton } from "../ui/IconButton";
 import { Popover, PopoverOption } from "../ui/Popover";
 import type { CanvasSection } from "../../lib/canvas";
 import { CanvasExportMenu, type CanvasExporting } from "./CanvasExportMenu";
+import { ThemeMenu, type ThemeMenuProps } from "./ThemeMenu";
 
 export interface CanvasHeaderProps {
   title: string;
@@ -31,6 +32,8 @@ export interface CanvasHeaderProps {
   exporting?: CanvasExporting;
   /** Makes a new view of the canvas, which is how one that ended or hangs comes back; absent, no Reload. */
   onReload?: () => void;
+  /** The linked design system's Theme menu; absent when the canvas names none or it has one theme. */
+  theme?: Omit<ThemeMenuProps, 'onMenuOpen'>;
 }
 
 export interface CanvasHandoff {
@@ -108,7 +111,7 @@ function SelectionTools({
  * with Focus, Previous and Next: in the header when expanded, else in a row of its own under it.
  * Export sits with the selection, or in the header when nothing is selected.
  */
-export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBack, isExpanded, onToggleExpanded, onCommand, onMenuOpen, commenting, handoff, exporting, onReload }: CanvasHeaderProps) {
+export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBack, isExpanded, onToggleExpanded, onCommand, onMenuOpen, commenting, handoff, exporting, onReload, theme }: CanvasHeaderProps) {
   const [isSectionsOpen, setIsSectionsOpen] = useState(false);
   const percent = `${Math.round(zoom * 100)}%`;
   const setSectionsOpen = (isOpen: boolean) => {
@@ -195,6 +198,7 @@ export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBa
           </>
         )}
         {exporting && selectedTitle === null && <CanvasExportMenu exporting={exporting} hasSelection={false} onMenuOpen={onMenuOpen} />}
+        {theme && <ThemeMenu {...theme} onMenuOpen={onMenuOpen} />}
         {DIVIDER}
         {onReload && (
           <IconButton label="Reload" size="row" onClick={onReload}>

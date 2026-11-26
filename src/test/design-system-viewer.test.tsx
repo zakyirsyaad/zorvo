@@ -131,3 +131,20 @@ describe("design systems in the gallery", () => {
     expect(rows[0].kind).toBe("design-system");
   });
 });
+
+describe("the shared theme pick", () => {
+  it("is the same for every reader of a system in a session, and falls back to the first", async () => {
+    const { renderHook, act } = await import("@testing-library/react");
+    const { useDesignSystemTheme } = await import("../hooks/useDesignSystemTheme");
+    const themes = ["dark", "light"];
+    const one = renderHook(() => useDesignSystemTheme("s-a", KEY, themes));
+    const two = renderHook(() => useDesignSystemTheme("s-a", KEY, themes));
+    const other = renderHook(() => useDesignSystemTheme("s-b", KEY, themes));
+    expect(one.result.current.theme).toBe("dark");
+    act(() => one.result.current.setTheme("light"));
+    expect(two.result.current.theme).toBe("light");
+    expect(other.result.current.theme).toBe("dark");
+    const narrowed = renderHook(() => useDesignSystemTheme("s-a", KEY, ["sepia"]));
+    expect(narrowed.result.current.theme).toBe("sepia");
+  });
+});

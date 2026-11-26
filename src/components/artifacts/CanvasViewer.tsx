@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { AlertTriangle } from "lucide-react";
 import { useCanvas } from "../../hooks/useCanvas";
+import { useDesignSystemTheme } from "../../hooks/useDesignSystemTheme";
 import { useCanvasMarks } from "../../hooks/useCanvasMarks";
 import type { ArtifactCommentsState } from "../../hooks/useArtifactComments";
 import type { AddArtifactReview } from "../../hooks/useReviewWiring";
@@ -62,7 +63,17 @@ export function CanvasViewer({
   onInsertText,
   insertBlockedReason,
 }: CanvasViewerProps) {
-  const canvas = useCanvas(sessionId, canvasKey, turnsEnded);
+  // The linked design system's key and themes, as the last read said; the pick is shared with the
+  // system's own viewer and every canvas of the session that names it.
+  const [linked, setLinked] = useState<{ key: string | null; themes: string[] }>({ key: null, themes: [] });
+  const picked = useDesignSystemTheme(sessionId, linked.key, linked.themes);
+  const canvas = useCanvas(sessionId, canvasKey, turnsEnded, picked.theme);
+  const system = canvas.read?.designSystem ?? null;
+  const systemKey = system?.key ?? null;
+  const systemThemes = system?.themes.join(",") ?? "";
+  useEffect(() => {
+    setLinked({ key: systemKey, themes: systemThemes === "" ? [] : systemThemes.split(",") });
+  }, [systemKey, systemThemes]);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   // A new number makes a new view: a canvas whose view ended (a flood, a dead page) or hangs comes back.
@@ -109,7 +120,7 @@ export function CanvasViewer({
     if (scope === "selected" && selected === null) return;
     const artboardIds = scope === "selected" ? [selected] : null;
     setIsExporting(true);
-    invoke("canvas_export", { sessionId, key: canvasKey, artboardIds, format })
+    invoke("canvas_export", { sessionId, key: canvasKey, artboardIds, format, ...(picked.theme ? { theme: picked.theme } : {}) })
       .then((answer) => {
         const outcome = parseExportOutcome(answer);
         if (outcome === null) return;
@@ -143,6 +154,7 @@ export function CanvasViewer({
         onMenuOpen={setIsMenuOpen}
         handoff={handoff}
         onReload={shown !== null && !isFolderGone ? reloadCanvas : undefined}
+        theme={picked.theme !== null && linked.themes.length >= 2 ? { themes: linked.themes, theme: picked.theme, onPick: picked.setTheme } : undefined}
         exporting={shown !== null && !isFolderGone ? { isExporting, onExport: exportArtboards } : undefined}
         commenting={
           comments && shown !== null
@@ -154,6 +166,23 @@ export function CanvasViewer({
             : undefined
         }
       />
+      {system !== null && (system.isMissing || system.hidesDsFolder) && (
+        <div role="status" className="flex shrink-0 flex-col gap-0.5 border-b border-attention-border bg-attention-surface px-3 py-2 text-ui-sm text-fg">
+          {system.isMissing && (
+            <span className="break-words">
+              {"Design system not found: "}
+              <span className="font-mono">{system.path}</span>
+            </span>
+          )}
+          {system.hidesDsFolder && (
+            <span className="break-words">
+              {"A folder named "}
+              <span className="font-mono">_ds</span>
+              {" in this canvas is hidden by the design system."}
+            </span>
+          )}
+        </div>
+      )}
       {error !== null && (
         <div role="status" className="flex shrink-0 items-start gap-2 border-b border-attention-border bg-attention-surface px-3 py-2 text-ui-sm text-fg">
           <AlertTriangle size={14} aria-hidden="true" className="mt-0.5 shrink-0 text-status-attention" />

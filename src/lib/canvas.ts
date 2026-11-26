@@ -55,7 +55,25 @@ export interface Canvas {
 
 export interface BoardState {
   id: string;
+  /** The artboard's own key: a comment records it as its `fileHash`. */
   sha256: string | null;
+  /** What its picture and live frame are keyed by; absent, or equal to `sha256`, when the canvas names no design system. */
+  pictureKey?: string | null;
+}
+
+/** The key an artboard's picture and live frame go by. */
+export function pictureKeyOf(board: BoardState): string | null {
+  return board.pictureKey ?? board.sha256;
+}
+
+/** What a canvas read says about the design system its `canvas.json` names. */
+export interface CanvasSystem {
+  /** As `canvas.json` writes it. */
+  path: string;
+  key: string | null;
+  themes: string[];
+  isMissing: boolean;
+  hidesDsFolder: boolean;
 }
 
 export interface CanvasRead {
@@ -63,6 +81,9 @@ export interface CanvasRead {
   canvas: Canvas | null;
   error: string | null;
   boards: BoardState[];
+  designSystem?: CanvasSystem | null;
+  /** The theme its picture keys are for, when it names a system. */
+  theme?: string | null;
 }
 
 const CANVAS_KEY = /^c-[0-9a-f]{16}$/;
@@ -115,9 +136,19 @@ function parseCanvas(value: unknown): Canvas | null {
 
 function parseBoard(value: unknown): BoardState | null {
   if (!isObject(value)) return null;
-  const { id, sha256 } = value;
+  const { id, sha256, pictureKey } = value;
   if (typeof id !== 'string' || (sha256 !== null && typeof sha256 !== 'string')) return null;
-  return { id, sha256 };
+  // Kept only when the backend sent one; without it pictures go by the artboard's own key (`pictureKeyOf`).
+  return typeof pictureKey === 'string' ? { id, sha256, pictureKey } : { id, sha256 };
+}
+
+function parseCanvasSystem(value: unknown): CanvasSystem | null {
+  if (!isObject(value)) return null;
+  const { path, key, themes, isMissing, hidesDsFolder } = value;
+  if (typeof path !== 'string' || typeof isMissing !== 'boolean' || typeof hidesDsFolder !== 'boolean') return null;
+  if (key !== null && typeof key !== 'string') return null;
+  const ids = Array.isArray(themes) ? themes.filter((theme): theme is string => typeof theme === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(theme)) : [];
+  return { path, key, themes: ids, isMissing, hidesDsFolder };
 }
 
 /** The canvases in a backend list; anything that does not fit is dropped. */
@@ -140,7 +171,10 @@ export function parseCanvasRead(value: unknown): CanvasRead | null {
   if (!Array.isArray(boards)) return null;
   const parsed = boards.map(parseBoard);
   if (parsed.some((board) => board === null)) return null;
-  return { entry, canvas, error, boards: parsed as BoardState[] };
+  const designSystem = parseCanvasSystem(value.designSystem);
+  const theme = typeof value.theme === 'string' && designSystem?.themes.includes(value.theme) ? value.theme : null;
+  const read: CanvasRead = { entry, canvas, error, boards: parsed as BoardState[] };
+  return designSystem === null ? read : { ...read, designSystem, ...(theme === null ? {} : { theme }) };
 }
 
 /** What the agent is told after a canvas was shown. */
@@ -175,6 +209,11 @@ export function canvasFileUrl(sessionId: string, key: string, relative: string):
   return `${ORIGIN}canvas/${sessionId}/${key}/f/${relative.split('/').map(encodeSegment).join('/')}`;
 }
 
+/** A file of a canvas that names a design system, in a theme: `protocol.rs`'s `canvas_themed_file_url`. */
+export function canvasThemedFileUrl(sessionId: string, key: string, theme: string, relative: string): string {
+  return `${ORIGIN}canvas/${sessionId}/${key}/t/${encodeSegment(theme)}/f/${relative.split('/').map(encodeSegment).join('/')}`;
+}
+
 /** The URL of an artboard's cached picture, the same as `protocol.rs`'s `thumb_url`. */
 export function canvasThumbUrl(sha256: string): string {
   return `${ORIGIN}thumb/${sha256}.png`;
@@ -190,7 +229,10 @@ const VERSION_CHARS = 12;
  * keys and relative names only, never a path.
  */
 export function canvasShellState(read: CanvasRead, sessionId: string, thumbs: ReadonlyMap<string, string>, selected?: string | null): string {
-  const hashes = new Map(read.boards.map((board) => [board.id, board.sha256]));
+  // Pictures and frames follow the picture key, so a token or theme change reloads them.
+  const hashes = new Map(read.boards.map((board) => [board.id, pictureKeyOf(board)]));
+  const fileUrl = (file: string) =>
+    !read.theme ? canvasFileUrl(sessionId, read.entry.key, file) : canvasThemedFileUrl(sessionId, read.entry.key, read.theme, file);
   const sections = read.canvas?.sections ?? [];
   const boards = sections.flatMap((section) =>
     section.artboards.map((board) => {
@@ -205,7 +247,7 @@ export function canvasShellState(read: CanvasRead, sessionId: string, thumbs: Re
         height: board.height,
         ...(sha256 === null
           ? { missing: true }
-          : { url: `${canvasFileUrl(sessionId, read.entry.key, board.file)}?v=${sha256.slice(0, VERSION_CHARS)}&b=${board.id}` }),
+          : { url: `${fileUrl(board.file)}?v=${sha256.slice(0, VERSION_CHARS)}&b=${board.id}` }),
         ...(thumb === undefined ? {} : { thumb }),
       };
     }),

@@ -181,3 +181,33 @@ describe("a canvas's design system", () => {
     expect(odd?.canvas && "designSystem" in odd.canvas).toBe(false);
   });
 });
+
+describe("a canvas with a design system", () => {
+  it("serves its artboards in the read's theme, keyed by the picture key", () => {
+    const read = parseCanvasRead({
+      entry: ENTRY,
+      canvas: CANVAS,
+      error: null,
+      boards: [{ id: "cart", sha256: "a".repeat(64), pictureKey: "b".repeat(64) }],
+      designSystem: { path: "../ds", key: "d-0123456789abcdef", themes: ["dark", "light"], isMissing: false, hidesDsFolder: false },
+      theme: "light",
+    })!;
+    const state = JSON.parse(canvasShellState(read, "s-1", new Map()));
+    const cart = state.boards.find((board: { id: string }) => board.id === "cart");
+    expect(cart.url).toContain("/t/light/f/");
+    expect(cart.url).toContain(`?v=${"b".repeat(12)}`);
+  });
+
+  it("drops a theme the system does not list", () => {
+    const read = parseCanvasRead({
+      entry: ENTRY,
+      canvas: CANVAS,
+      error: null,
+      boards: [],
+      designSystem: { path: "../ds", key: null, themes: [], isMissing: true, hidesDsFolder: false },
+      theme: "light",
+    })!;
+    expect(read.theme).toBeUndefined();
+    expect(read.designSystem?.isMissing).toBe(true);
+  });
+});

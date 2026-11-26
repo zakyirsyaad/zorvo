@@ -16,9 +16,12 @@ pub mod plan;
 pub mod prerequisites;
 pub mod runtimes;
 
+use std::collections::BTreeMap;
 use std::sync::{OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::env_resolver::cached_user_env;
+use crate::registry::cli_launch::user_cli_versions;
+use crate::registry::resolve::first_user_program;
 use crate::registry::schema::current_platform;
 use layout::ToolsDir;
 use plan::InstalledTools;
@@ -118,18 +121,34 @@ pub fn bundled_manifest() -> Option<&'static RuntimeManifest> {
 }
 
 /// What Zorvo has installed now, read from disk on every call so an install
-/// or a clean-up is seen at once. No tool counts before [`set_tools_dir`].
+/// or a clean-up is seen at once, with the versions of the user CLIs agents
+/// can run through. No tool counts before [`set_tools_dir`].
 pub fn installed_tools() -> InstalledTools {
     let major = user_node_major();
     match (TOOLS_DIR.get(), bundled_manifest()) {
-        (Some(tools), Some(manifest)) => {
-            InstalledTools::scan(tools, manifest, current_platform(), major)
-        }
+        (Some(tools), Some(manifest)) => InstalledTools {
+            cli_versions: user_cli_versions_on_path(),
+            ..InstalledTools::scan(tools, manifest, current_platform(), major)
+        },
         _ => InstalledTools {
             user_node_major: major,
             ..InstalledTools::none()
         },
     }
+}
+
+/// [`user_cli_versions`] for the CLIs on the login shell's `PATH`, found the
+/// way the resolver finds them, on the same `PATH` as
+/// `profiles::with_system_tools`.
+fn user_cli_versions_on_path() -> BTreeMap<String, String> {
+    let path_var = cached_user_env()
+        .ok()
+        .and_then(|env| env.get("PATH").cloned())
+        .or_else(|| std::env::var("PATH").ok());
+    let Some(path_var) = path_var else {
+        return BTreeMap::new();
+    };
+    user_cli_versions(|program| first_user_program(program, &path_var))
 }
 
 #[cfg(test)]

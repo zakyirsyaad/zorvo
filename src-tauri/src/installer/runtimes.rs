@@ -167,7 +167,18 @@ pub fn user_node_major(env: &HashMap<String, String>, timeout: Duration) -> Opti
     let node = find_binary_in_path_str("node", path_var)?;
     find_binary_in_path_str("npx", path_var)?;
 
-    let mut child = crate::spawn::command(node)
+    version_output(&node, env, timeout).and_then(|output| parse_node_major(&output))
+}
+
+/// What `program --version` prints first (at most 256 bytes) when it answers
+/// within `timeout`, run with only `env`. Read on another thread so a hung
+/// program never blocks past the timeout.
+pub fn version_output(
+    program: &Path,
+    env: &HashMap<String, String>,
+    timeout: Duration,
+) -> Option<String> {
+    let mut child = crate::spawn::command(program)
         .arg("--version")
         .env_clear()
         .envs(env)
@@ -182,7 +193,6 @@ pub fn user_node_major(env: &HashMap<String, String>, timeout: Duration) -> Opti
         return None;
     };
 
-    // Read on another thread so a hung node never blocks past the timeout.
     let (sender, receiver) = mpsc::channel();
     std::thread::spawn(move || {
         let mut output = String::new();
@@ -193,7 +203,7 @@ pub fn user_node_major(env: &HashMap<String, String>, timeout: Duration) -> Opti
     let _ = child.kill();
     let _ = child.wait();
     match output {
-        Ok(Ok(output)) => parse_node_major(&output),
+        Ok(Ok(output)) => Some(output),
         _ => None,
     }
 }

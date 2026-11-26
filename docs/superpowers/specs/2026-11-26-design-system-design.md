@@ -96,10 +96,13 @@ Claude unchanged and one made in Claude opens in Zorvo:
 }
 ```
 
-- Zorvo reads `title` (required, 1 to 120 visible characters), `namespace`
-  (optional, the `bundle.js` global, `[A-Za-z_][A-Za-z0-9_]{0,63}`),
-  `libraries` (optional, names and versions previews load), `groups` and
-  `assetGroups` (optional, the order of asset groups) and `zorvo.default`.
+- Zorvo reads `title` (required, 1 to 120 visible characters; escaped with
+  `escapeVisible` and put in backticks wherever an agent reads it),
+  `namespace` (optional, the `bundle.js` global, `[A-Za-z_][A-Za-z0-9_]{0,63}`),
+  `libraries` (optional, the names previews load; for `react` and `react-dom`
+  the version given is ignored, since Zorvo pins 18.3.1), `groups` and
+  `assetGroups` (optional, the order of asset groups only) and
+  `zorvo.default`.
 - Every other field is ignored, never refused, so Claude's own fields and a
   later version's pass through. The file is at most 256 KiB of UTF-8 JSON.
 - `zorvo` is a namespaced key Claude's page keeps; it marks the project's
@@ -111,19 +114,28 @@ Claude unchanged and one made in Claude opens in Zorvo:
 
 The grammar is Claude's, read leniently:
 
-- Every family but `type` is `{"tokens": [{"name", "value", "usage"}]}`;
-  `color` adds `themes` (`[{"id", "name"}]`, the first is the primary) and a
-  value is a string (the primary theme) or an object by theme id. A token
-  missing a theme inherits the first theme's value.
+- Every family but `type` is `{"tokens": [{"name", "value", "usage"}]}`, and
+  may carry other keys (such as a `note`), which are ignored. `color.themes`
+  (`[{"id", "name"}]`, the first is the primary; ids `[A-Za-z0-9_-]{1,32}`, a
+  bad id is dropped with its reason) names the themes for **every** family: in
+  any family a value is a string (every theme) or an object by theme id, and a
+  token missing a theme inherits the first theme's value. With no
+  `color.themes`, there is one theme, `default`.
 - `type` holds `fonts` (`family`, `file` under `fonts/`, `weight`, `style`),
   `families` (name to CSS stack) and `groups` of `styles` (`name`, `fontSize`,
   `lineHeight`, `fontWeight`, optional `letterSpacing`, `family`).
 - Names are `[A-Za-z0-9][A-Za-z0-9_.-]{0,63}`, each used once across every
   family but `type`.
-- Colour values are hex, `rgb()`, `rgba()`, `hsl()`, `hsla()`, `oklch()`,
-  `oklab()`, `lab()`, `lch()` with no function inside, or an alias
-  `"{other-token}"` of a colour token that exists. Lengths are `px`, `rem`,
-  `em`, `%` or a number.
+- Values by family:
+  - `color`: hex, `rgb()`, `rgba()`, `hsl()`, `hsla()`, `oklch()`, `oklab()`,
+    `lab()`, `lch()` with no function inside, or an alias `"{other-token}"` of
+    a colour token that exists;
+  - `spacing`, `radius`, `size`: a length (`px`, `rem`, `em`, `%`) or a number;
+  - `shadow`: lengths, colours as above, `inset` and commas, nothing else;
+  - `motion`: a time (`ms`, `s`), `cubic-bezier()` of four numbers, or one of
+    `linear`, `ease`, `ease-in`, `ease-out`, `ease-in-out`;
+  - any other family: printable text without `;`, `{`, `}`, `<`, `\`,
+    `url(`, `var(` or `expression(`, since it lands in a stylesheet.
 - A value Zorvo cannot read drops that token, never the system. Each drop has
   a reason (`named colour`, `var()`, `color-mix()`, `missing alias`,
   `alias of itself`, `duplicate name`, `bad length`, `no value`), the viewer
@@ -134,10 +146,12 @@ The grammar is Claude's, read leniently:
 - `meta.source`, optional, says where the system came from:
   - `{"kind": "code", "paths": ["src/styles/globals.css"], "commit": "a1b2c3d"}`,
   - `{"kind": "references", "files": ["brand/logo.svg"]}`,
-  - and the shape `docs/design-system/tokens.json` already uses
-    (`"ref": "main@8b5a02f"`, `"paths": {"tokens": [...], "brand": [...]}`),
-    read as kind `code`: the commit is the part of `ref` after `@`, the paths
-    are every array in `paths`.
+  - and the shape `docs/design-system/tokens.json` already uses: `meta.source`
+    is a string (`"github"`) with `meta.ref` (`"main@8b5a02f"`) and
+    `meta.paths` (`{"tokens": [...], "brand": [...]}`) beside it, read as kind
+    `code`: the commit is the part of `ref` after `@`, the paths are every
+    array in `paths`.
+  - Paths in `meta.source` are relative to the repository root.
 - At most 1 MiB.
 
 ### Finding systems
@@ -146,7 +160,12 @@ The grammar is Claude's, read leniently:
   subfolders, at most 4 levels deep, skipping `node_modules`, `.git`,
   `target`, `dist` and hidden folders, reading at most 5,000 entries, and
   keeps at most 20 systems. Each folder is read in name order, so a large
-  project always stops at the same entries.
+  project always stops at the same entries. A folder that is a symbolic link
+  is never followed.
+- Each system's key is derived, not issued: `d-` and 16 hex characters of the
+  SHA-256 of its canonical folder. The same folder always has the same key,
+  whether or not it was shown, so a canvas can name a system that was never
+  shown and the frontend can still key its theme by it.
 - The search starts at the session's folder, never above it: the repository
   root is not always a known workspace (`ensure_known_workspace`), so a session
   in a subfolder does not see a system at the repository's root. Said plainly
@@ -210,9 +229,11 @@ a visual keeps the chat's colours.
 - The answer gives the system's key and counts ("Shown: Acme, 42 tokens,
   12 components. 2 tokens could not be read: ...").
 - `store.rs` records it in `design-systems.json` beside `canvases.json`
-  (`DesignSystemEntry`: a `d-<16 hex>` key, the canonical folder, its path
-  relative to the session's folder, the title and counts last read, when it
-  was shown; the same folder keeps its key; 50 a session). Zorvo keeps no copy
+  (`DesignSystemEntry`: the derived `d-<16 hex>` key, the canonical folder,
+  its path relative to the session's folder, the title and counts last read,
+  when it was shown; 50 a session). `artifact_list` returns these entries
+  beside the canvases and marks the session `failed` when `design-systems.json`
+  cannot be read, as it does for `canvases.json`. Zorvo keeps no copy
   of the files; deleting the session or **Remove** forgets the entry only.
 - Refusals are fixed sentences mirrored in `lib/design-systems.ts`
   (`DESIGN_SYSTEM_REFUSALS`, kept equal to the Rust by a test): no or an
@@ -224,10 +245,15 @@ a visual keeps the chat's colours.
 
 - An optional top-level string, in version 1 (`parse_canvas` learns it; a
   canvas without it is unchanged): the system's folder relative to the canvas
-  folder, such as `"../../docs/design-system"`. It may go up, and after
-  canonicalising must stay inside the session's folder and hold a
-  `design-system.json`. A wrong value is refused with its field
-  (`designSystem: leaves the session folder`).
+  folder, such as `"../../docs/design-system"`. An older Zorvo refuses a canvas
+  that has it (`only_known`), which is acceptable since the app updates itself.
+- `parse_canvas` reads bytes only, so it checks the syntax alone: a relative
+  path of 1 to 512 characters with no NUL, no leading `/` and no `\`; anything
+  else is refused with its field (`designSystem: ...`).
+- Whether the path stays inside the session's folder after canonicalising and
+  holds a `design-system.json` is checked when the canvas is read and on every
+  `_ds/` request. A path that fails is not a refusal: the canvas shows with a
+  header line (section 4, "A system that is gone").
 - It is written explicitly: the canvas guide tells the agent to set it to the
   default system. Zorvo never links a system by itself, so an older canvas
   keeps its look.
@@ -266,6 +292,9 @@ like `CanvasHeader`: the title and path, **Theme** (section 4), **Comment**
 - `DS_SHELL_CSP`: its own inline script and style, images, fonts and frames
   only from the scheme, fonts also from `fonts.gstatic.com`, stylesheets from
   `fonts.googleapis.com`, nothing in `connect-src`, `sandbox allow-scripts`.
+  The shell file itself names no `http` address: the Google Fonts stylesheet
+  URL for the system's hosted families is built in Rust and handed over in
+  `ds_view_apply`, and the shell adds the `<link>`.
 - The shell never gets a path. React hands it what to show with
   `ds_view_apply` (one JSON object of at most 1 MiB, written out again by serde
   before `evaluate_script`, kept and run again when a new view of that system
@@ -282,13 +311,25 @@ like `CanvasHeader`: the title and path, **Theme** (section 4), **Comment**
 - the index fields of section 1 and the tokens, normalised, with the dropped
   ones and their reasons;
 - the components (name, group and height from the `@dsCard` line, whether a
-  README and a preview exist), in `groups` order then by name;
+  README and a preview exist, the preview file's hash), grouped by their
+  `@dsCard` group in the order a group is first seen, then by name (the index's
+  `groups` orders asset groups only);
 - the assets and fonts, each marked when missing from the folder;
 - the README and the other sections rendered to HTML in Rust with
-  `pulldown-cmark` (a new dependency, MIT) and cleaned with `ammonia` (as for
-  visuals): no script, no handlers, no `href` but a `#fragment` inside the
-  page, and an `<img src>` kept only when it names a file inside the system,
-  rewritten to the scheme.
+  `pulldown-cmark` (a new dependency, MIT, pinned with `=` like `ammonia`) and
+  cleaned with `ammonia` (as for visuals): no script, no handlers, no `name`
+  attribute, every `id` prefixed `ds-u-` (and every `#fragment` link with it),
+  so the README cannot clobber the shell script's globals; no `href` but such
+  a `#fragment`; an `<img src>` kept only when it names a file inside the
+  system, rewritten to the scheme.
+
+### Reading it again
+
+The viewer runs `ds_read` again on `artifacts-changed` (emitted by a
+`show_artifact` of that system), at each turn end and on window focus, as
+`useCanvas` does. A preview frame's URL carries its file's hash (`?v=`), so a
+changed preview reloads, and a changed `tokens.json` or `bundle.*` changes the
+system digest the preview URLs also carry, so every preview reloads.
 
 ### Layout
 
@@ -307,12 +348,17 @@ like `CanvasHeader`: the title and path, **Theme** (section 4), **Comment**
 ### Live previews
 
 - Each `preview.html` is an iframe with `sandbox="allow-scripts"` at
-  `.../ds/<session>/<key>/f/components/<Name>/preview.html`, under `BOARD_CSP`.
+  `.../ds/<session>/<key>/t/<theme>/f/components/<Name>/preview.html?v=<file
+  hash>&d=<system digest>`, under `BOARD_CSP`. `f/<path>` mirrors the system's
+  folder exactly, and `f/tokens.css` is the one reserved virtual path: it is
+  built from `tokens.json` for the `<theme>` in the URL (section 4) and wins
+  over a real `tokens.css` (Claude systems carry a generated one).
 - Claude's previews expect the system loaded around them, so Zorvo inserts,
-  in order: `tokens.css`, the `@font-face` rules for `fonts/`, `bundle.css`,
+  in order: `tokens.css`, the `@font-face` rules for `fonts/`, `components/bundle.css`,
   the libraries (React and React DOM `18.3.1` from jsDelivr when `libraries`
   names them, unless the system carries both in `components/lib/`), then
-  `bundle.js`. The tags go right after `<head ...>`; with no `<head>`, after
+  `components/bundle.js`, each by its real path under `f/`, so relative
+  `url()`s inside the bundle resolve as they do on disk. The tags go right after `<head ...>`; with no `<head>`, after
   `<html ...>` or `<!doctype ...>`; never before the doctype, which would put
   the page in quirks mode. A test covers each of the three.
 - At most 12 previews are live: those on screen, nearest the middle first; the
@@ -321,36 +367,65 @@ like `CanvasHeader`: the title and path, **Theme** (section 4), **Comment**
 
 ## 4. Theme and canvases
 
-### Theme state
+### The theme is in the URL
 
-The chosen theme lives in the backend, in memory, per session and per
-system's canonical folder (the first theme until the user picks another). It
-is keyed by the folder, not by the `d-` key, because a canvas may name a
-system that was never shown and so has no key. `ds_set_theme(sessionId,
-target, themeId)` takes the system's key or the key of a canvas that names it
-(`{designSystem: key}` or `{canvas: key}`), never a path, and the backend
-resolves the folder. `tokens.css`
-is built from `tokens.json` with that theme's values on `:root`, served with
-`Cache-Control: no-store`. A pick reloads the live frames (their URL gains
-`&t=<theme id>`) and a picture key includes the theme. So the hidden view that
-draws pictures, which runs no Zorvo script, gets the same theme, and
-`page_script.js` does not change.
+The review found that a theme kept as backend state races the picture queue:
+a picture queued under one theme and drawn after a pick of another would be
+saved under the wrong key. So the theme travels in the URL instead, as a path
+segment, and relative links inherit it:
+
+- a canvas that names a system serves its files at
+  `.../canvas/<session>/<key>/t/<theme>/f/<file>` (the plain `.../f/<file>`
+  stays for a canvas with no system);
+- a system's own files at `.../ds/<session>/<key>/t/<theme>/f/<path>`;
+- the theme id is validated (`[A-Za-z0-9_-]{1,32}` and one of the system's
+  themes; another answers 404) before it reaches a path.
+
+The theme the user picks is frontend memory, per session and system key
+(`useDesignSystemTheme`; the first theme until the user picks another), shared
+by the system's viewer and every canvas of that session that names it. A
+picture job and an export carry the theme they were asked with, so nothing
+can mix them up, and the hidden picture view, which runs no Zorvo script,
+draws whatever theme its URL names. `page_script.js` does not change.
+
+### `tokens.css`
+
+Built in Rust from `tokens.json` for the theme in the URL, the same variables
+`docs/design-system/viewer/tokens-css.ts` makes today, which `bundle.css` and
+previews read:
+
+- `--<name>: <value>;` for every token of every family but `type` (`color`,
+  `spacing`, `radius`, `shadow`, `size`, `motion` and any other list family),
+  the name escaped as a CSS identifier;
+- `--font-<family>: <stack>;` for every entry of `type.families`, and an
+  `@font-face` rule for every `type.fonts` entry with a file under `fonts/`;
+- the URL's theme on `:root`, with `color-scheme: dark` or `light` when the
+  theme id is `dark` or `light`;
+- then `[data-theme="<id>"] { ... }` for every theme, so a subtree can pin
+  another theme (a swatch, a logo tile), as `themeCss` does. No
+  `prefers-color-scheme` block: the theme is chosen, not followed.
+
+Like every canvas response today, it is served with `Cache-Control: no-store`.
 
 ### A canvas names its system
 
 When `canvas.json` has `designSystem`, the canvas protocol also serves
-`.../<key>/f/_ds/<path>` from that system's folder:
+`.../t/<theme>/f/_ds/<path>` from that system's folder:
 
-- `_ds/tokens.css` (built as above), `_ds/bundle.css`, `_ds/bundle.js`,
-  `_ds/assets/...`, `_ds/fonts/...`;
+- `_ds/<path>` mirrors the system's folder exactly, with no aliases
+  (`_ds/components/bundle.css`, `_ds/assets/Logos/mark.svg`,
+  `_ds/fonts/Acme.woff2`), so relative `url()`s in the bundle work, plus one
+  reserved virtual file, `_ds/tokens.css`;
 - the permission is checked on each request (the canvas is remembered, its
-  `canvas.json` names the folder, the folder is inside the session's folder
-  and a known workspace), so reading a canvas records nothing;
+  `canvas.json` names the folder, the folder is inside the session's folder,
+  found with `is_inside_known_session_folder`, and in a known workspace), so
+  reading a canvas records nothing;
 - the path follows the canvas file rules (no `..`, no leading `/`, resolved
   inside the system's folder, read through `read_bytes_checked`).
 
 Artboards link it explicitly and relatively, as they already link
 `shared.css`: `<link rel="stylesheet" href="_ds/tokens.css">`,
+`<link rel="stylesheet" href="_ds/components/bundle.css">`,
 `<img src="_ds/assets/Logos/mark.svg">`, `../_ds/...` from a subfolder. Zorvo
 inserts nothing into an artboard: its bytes are served as written. A real
 folder named `_ds` in the canvas folder is hidden by the virtual one; the
@@ -360,21 +435,24 @@ design system." in the header.
 ### Theme on a canvas
 
 `CanvasHeader` shows **Theme** when the linked system has two themes or more.
-A pick is the same backend state, so every canvas of that session that names
-the system follows it, and so does the system's own viewer. Live frames
-reload and pictures are drawn for that theme. **Export** draws in the chosen
-theme, and with two themes or more adds the theme to each file name
-(`checkout-pay-dark.png`).
+A pick changes the frame URLs (their `t/<theme>` segment), so live frames
+reload and pictures are drawn for that theme; the system's own viewer follows
+the same pick. **Export** draws in the chosen theme, and with two themes or
+more adds the theme to each file name (`checkout-pay-dark.png`).
 
 ### Pictures and comments
 
-- The picture key becomes `picture_key`: the artboard's key plus, when the
-  canvas names a system, a digest of the system's folder (relative path, size
-  and modification time; at most 5,000 entries 8 levels deep, as for the
-  canvas folder) and the theme id. A new logo or token value draws a new
-  picture.
-- A canvas comment keeps the artboard's key as it is today, so a token or
-  theme change never makes the canvas's comments Outdated.
+- `BoardState` gains `pictureKey`: the artboard's key plus, when the canvas
+  names a system, a digest of the system's folder (relative path, size and
+  modification time; at most 5,000 entries 8 levels deep, as for the canvas
+  folder) and the theme id.
+- `pictureKey` replaces `sha256` in the frame URL's `?v=`, in the
+  `canvas-thumb` event and in the thumbnail file's name, so a new token value
+  or logo reloads the live frame and draws a new picture. `draw_thumbs`
+  checks the `pictureKey` again before saving, as it checks `board_key` today.
+- `sha256` stays the artboard's own hash and is still what a canvas comment
+  records as `fileHash`, so a token or theme change never makes the canvas's
+  comments Outdated.
 
 ### A system that is gone
 
@@ -394,12 +472,24 @@ With **Comment** on, the user picks:
 - **a passage of the brand book**: text selected in the README or a section.
 
 `page_script.js` runs in every frame, the shell's own included, since wry
-cannot leave the main frame out. Its comment mode is never turned on in the
-shell; the shell reports `ds-pick-token` and `ds-pick-section` itself, accepted
-only from the shell's exact URL, at most 20 a second. A preview's messages are
-matched to their frame by the URI wry hands the IPC handler, accepted only for
-a component the system has, and counted by `FloodGuard` first, as for a
-canvas.
+cannot leave the main frame out, and it takes its mode and marks only by
+`postMessage` from its parent frame. So, as the canvas wrapper does:
+
+- `ds_comment_mode(sessionId, key, on)` and `ds_view_marks(sessionId, key,
+  marks)` call the shell (`__zorvoDs.mode`, `__zorvoDs.marks`), which posts
+  `{zorvo: "mode"}` or `{zorvo: "marks"}` to each live preview frame, and sends
+  them again to a preview when its frame loads and reports
+  `ds-preview-loaded`;
+- the marks for a preview are its Current comments on an element or a text
+  (`dsMarksFor`); a token, a whole component and a section are marked by the
+  shell itself on its own rows and cards;
+- the shell's own `page_script.js` comment mode is never turned on; the shell
+  reports `ds-pick-token`, `ds-pick-section` and `ds-pick-component` itself,
+  accepted only from the shell's exact URL, at most 20 a second;
+- a preview's messages are matched to their frame by the URI wry hands the IPC
+  handler, accepted only for a component the system has, under `picks.rs`'s
+  rules and 5 a second, and counted by `FloodGuard` first, as for a canvas.
+  An accepted pick makes the main webview first responder, as for a page.
 
 A comment is an `ArtifactComment` whose `artifactId` is the system key,
 `version` 0, and `designSystem` is `{key, target, hash}`:
@@ -418,9 +508,13 @@ Lenient readers in `persistence.ts` and `store.rs` keep the new field;
 as for artifact comments. The message (`designSystemMessage`) is headed
 "Comments on design system `docs/design-system` (Zorvo)" and grouped by target
 ("Token `accent`", "Component `Button` (`components/Button/preview.html`)",
-"`README.md`"), with the quoting and escaping rules of artifact comments. The
-sweep removes a system's comments when no listed system has its key, only for
-sessions read without failure.
+"`README.md`"), with the quoting and escaping rules of artifact comments.
+
+The sweep (`withoutMissingArtifacts`) today sends every comment without
+`canvas` to the artifact-id check, which would remove a design-system comment
+at once. It learns a third branch: a comment with `designSystem` is removed
+when no listed design system has its key, only for sessions read without
+failure.
 
 ### Out of date
 
@@ -428,10 +522,16 @@ Only for a system whose `meta.source` is kind `code` with a commit and paths.
 `ds_source_state(sessionId, key)` runs read-only git in the repository that
 holds the system's folder:
 
+- The session's folder is checked with `ensure_known_workspace` first.
 - `commit` must match `^[0-9a-f]{7,40}$`; each path must be relative, hold no
-  `..`, not start with `-`, and stay inside the repository; paths always come
-  after `--`. A source that fails these is ignored, and the header says
-  "Source paths could not be read."
+  `..`, not start with `-` or `:`, and stay inside the repository. A source
+  that fails these is ignored, and the header says "Source paths could not be
+  read."
+- git runs through `changes::run_git` in the repository's top folder (from
+  `git rev-parse --show-toplevel`), since the paths are relative to it, with
+  `-c core.fsmonitor=false` (a cloned repository's `.git/config` is not
+  trusted) and `--literal-pathspecs`, so no path is read as pathspec magic;
+  the paths come after `--`.
 - `git log --format=%H <commit>..HEAD -- <paths>` counts the commits that
   changed the source, `git diff --quiet HEAD -- <paths>` notices uncommitted
   changes.
@@ -454,17 +554,19 @@ Each step is one pull request; `CLAUDE.md`, the README and `CHANGELOG.md`
 change in the step that changes behaviour.
 
 1. **Core.** `artifacts/design_system.rs` (index, tokens grammar, finding,
-   default), `tokens.css` building, `design_systems_list`, the line in every
-   design guide, `docs/design-system/design-system.json` (Claude's current
-   index of the Zorvo Design System, read from its artifact, plus
-   `zorvo.default`), and `docs/design-system/**` added to `rust.yml`'s paths,
+   default, derived keys), `tokens.css` building, `design_systems_list`, the
+   line in every design guide, `docs/design-system/design-system.json`
+   (Claude's current index of the Zorvo Design System, read from its artifact
+   on 2026-11-26, plus `zorvo.default`; already written, untracked, in the
+   feature worktree), and `docs/design-system/**` added to `rust.yml`'s paths,
    since the Rust tests read that folder as a fixture.
-2. **Viewer.** `show_artifact` and `artifact_guide` kind `design-system`,
+2. **Viewer.** `show_artifact` and `artifact_guide` kind `design-system` (the
+   `kind` enums in `agent_tools/tools.rs` and `put_kind`),
    `design-system-guide.md`, `design-systems.json`, the shell, the protocol
    routes, live previews, the header, the Artifacts row, the gallery and the
    chat card. The viewer shows the first theme.
 3. **Canvas and Theme.** `designSystem` in `canvas.json`, `_ds/`, the theme
-   state (viewer and canvas), `picture_key`, export per theme. After step 2,
+   in the URL (viewer and canvas), `pictureKey`, export per theme. After step 2,
    since both change `protocol.rs`.
 4. **Comments** on a design system.
 5. **Out of date and Sync again.**
@@ -482,10 +584,16 @@ Rust:
 - `tokens.css` per theme, aliases resolved, `no-store`;
 - preview insertion after `<head>`, after `<html>`, after the doctype;
 - markdown cleaning: `<script>`, `on*`, `javascript:`, outside links, `<img>`
-  rewriting;
+  rewriting, `name` stripped and `id` and `#fragment` prefixed `ds-u-`;
+- theme ids in a URL: an unknown or malformed id answers 404;
 - `_ds/` routing, traversal and a missing system; `designSystem` refusals;
-- `picture_key` changing with a token, an asset and the theme while the
-  comment key stays;
+- `pictureKey` changing with a token, an asset and the theme while `sha256`
+  (the comment's `fileHash`) stays, and a picture job drawn for the theme it
+  was asked with;
+- `tokens.css` matching what `tokens-css.ts`'s `themeCss` declares for the
+  same tokens, for `docs/design-system`;
+- `ds_source_state` refusing a path starting with `:`, and never reading
+  `core.fsmonitor`;
 - `ds_source_state` in a temporary repository: unchanged, committed change,
   uncommitted change, unknown commit, a path `-x`, a path `../x`;
 - the refusal sentences, pinned.
@@ -508,7 +616,9 @@ Frontend (Vitest):
 ## 8. Documents that change
 
 `CLAUDE.md` (Artifacts, Canvas, Artifact comments), `README.md` (what agents
-can show; no new network host), `CHANGELOG.md`, `src/lib/canvas-guide.md`
+can show; no new host, but its privacy section says that opening a design
+system, like a page, may load Google Fonts and React from jsDelivr on its
+own, a cloned repository's system included), `CHANGELOG.md`, `src/lib/canvas-guide.md`
 (`designSystem` and `_ds/`), `src/lib/design-craft.md` (names
 `design-system.json` as the place to look), and `docs/design-system/README.md`
 (the index file and the default).

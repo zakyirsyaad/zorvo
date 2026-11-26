@@ -256,13 +256,13 @@ pub fn respond_visual(store: &ArtifactStore, method: &str, uri: &str) -> Respons
     )
 }
 
-fn not_found() -> Response<Vec<u8>> {
+pub(crate) fn not_found() -> Response<Vec<u8>> {
     let mut response = Response::new(Vec::new());
     *response.status_mut() = tauri::http::StatusCode::NOT_FOUND;
     response
 }
 
-fn canvas_response(kind: &str, csp: Option<&str>, body: Vec<u8>) -> Response<Vec<u8>> {
+pub(crate) fn canvas_response(kind: &str, csp: Option<&str>, body: Vec<u8>) -> Response<Vec<u8>> {
     let mut builder = Response::builder()
         .status(200)
         .header("Content-Type", kind)
@@ -345,6 +345,9 @@ pub fn respond(served: &Served, method: &str, uri: &str) -> Response<Vec<u8>> {
         return not_found();
     }
     if let Some(answer) = super::motion_protocol::respond_motion(served, uri) {
+        return answer;
+    }
+    if let Some(answer) = super::ds_protocol::respond_ds(served, uri) {
         return answer;
     }
     if let Some(url) = parse_canvas_url(uri) {

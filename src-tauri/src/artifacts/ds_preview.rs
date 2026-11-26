@@ -5,7 +5,7 @@
 use std::fs;
 use std::path::Path;
 
-use super::ds_content::DsContent;
+use super::design_system::DsIndex;
 use super::protocol::encode_segment;
 
 const REACT: &str = "https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js";
@@ -15,7 +15,7 @@ const REACT_DOM: &str =
 /// The tags, in order, with `base` the preview's `.../t/<theme>/f/` URL: `tokens.css`,
 /// `components/bundle.css`, `components/lib/*.js` by name, React and React DOM when the index
 /// names them and the system carries no React of its own, then `components/bundle.js`.
-pub fn preview_tags(base: &str, content: &DsContent, folder: &Path) -> String {
+pub fn preview_tags(base: &str, index: &DsIndex, folder: &Path) -> String {
     let is_file = |relative: &str| {
         fs::symlink_metadata(folder.join(relative)).is_ok_and(|meta| meta.is_file())
     };
@@ -31,8 +31,7 @@ pub fn preview_tags(base: &str, content: &DsContent, folder: &Path) -> String {
             .iter()
             .map(|name| script(format!("{base}components/lib/{}", encode_segment(name)))),
     );
-    let wants_react = content
-        .index
+    let wants_react = index
         .libraries
         .iter()
         .any(|name| name == "react" || name == "react-dom");
@@ -240,7 +239,7 @@ mod tests {
         let index = r#"{"title": "Acme", "libraries": ["react", "react-dom"]}"#;
         fs::write(temp.0.join("design-system.json"), index).unwrap();
         let content = read_content(&temp.0).unwrap();
-        let tags = preview_tags(BASE, &content, &temp.0);
+        let tags = preview_tags(BASE, &content.index, &temp.0);
         assert_eq!(
             srcs(&tags),
             [
@@ -262,7 +261,10 @@ mod tests {
         let temp = fixture_copy("ds-tags-bare");
         fs::remove_file(temp.0.join("components/bundle.css")).unwrap();
         let content = read_content(&temp.0).unwrap();
-        assert_eq!(srcs(&preview_tags(BASE, &content, &temp.0)), ["tokens.css"]);
+        assert_eq!(
+            srcs(&preview_tags(BASE, &content.index, &temp.0)),
+            ["tokens.css"]
+        );
 
         let index = r#"{"title": "Acme", "libraries": ["react"]}"#;
         fs::write(temp.0.join("design-system.json"), index).unwrap();
@@ -270,7 +272,7 @@ mod tests {
         fs::write(temp.0.join("components/lib/react.js"), "1").unwrap();
         let content = read_content(&temp.0).unwrap();
         assert_eq!(
-            srcs(&preview_tags(BASE, &content, &temp.0)),
+            srcs(&preview_tags(BASE, &content.index, &temp.0)),
             ["tokens.css", "components/lib/react.js"]
         );
     }

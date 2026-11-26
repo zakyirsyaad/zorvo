@@ -58,8 +58,9 @@ export function DownloadsChart({ releases }: { releases: readonly ReleaseStat[] 
           style={{ left: `${x(last.day)}%`, top: `${y(last.total)}%` }}
           aria-hidden="true"
         />
+        {/* Beside the dot, on the side with room, so it never covers the axis labels. */}
         <span
-          className="absolute -translate-x-full -translate-y-[calc(100%+10px)] pr-1 font-mono text-[13px] font-medium text-fg"
+          className={`absolute -translate-y-[calc(100%+10px)] font-mono text-[13px] font-medium text-fg ${x(last.day) > 50 ? "-translate-x-full pr-1" : "pl-1"}`}
           style={{ left: `${x(last.day)}%`, top: `${y(last.total)}%` }}
           aria-hidden="true"
         >

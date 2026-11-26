@@ -36,6 +36,9 @@ interface Published {
   releaseStats: string;
 }
 
+/** The tags lib/release-stats.ts accepts. */
+const STATS_TAG = /^v\d+\.\d+\.\d+$/;
+
 const countOf = (release: Release, suffix: string): number =>
   release.assets.filter((asset) => asset.name.endsWith(suffix)).reduce((sum, asset) => sum + asset.download_count, 0);
 
@@ -74,8 +77,9 @@ async function readReleases(): Promise<Published | undefined> {
           for (const asset of release.assets) {
             if (asset.name.endsWith(".dmg")) total += asset.download_count;
           }
-          // A prerelease's tag (v1.0.0-beta.1) is not one lib/release-stats.ts accepts, and one would drop the whole read.
-          if (release.draft || release.prerelease || !release.published_at) continue;
+          // lib/release-stats.ts drops the whole read for one tag it does not accept (v1.0.0-beta.1, 0.22.0),
+          // so such a release is left out here and costs only itself.
+          if (release.draft || release.prerelease || !release.published_at || !STATS_TAG.test(release.tag_name)) continue;
           perRelease.push({
             tag: release.tag_name,
             publishedOn: release.published_at.slice(0, 10),

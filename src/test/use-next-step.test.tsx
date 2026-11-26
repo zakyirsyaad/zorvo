@@ -58,13 +58,13 @@ describe("useNextStep", () => {
   it("sends a press once, records the answer when the agent took it", async () => {
     const { hook, send, resolve, messages } = setup();
     await waitFor(() => expect(hook.result.current).not.toBeNull());
-    const button = { kind: "action" as const, action: "create_pr" as const, label: "Create PR", message: "Commit, push and open a pull request.", isPick: true };
+    const button = { kind: "action" as const, action: "create_pr" as const, label: "Create PR", message: "Commit the changes you made, push them and open a pull request.", isPick: true };
     act(() => {
       hook.result.current?.onPress(button);
       hook.result.current?.onPress(button);
     });
     expect(send).toHaveBeenCalledTimes(1);
-    expect(send).toHaveBeenCalledWith("s-1", "Commit, push and open a pull request.");
+    expect(send).toHaveBeenCalledWith("s-1", "Commit the changes you made, push them and open a pull request.");
     await act(async () => resolve(true));
     expect(messages()[1].nextStep?.answered?.label).toBe("Create PR");
   });
@@ -97,6 +97,16 @@ describe("useNextStep", () => {
     expect(setup({ isWaiting: true }).hook.result.current).toBeNull();
     expect(setup({ messages: [USER, { ...REPLY, endedNormally: undefined }] }).hook.result.current).toBeNull();
     expect(setup({ messages: [REPLY, USER] }).hook.result.current).toBeNull();
+  });
+
+  it("says whether the last turn changed a file", async () => {
+    const edited: ChatMessage = { ...REPLY, tools: [{ id: "t-1", name: "Edit", status: "completed", kind: "edit" }] };
+    const read = setup();
+    await waitFor(() => expect(read.hook.result.current).not.toBeNull());
+    expect(read.hook.result.current?.turnChanged).toBe(false);
+    const wrote = setup({ messages: [USER, edited] });
+    await waitFor(() => expect(wrote.hook.result.current).not.toBeNull());
+    expect(wrote.hook.result.current?.turnChanged).toBe(true);
   });
 
   it("passes on why Send is blocked", async () => {

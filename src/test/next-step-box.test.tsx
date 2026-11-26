@@ -6,9 +6,9 @@ import type { NextStepFacts } from "../lib/next-step";
 const FACTS: NextStepFacts = { branch: "feat/status-words", changes: { files: 2, added: 42, removed: 11 } };
 const STEP = { recap: "Session rows show their status in words.", ask: "Commit this and open a pull request?", pick: "create_pr" as const, replies: ["Not yet"] };
 
-function active(over: Partial<{ facts: NextStepFacts; blockedReason: string; isSending: boolean }> = {}) {
+function active(over: Partial<{ facts: NextStepFacts; turnChanged: boolean; blockedReason: string; isSending: boolean }> = {}) {
   const onPress = vi.fn();
-  return { onPress, view: { messageId: "m-1", facts: FACTS, isSending: false, onPress, ...over } };
+  return { onPress, view: { messageId: "m-1", facts: FACTS, turnChanged: true, isSending: false, onPress, ...over } };
 }
 
 describe("NextStepBox", () => {
@@ -48,6 +48,21 @@ describe("NextStepBox", () => {
     const { view } = active({ facts: {} });
     const { container } = render(<NextStepBox agentName="Qwen Code" view={view} />);
     expect(container.innerHTML).toBe("");
+  });
+
+  it("draws nothing after a turn that changed no file and left no step", () => {
+    const { view } = active({ turnChanged: false, facts: { ...FACTS, changes: { files: 57, added: 5934, removed: 0 } } });
+    const { container } = render(<NextStepBox agentName="Google Antigravity" view={view} />);
+    expect(container.innerHTML).toBe("");
+  });
+
+  it("offers only the agent's pick after a turn that changed no file", () => {
+    const { view } = active({ turnChanged: false });
+    render(<NextStepBox step={{ recap: "Nothing to change.", replies: ["Thanks"] }} agentName="Claude Code" view={view} />);
+    expect(screen.getAllByRole("button").map((b) => b.textContent)).toEqual(["Thanks"]);
+    render(<NextStepBox step={{ recap: "Ready.", pick: "commit" }} agentName="Claude Code" view={view} />);
+    expect(screen.getByText("Claude Code suggests Commit")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Create PR" })).toBeNull();
   });
 
   it("disables the message buttons when Send is blocked, and says why", () => {

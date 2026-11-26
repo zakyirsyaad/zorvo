@@ -1,4 +1,5 @@
-import type { NextStep, NextStepAction } from '../types';
+import type { ChatMessage, NextStep, NextStepAction } from '../types';
+import { changesFiles } from './activity';
 
 export type { NextStep, NextStepAction } from '../types';
 
@@ -22,6 +23,14 @@ export interface NextStepFacts {
   preview?: { port: number; command: string };
 }
 
+/** What the turn under the box did, and what its agent picked. */
+export interface TurnScope {
+  /** A reply of the turn completed a tool that changed a file. */
+  turnChanged: boolean;
+  /** The agent's pick in `wrap_up`, offered whatever the turn did when the facts allow it. */
+  pick?: NextStepAction;
+}
+
 export type NextStepButton =
   | { kind: 'action'; action: NextStepAction; label: string; message?: string; isPick: boolean }
   | { kind: 'reply'; label: string; message: string };
@@ -36,8 +45,8 @@ export const ACTION_LABELS: Record<NextStepAction, string> = {
 };
 
 const MESSAGES: Partial<Record<NextStepAction, string>> = {
-  commit: 'Commit these changes.',
-  create_pr: 'Commit, push and open a pull request.',
+  commit: 'Commit the changes you made.',
+  create_pr: 'Commit the changes you made, push them and open a pull request.',
   merge: 'Merge the pull request.',
   auto_merge: 'Turn on auto-merge for the pull request.',
 };
@@ -55,19 +64,38 @@ export function messageOf(action: NextStepAction): string | undefined {
   return MESSAGES[action];
 }
 
-/** The actions the facts allow, in the order the box shows them. */
-export function offeredActions(facts: NextStepFacts): NextStepAction[] {
+/**
+ * Whether the last turn changed a file, as its own tools report: a tool that completed in a reply
+ * after the user's last message. A subagent's tool counts, since it stays in the reply's `tools`.
+ */
+export function turnChangedFiles(messages: readonly ChatMessage[]): boolean {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (message.role === 'user') return false;
+    if ((message.tools ?? []).some((tool) => tool.status === 'completed' && changesFiles(tool))) return true;
+  }
+  return false;
+}
+
+/**
+ * The actions the facts allow, in the order the box shows them. The facts are the whole folder's,
+ * so an action that sends a message is offered only after a turn that changed a file, or as the
+ * agent's own pick: otherwise a turn that only read would offer to commit someone else's work.
+ */
+export function offeredActions(facts: NextStepFacts, scope: TurnScope): NextStepAction[] {
   const openPr = facts.pr && facts.pr.state === 'open' ? facts.pr : undefined;
   const hasChanges = (facts.changes?.files ?? 0) > 0;
   const hasUnpushed = (facts.ahead ?? 0) > 0;
+  const mayOffer = (action: NextStepAction) => scope.turnChanged || scope.pick === action;
   const offered: NextStepAction[] = [];
-  if (hasChanges) offered.push('commit');
-  if ((hasChanges || hasUnpushed) && !openPr) offered.push('create_pr');
+  if (hasChanges && mayOffer('commit')) offered.push('commit');
+  if ((hasChanges || hasUnpushed) && !openPr && mayOffer('create_pr')) offered.push('create_pr');
   if (openPr) {
     const { failing, pending } = openPr.checks;
     const hasConflicts = openPr.mergeState === 'DIRTY';
-    if (failing === 0 && pending === 0 && openPr.mergeState === 'CLEAN') offered.push('merge');
-    else if (failing === 0 && pending > 0 && !hasConflicts) offered.push('auto_merge');
+    if (failing === 0 && pending === 0 && openPr.mergeState === 'CLEAN') {
+      if (mayOffer('merge')) offered.push('merge');
+    } else if (failing === 0 && pending > 0 && !hasConflicts && mayOffer('auto_merge')) offered.push('auto_merge');
   }
   if (facts.preview) offered.push('open_preview');
   if (openPr) offered.push('open_pr');
@@ -75,8 +103,8 @@ export function offeredActions(facts: NextStepFacts): NextStepAction[] {
 }
 
 /** The box's buttons: the agent's pick first when offered, Zorvo's in order, then the replies; at most five. */
-export function buttonsOf(step: NextStep | undefined, facts: NextStepFacts): NextStepButton[] {
-  const offered = offeredActions(facts);
+export function buttonsOf(step: NextStep | undefined, facts: NextStepFacts, turn: Pick<TurnScope, 'turnChanged'>): NextStepButton[] {
+  const offered = offeredActions(facts, { turnChanged: turn.turnChanged, ...(step?.pick ? { pick: step.pick } : {}) });
   const pick = step?.pick && offered.includes(step.pick) ? step.pick : undefined;
   const action = (name: NextStepAction, isPick: boolean): NextStepButton => ({
     kind: 'action',

@@ -6,7 +6,7 @@ import type { NextStepView } from "../components/chat/NextStepBox";
 import type { ChatMessage } from "../types";
 
 const reply: ChatMessage = { id: "a-1", role: "agent", content: "Done.", timestamp: 1, isComplete: true, endedNormally: true, nextStep: { recap: "Fixed it." } };
-const view: NextStepView = { messageId: "a-1", facts: { changes: { files: 1, added: 3, removed: 0 } }, isSending: false, onPress: vi.fn() };
+const view: NextStepView = { messageId: "a-1", facts: { changes: { files: 1, added: 3, removed: 0 } }, turnChanged: true, isSending: false, onPress: vi.fn() };
 
 function renderRow(message: ChatMessage, nextStep: NextStepView | null | undefined) {
   const props: MessageRowProps = {

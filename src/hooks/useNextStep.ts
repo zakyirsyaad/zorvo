@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { NextStepView } from '../components/chat/NextStepBox';
 import type { BackgroundTask } from '../lib/background-tasks';
-import type { NextStepButton } from '../lib/next-step';
+import { turnChangedFiles, type NextStepButton } from '../lib/next-step';
 import type { ChatMessage, Session } from '../types';
 import type { PullRequestStatus } from './usePullRequest';
 import { useLatest } from './useLatest';
@@ -50,6 +50,7 @@ export function useNextStep(args: NextStepArgs): NextStepView | null {
   const last = messages[messages.length - 1];
   const reply = last?.role === 'agent' && last.endedNormally ? last : undefined;
   const isActive = session !== null && isEligible(session) && reply !== undefined && !isBusy && !isWaiting;
+  const turnChanged = useMemo(() => turnChangedFiles(messages), [messages]);
   const facts = useNextStepFacts({ session, isActive, pullRequest, tasks });
   const [isSending, setIsSending] = useState(false);
   const sending = useRef(false);
@@ -88,7 +89,8 @@ export function useNextStep(args: NextStepArgs): NextStepView | null {
 
   const replyId = isActive ? reply?.id : undefined;
   return useMemo(
-    () => (replyId === undefined ? null : { messageId: replyId, facts, ...(blockedReason ? { blockedReason } : {}), isSending, onPress }),
-    [replyId, facts, blockedReason, isSending, onPress],
+    () =>
+      replyId === undefined ? null : { messageId: replyId, facts, turnChanged, ...(blockedReason ? { blockedReason } : {}), isSending, onPress },
+    [replyId, facts, turnChanged, blockedReason, isSending, onPress],
   );
 }

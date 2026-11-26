@@ -73,10 +73,17 @@ From top to bottom, as on `NextStepChat`:
 Zorvo decides the action buttons from the facts. The agent cannot add an action that the facts do
 not allow; a pick that is not offered is dropped, and the box shows Zorvo's order.
 
+The facts are the whole folder's, not the turn's. So the four actions that send a message (Commit,
+Create PR, Merge, Turn on auto-merge) are offered only after a turn whose own tools changed a file
+(a completed edit, delete or move, or a reported diff, since the user's last message), or as the
+agent's pick. After a turn that only read, and with no `wrap_up`, Zorvo shows no box at all: the
+folder's uncommitted work may be another session's or the user's, and a Commit button under an
+unrelated answer reads as advice to commit it.
+
 | Facts | Buttons offered | Message sent |
 |---|---|---|
-| Uncommitted changes | **Commit** | "Commit these changes." |
-| Uncommitted changes, or commits not pushed, and no open PR for the branch | **Create PR** | "Commit, push and open a pull request." |
+| Uncommitted changes | **Commit** | "Commit the changes you made." |
+| Uncommitted changes, or commits not pushed, and no open PR for the branch | **Create PR** | "Commit the changes you made, push them and open a pull request." |
 | Open PR, every check passed, no conflicts, `mergeStateStatus` is `CLEAN` | **Merge** | "Merge the pull request." |
 | Open PR, checks still running, no conflicts | **Turn on auto-merge** | "Turn on auto-merge for the pull request." |
 | Open PR | **Open PR** | none: opens the PR in the default browser |

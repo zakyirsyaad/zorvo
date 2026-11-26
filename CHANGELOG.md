@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+
+- **Commit and Create PR only after a turn that changed files.** The box under a finished turn offered them whenever the folder had uncommitted work, even after an answer that only read something. Now Zorvo offers them only when that turn edited files or the agent suggests them, and their message asks the agent to commit the changes it made.
+
 ### Changed
 
 - **Fewer false "may be stuck" warnings.** An agent that sends nothing is now flagged after three minutes instead of one, since a model thinking at a high effort (Gemini in Antigravity, say) often works quietly for over a minute.

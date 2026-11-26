@@ -10,6 +10,8 @@ import { escapeVisible, escapeVisibleLines } from "../../lib/visible-text";
 export interface NextStepView {
   messageId: string;
   facts: NextStepFacts;
+  /** The turn under the box changed a file; without that, or a step from the agent, Zorvo shows nothing of its own. */
+  turnChanged: boolean;
   /** Why the composer cannot send now; the message buttons are disabled with it. */
   blockedReason?: string;
   /** A press is being sent: every button waits. */
@@ -64,9 +66,13 @@ function inertButtons(step: NextStep | undefined): string[] {
 export function NextStepBox({ step, agentName, view }: NextStepBoxProps) {
   const pickId = useId();
   const isActive = view !== null && view !== undefined;
-  const facts = isActive ? view.facts : {};
+  const hasAgentStep = Boolean(step?.recap || step?.ask || step?.pick || step?.replies?.length);
+  // The facts are the whole folder's: after a turn that changed nothing and left no step, they are
+  // not this turn's news, and showing them would read as a nudge to commit work the agent did not do.
+  const showsFacts = isActive && (view.turnChanged || hasAgentStep);
+  const facts = showsFacts ? view.facts : {};
   const chips = factChips(facts);
-  const buttons = isActive ? buttonsOf(step, facts) : [];
+  const buttons = isActive ? buttonsOf(step, facts, { turnChanged: view.turnChanged }) : [];
   const hasAgentPart = Boolean(step?.recap || step?.ask);
   if (!hasAgentPart && chips.length === 0 && buttons.length === 0 && !step?.answered) return null;
 

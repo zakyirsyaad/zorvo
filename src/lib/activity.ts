@@ -47,6 +47,11 @@ function actionOf(tool: ToolExecution): 'read' | 'changed' | 'touched' {
   return READING_KINDS.has(tool.kind ?? '') ? 'read' : 'touched';
 }
 
+/** The tool's purpose was to change a file: an edit, delete or move, or a diff it reported. */
+export function changesFiles(tool: ToolExecution): boolean {
+  return actionOf(tool) === 'changed';
+}
+
 const withoutLine = (location: string) => location.replace(/:\d+$/, '');
 
 function pathsOf(tool: ToolExecution): string[] {

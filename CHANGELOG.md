@@ -4,6 +4,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+### Fixed
+
+- **The next-step box survives a restart.** After Zorvo restarted, the box under a session's last turn went inert or disappeared, since every session reads ended then. It now stays usable while the session can be continued, and a press continues the session with that message, as Send would.
+
 ## [0.21.0] - 2026-11-26
 
 ### Added

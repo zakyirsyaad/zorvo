@@ -76,6 +76,8 @@ function handleStoreCommand(cmd: string, args: StoreArgs | undefined): Promise<u
       return Promise.resolve(null);
     case "restore_turn_checkpoint":
       return Promise.resolve(0);
+    case "export_conversation_markdown":
+      return Promise.resolve(true);
     case "acp_start_session":
     case "acp_fork_session":
     case "acp_reopen_session":

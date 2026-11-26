@@ -83,6 +83,20 @@ describe("TopBar", () => {
       expect(separator!.nextElementSibling?.textContent).toBe("Archive");
     });
 
+    it("offers Copy as Markdown and Export Markdown in the menu when provided", () => {
+      const onCopyMarkdown = vi.fn();
+      const onExportMarkdown = vi.fn();
+      renderTopBar({ sessionName: "Fix the login", onCopyMarkdown, onExportMarkdown, onArchive: vi.fn() });
+
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Copy as Markdown" }));
+      expect(onCopyMarkdown).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Export Markdown…" }));
+      expect(onExportMarkdown).toHaveBeenCalledTimes(1);
+    });
+
     it("marks the header and its inert areas as the window drag region", () => {
       const { container } = renderTopBar({
         sessionName: "Market analyzer refactor",

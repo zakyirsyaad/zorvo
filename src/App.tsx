@@ -2,6 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { createPortal } from "react-dom";
 import { invoke } from "@tauri-apps/api/core";
 import { canonicalAgentId, loadTranscript } from "./lib/persistence";
+import {
+  conversationFileName,
+  exportConversationMarkdown,
+  formatConversationMarkdown,
+} from "./lib/conversation-markdown";
 import { PRIVATE_AGENT_ID, PRIVATE_DRAFT_TEXT } from "./lib/private-draft";
 import { savedThenLive } from "./lib/agent-tools";
 import { TopBar } from "./components/TopBar";
@@ -1417,6 +1422,38 @@ export default function App() {
   // An expanded canvas hides the composer, so it is left first and the text lands where it can be seen.
   const canvasInsertText = review.insertCanvasText;
 
+  const canExportConversation = Boolean(activeSession && currentMessages.length > 0);
+  const activeConversationMarkdown = () =>
+    activeSession
+      ? formatConversationMarkdown(currentMessages, {
+          sessionName: activeSession.name,
+          agentName: agentNameOr(activeAgent),
+          cwd: activeSession.cwd,
+        })
+      : "";
+  const handleCopyConversationMarkdown = async () => {
+    if (!activeSession || currentMessages.length === 0) return;
+    try {
+      if (!navigator?.clipboard?.writeText) throw new Error("Clipboard is unavailable");
+      await navigator.clipboard.writeText(activeConversationMarkdown());
+      setNotice("Copied conversation as Markdown.", "info");
+    } catch {
+      setNotice("Could not copy the conversation.");
+    }
+  };
+  const handleExportConversationMarkdown = async () => {
+    if (!activeSession || currentMessages.length === 0) return;
+    try {
+      const saved = await exportConversationMarkdown(
+        conversationFileName(activeSession.name),
+        activeConversationMarkdown(),
+      );
+      if (saved) setNotice("Exported conversation as Markdown.", "info");
+    } catch (error) {
+      setNotice(`Could not export the conversation: ${String(error)}`);
+    }
+  };
+
   return (
     <main className="flex h-screen w-screen flex-col bg-ground text-fg-secondary">
       {/* Hidden, not unmounted, while Settings shows: a draft, its comments and the terminals stay as they were. */}
@@ -1502,6 +1539,8 @@ export default function App() {
                   : undefined
               }
               onReveal={shownFolderPath ? () => shell.revealFolder(shownFolderPath) : undefined}
+              onCopyMarkdown={canExportConversation ? () => void handleCopyConversationMarkdown() : undefined}
+              onExportMarkdown={canExportConversation ? () => void handleExportConversationMarkdown() : undefined}
               onDelegate={onDelegate}
               delegateBlockedReason={activeDelegateBlockedReason}
               delegationEnds={delegationEnds}

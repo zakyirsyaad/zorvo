@@ -1,4 +1,4 @@
-import { Archive, ChevronLeft, ChevronRight, CircleStop, Columns3, ExternalLink, Folder, GitBranch, MoreHorizontal, PanelLeft, PanelRight, Pencil, ShieldCheck, ShieldOff, Split, Unlink } from "lucide-react";
+import { Archive, ChevronLeft, ChevronRight, CircleStop, Columns3, Copy, Download, ExternalLink, Folder, GitBranch, MoreHorizontal, PanelLeft, PanelRight, Pencil, ShieldCheck, ShieldOff, Split, Unlink } from "lucide-react";
 import { Fragment, useId, useState, type Ref } from "react";
 import { Chip } from "./ui/Chip";
 import { IconButton } from "./ui/IconButton";
@@ -61,6 +61,8 @@ function MoreOptionsMenu({
   onPopout,
   onReveal,
   onRename,
+  onCopyMarkdown,
+  onExportMarkdown,
   onArchive,
   onDelegate,
   delegateBlockedReason,
@@ -73,6 +75,8 @@ function MoreOptionsMenu({
   onPopout?: () => void;
   onReveal?: () => void;
   onRename?: () => void;
+  onCopyMarkdown?: () => void;
+  onExportMarkdown?: () => void;
   onArchive?: () => void;
   /** Opens the delegate dialog; the item is left out when the reason is the empty string. */
   onDelegate?: () => void;
@@ -97,6 +101,8 @@ function MoreOptionsMenu({
     { label: "Open in new window", run: onPopout, Icon: ExternalLink },
     { label: "Open in Finder", run: onReveal, Icon: Folder },
     { label: "Rename", run: onRename, Icon: Pencil },
+    { label: "Copy as Markdown", run: onCopyMarkdown, Icon: Copy },
+    { label: "Export Markdown…", run: onExportMarkdown, Icon: Download },
     ...(canShowDelegate
       ? [{ label: "Delegate to another agent…", run: onDelegate, Icon: Split, description: delegateReason }]
       : []),
@@ -199,6 +205,10 @@ export interface TopBarProps {
   onPopout?: () => void;
   /** Opens the session's folder in Finder, from the menu. */
   onReveal?: () => void;
+  /** Copies the session's conversation as Markdown, from the menu. */
+  onCopyMarkdown?: () => void;
+  /** Exports the session's conversation as a Markdown file, from the menu. */
+  onExportMarkdown?: () => void;
   /** Archives the session, from the menu. */
   onArchive?: () => void;
   /** Opens the dialog that delegates a task to another agent, from the menu. */
@@ -255,6 +265,8 @@ export function TopBar({
   onForward,
   onPopout,
   onReveal,
+  onCopyMarkdown,
+  onExportMarkdown,
   onArchive,
   onDelegate,
   delegateBlockedReason,
@@ -397,6 +409,8 @@ export function TopBar({
           onPopout={onPopout}
           onReveal={onReveal}
           onRename={sessionName && onRename ? () => setRenamingId(titleKey) : undefined}
+          onCopyMarkdown={onCopyMarkdown}
+          onExportMarkdown={onExportMarkdown}
           onArchive={onArchive}
           onDelegate={onDelegate}
           delegateBlockedReason={delegateBlockedReason}

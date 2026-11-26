@@ -848,7 +848,8 @@ pub fn run() {
             private_mode::commands::private_raise_session_cap,
             private_mode::commands::private_take_session_cap_reset,
             private_mode::commands::private_answer_topup_request,
-            private_mode::commands::private_forget_session
+            private_mode::commands::private_forget_session,
+            export_conversation_markdown
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
@@ -865,6 +866,65 @@ pub fn run() {
                 browser_debug::close(app, None);
             }
         });
+}
+
+fn sanitize_export_filename(name: &str) -> String {
+    let base: String = name
+        .chars()
+        .filter(|c| !c.is_control() && *c != '/' && *c != '\\')
+        .collect();
+    let trimmed = base.trim().trim_start_matches('.');
+    let stem = if trimmed.is_empty() {
+        "conversation"
+    } else {
+        trimmed
+    };
+    if stem.to_ascii_lowercase().ends_with(".md") {
+        stem.to_string()
+    } else {
+        format!("{stem}.md")
+    }
+}
+
+/// Saves an exported Markdown conversation to a path picked by the user.
+/// Returns `Ok(true)` when saved, `Ok(false)` when the save dialog was cancelled.
+#[tauri::command(async)]
+fn export_conversation_markdown(
+    app: AppHandle,
+    suggested_name: String,
+    content: String,
+) -> Result<bool, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let file_name = sanitize_export_filename(&suggested_name);
+    let chosen = app
+        .dialog()
+        .file()
+        .set_file_name(&file_name)
+        .add_filter("Markdown", &["md"])
+        .blocking_save_file();
+    let Some(chosen) = chosen else {
+        return Ok(false);
+    };
+    let destination = chosen
+        .into_path()
+        .map_err(|_| "Could not resolve the chosen file path.".to_string())?;
+    std::fs::write(destination, content.as_bytes())
+        .map_err(|e| format!("Could not save the conversation: {e}"))?;
+    Ok(true)
+}
+
+#[cfg(test)]
+mod export_tests {
+    use super::sanitize_export_filename;
+
+    #[test]
+    fn sanitize_export_filename_strips_separators_and_ensures_md_extension() {
+        assert_eq!(sanitize_export_filename("fix-login.md"), "fix-login.md");
+        assert_eq!(sanitize_export_filename("notes"), "notes.md");
+        assert_eq!(sanitize_export_filename("../secret/chat"), "secretchat.md");
+        assert_eq!(sanitize_export_filename("   ...  "), "conversation.md");
+    }
 }
 
 #[cfg(all(test, target_os = "macos"))]

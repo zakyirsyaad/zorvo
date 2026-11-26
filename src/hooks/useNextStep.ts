@@ -15,11 +15,16 @@ export interface NextStepArgs {
   isBusy: boolean;
   /** Something in the chat waits for the user's answer. */
   isWaiting: boolean;
+  /**
+   * The session has ended (every session reads ended after a restart) and a press may continue it:
+   * its agent is here and it has its own agent session to resume. `send` then resumes it.
+   */
+  canResume: boolean;
   /** Why the composer cannot send now, when it cannot. */
   blockedReason: string | undefined;
   pullRequest: PullRequestStatus | null;
   tasks: readonly BackgroundTask[];
-  /** The composer's own Send for `text`, without giving a refused text back into the composer; resolves true when the agent took it. */
+  /** The composer's own Send for `text` (a resume for an ended session), without giving a refused text back into the composer; resolves true when the agent took it. */
   send: (sessionId: string, text: string) => Promise<boolean>;
   updateMessages: (sessionId: string, update: (messages: ChatMessage[]) => ChatMessage[]) => void;
   /** Opens a pull request in the user's browser. */
@@ -28,10 +33,15 @@ export interface NextStepArgs {
   openPreview: (url: string) => void;
 }
 
-/** A worker reports to its coordinator, and a compare run's panel replaces its chat: neither gets a box. */
-function isEligible(session: Session): boolean {
+/**
+ * A worker reports to its coordinator, and a compare run's panel replaces its chat: neither gets a
+ * box. An ended session keeps its box while a press can continue it, so a restart, which ends every
+ * session, does not take the last box away; an archived one does not, as a press would bring it back.
+ */
+function isEligible(session: Session, canResume: boolean): boolean {
   const isWorker = Boolean(session.delegatedFrom && !session.delegatedFrom.endedAt);
-  return !isWorker && !session.compareRunId && session.status === 'running';
+  if (isWorker || session.compareRunId) return false;
+  return session.status === 'running' || (canResume && !session.archivedAt);
 }
 
 function withAnswer(messages: ChatMessage[], messageId: string, label: string, at: number): ChatMessage[] {
@@ -46,10 +56,10 @@ function withAnswer(messages: ChatMessage[], messageId: string, label: string, a
  * records the answer only when the agent took it; Open PR and Open in Zorvo's browser only open.
  */
 export function useNextStep(args: NextStepArgs): NextStepView | null {
-  const { session, messages, isBusy, isWaiting, blockedReason, pullRequest, tasks, send, updateMessages, openUrl, openPreview } = args;
+  const { session, messages, isBusy, isWaiting, canResume, blockedReason, pullRequest, tasks, send, updateMessages, openUrl, openPreview } = args;
   const last = messages[messages.length - 1];
   const reply = last?.role === 'agent' && last.endedNormally ? last : undefined;
-  const isActive = session !== null && isEligible(session) && reply !== undefined && !isBusy && !isWaiting;
+  const isActive = session !== null && isEligible(session, canResume) && reply !== undefined && !isBusy && !isWaiting;
   const turnChanged = useMemo(() => turnChangedFiles(messages), [messages]);
   const facts = useNextStepFacts({ session, isActive, pullRequest, tasks });
   const [isSending, setIsSending] = useState(false);

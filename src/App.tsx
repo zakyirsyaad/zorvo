@@ -1148,6 +1148,7 @@ export default function App() {
     queue,
     sendTo,
     sendFromComposer,
+    resumeSession,
     canQueueActive,
     isQueueingActive,
     isQueueFull,
@@ -1367,10 +1368,19 @@ export default function App() {
     messages: currentMessages,
     isBusy: activeSession ? isSessionBusy(activeSession.id) : false,
     isWaiting: activeSession ? isSessionWaiting(activeSession.id) : false,
+    // A rewound session has no agent session to resume: its restart is not a press's to start.
+    canResume: isResumable && Boolean(activeSession?.acpSessionId),
     blockedReason: isComposerSendBlocked ? composerNoteText ?? "You can't send right now." : undefined,
     pullRequest: activeSession ? pullRequestOf(activeSession) : null,
     tasks: backgroundTasks.tasks,
-    send: (sessionId, text) => sendFromComposer(sessionId, { text }, false),
+    send: (sessionId, text) => {
+      const session = sessions.find((s) => s.id === sessionId);
+      // An ended session (every one after a restart) continues the way the composer's Send continues it.
+      if (session && session.status !== "running") {
+        return resumeSession(session, { text }, { keepUnsent: true }).then((isTaken) => isTaken === true);
+      }
+      return sendFromComposer(sessionId, { text }, false);
+    },
     updateMessages,
     openUrl: openPullRequest,
     openPreview: requestBrowserOpen,

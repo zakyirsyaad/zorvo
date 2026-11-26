@@ -731,6 +731,7 @@ pub fn run() {
             artifacts::visual_commands::visual_copy_image,
             artifacts::commands::artifact_list,
             artifacts::commands::canvas_show,
+            artifacts::ds_commands::design_systems_list,
             artifacts::motion_commands::motion_show,
             artifacts::motion_commands::video_show,
             artifacts::motion_commands::motion_read,

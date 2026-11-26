@@ -148,3 +148,47 @@ describe("the shared theme pick", () => {
     expect(narrowed.result.current.theme).toBe("sepia");
   });
 });
+
+describe("out of date and Sync again", () => {
+  it("words the source line and the message", async () => {
+    const { sourceLine, syncMessage, parseSourceState } = await import("../lib/design-systems");
+    const changed = { state: "changed" as const, commit: "a1b2c3d4", paths: ["src/styles/globals.css"], commits: 3, uncommitted: false };
+    expect(sourceLine(changed)).toBe("Source changed since a1b2c3d: `src/styles/globals.css`, 3 commits.");
+    expect(sourceLine({ ...changed, commits: 1 })).toBe("Source changed since a1b2c3d: `src/styles/globals.css`, 1 commit.");
+    expect(sourceLine({ ...changed, commits: 0, uncommitted: true })).toBe("Source changed since a1b2c3d: `src/styles/globals.css` has uncommitted changes.");
+    expect(sourceLine({ state: "unknownCommit", commit: "a1b2c3d" })).toBe("Source commit a1b2c3d is not in this repository.");
+    expect(sourceLine({ state: "unreadable" })).toBe("Source paths could not be read.");
+    expect(sourceLine({ state: "current", commit: "a1b2c3d" })).toBeNull();
+    expect(sourceLine({ state: "none" })).toBeNull();
+    expect(syncMessage("docs/design-system", changed)).toBe(
+      "Update the design system `docs/design-system` from its source. `src/styles/globals.css` changed since a1b2c3d. Change only the tokens that changed, keep their usage notes, and record the new commit in `meta.source`.",
+    );
+    expect(parseSourceState({ state: "changed", commit: "HEAD", paths: [], commits: 1, uncommitted: false })).toBeNull();
+  });
+
+  it("offers Sync again only when the source changed, and only fills the composer", async () => {
+    invoke.mockImplementation((cmd) => {
+      if (cmd === "ds_read") return Promise.resolve(READ);
+      if (cmd === "ds_source_state") return Promise.resolve({ state: "changed", commit: "a1b2c3d", paths: ["src/x.css"], commits: 2, uncommitted: false });
+      return Promise.resolve(null);
+    });
+    const onInsertText = vi.fn();
+    render(
+      <ArtifactsPanel
+        sessionId={SESSION}
+        artifacts={[]}
+        viewed={{ designSystemKey: KEY }}
+        onView={() => undefined}
+        isExpanded={false}
+        onToggleExpanded={() => undefined}
+        onError={() => undefined}
+        cwd="/w"
+        designSystems={[ENTRY]}
+        onInsertText={onInsertText}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Sync again" }));
+    expect(onInsertText).toHaveBeenCalledWith(expect.stringContaining("Update the design system `docs/ds` from its source."));
+    expect(invoke.mock.calls.some(([cmd]) => cmd === "acp_prompt")).toBe(false);
+  });
+});

@@ -171,3 +171,65 @@ export function defaultProblemLine(problem: DefaultProblem): string {
   }
   return `No default design system: none of ${names} is marked default.`;
 }
+
+/** What `ds_source_state` answers. */
+export type SourceState =
+  | { state: 'none' }
+  | { state: 'unreadable' }
+  | { state: 'current'; commit: string }
+  | { state: 'changed'; commit: string; paths: string[]; commits: number; uncommitted: boolean }
+  | { state: 'unknownCommit'; commit: string };
+
+const COMMIT = /^[0-9a-f]{7,40}$/;
+
+export function parseSourceState(value: unknown): SourceState | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const answer = value as Record<string, unknown>;
+  switch (answer.state) {
+    case 'none':
+    case 'unreadable':
+      return { state: answer.state };
+    case 'current':
+    case 'unknownCommit':
+      return typeof answer.commit === 'string' && COMMIT.test(answer.commit) ? { state: answer.state, commit: answer.commit } : null;
+    case 'changed': {
+      const { commit, paths, commits, uncommitted } = answer;
+      if (typeof commit !== 'string' || !COMMIT.test(commit) || typeof uncommitted !== 'boolean') return null;
+      if (typeof commits !== 'number' || !Number.isInteger(commits) || commits < 0) return null;
+      if (!Array.isArray(paths) || !paths.every((path) => typeof path === 'string')) return null;
+      return { state: 'changed', commit, paths, commits, uncommitted };
+    }
+    default:
+      return null;
+  }
+}
+
+function shortCommit(commit: string): string {
+  return commit.slice(0, 7);
+}
+
+function pathList(paths: readonly string[]): string {
+  return joinedNames(paths.map(quoted));
+}
+
+/** The header's line about the system's source; `null` when there is nothing to say. */
+export function sourceLine(state: SourceState): string | null {
+  switch (state.state) {
+    case 'changed': {
+      const since = `Source changed since ${shortCommit(state.commit)}: ${pathList(state.paths)}`;
+      if (state.commits === 0) return `${since} has uncommitted changes.`;
+      return `${since}, ${state.commits === 1 ? '1 commit' : `${state.commits} commits`}.`;
+    }
+    case 'unknownCommit':
+      return `Source commit ${shortCommit(state.commit)} is not in this repository.`;
+    case 'unreadable':
+      return 'Source paths could not be read.';
+    default:
+      return null;
+  }
+}
+
+/** What Sync again puts in the composer; the user presses Send. */
+export function syncMessage(relative: string, state: Extract<SourceState, { state: 'changed' }>): string {
+  return `Update the design system ${quoted(relative)} from its source. ${pathList(state.paths)} changed since ${shortCommit(state.commit)}. Change only the tokens that changed, keep their usage notes, and record the new commit in \`meta.source\`.`;
+}

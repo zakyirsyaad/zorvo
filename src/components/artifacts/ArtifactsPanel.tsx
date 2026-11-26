@@ -257,6 +257,8 @@ export function ArtifactsPanel({
         isExpanded={isExpanded}
         onToggleExpanded={onToggleExpanded}
         onError={onError}
+        onInsertText={onInsertText}
+        insertBlockedReason={insertBlockedReason}
       />
     );
   }

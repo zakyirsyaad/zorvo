@@ -2,11 +2,13 @@ import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useDesignSystem } from "../../hooks/useDesignSystem";
 import { useDesignSystemTheme } from "../../hooks/useDesignSystemTheme";
+import { useDesignSystemSource } from "../../hooks/useDesignSystemSource";
+import { Button } from "../ui/Button";
 import { ThemeMenu } from "./ThemeMenu";
 import { enqueueArtifactViewCall } from "../../hooks/useArtifactView";
 import { useLatest } from "../../hooks/useLatest";
 import { FOLDER_NOT_FOUND } from "../../lib/canvas";
-import { defaultProblemLine, droppedLine, dsShellState } from "../../lib/design-systems";
+import { defaultProblemLine, droppedLine, dsShellState, sourceLine, syncMessage } from "../../lib/design-systems";
 import { ArtifactPageBox } from "./ArtifactPageBox";
 import { DesignSystemHeader } from "./DesignSystemHeader";
 
@@ -20,6 +22,10 @@ export interface DesignSystemViewerProps {
   onToggleExpanded: () => void;
   onError: (message: string) => void;
   isCovered?: boolean;
+  /** Puts text in the session's message box, never sends it; absent (a popout), no Sync again. */
+  onInsertText?: (text: string) => void;
+  /** Why the message box cannot take text now. */
+  insertBlockedReason?: string;
 }
 
 const COULD_NOT_SHOW = "Zorvo could not show that design system.";
@@ -30,7 +36,20 @@ const SECTIONS_CUT = "Some sections are too long to show here.";
  * to show with `ds_view_apply` whenever the system is read again. A folder that no longer reads keeps
  * the last good system under a line.
  */
-export function DesignSystemViewer({ sessionId, designSystemKey, cwd, turnsEnded, onBack, isExpanded, onToggleExpanded, onError, isCovered = false }: DesignSystemViewerProps) {
+export function DesignSystemViewer({
+  sessionId,
+  designSystemKey,
+  cwd,
+  turnsEnded,
+  onBack,
+  isExpanded,
+  onToggleExpanded,
+  onError,
+  isCovered = false,
+  onInsertText,
+  insertBlockedReason,
+}: DesignSystemViewerProps) {
+  const source = useDesignSystemSource(sessionId, designSystemKey, turnsEnded);
   const system = useDesignSystem(sessionId, cwd, designSystemKey, turnsEnded);
   const [reload, setReload] = useState(0);
   const onErrorRef = useLatest(onError);
@@ -70,7 +89,14 @@ export function DesignSystemViewer({ sessionId, designSystemKey, cwd, turnsEnded
         invoke("reveal_file_in_finder", { path: `${folder}/design-system.json` }).catch(() => onError("Zorvo could not show that folder in Finder."));
       }
     : undefined;
-  const headerNotes = [...notes, ...(isCut ? [SECTIONS_CUT] : []), ...(readError ? [`The design system could not be read: ${readError}`] : [])];
+  const sourceNote = source ? sourceLine(source) : null;
+  const headerNotes = [
+    ...(sourceNote ? [sourceNote] : []),
+    ...notes,
+    ...(isCut ? [SECTIONS_CUT] : []),
+    ...(readError ? [`The design system could not be read: ${readError}`] : []),
+  ];
+  const changed = source?.state === "changed" ? source : null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -84,6 +110,17 @@ export function DesignSystemViewer({ sessionId, designSystemKey, cwd, turnsEnded
         onReload={shown !== null && !isFolderGone ? () => setReload((count) => count + 1) : undefined}
         notes={headerNotes}
       >
+        {changed && onInsertText && (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={insertBlockedReason !== undefined}
+            title={insertBlockedReason}
+            onClick={() => onInsertText(syncMessage(relative, changed))}
+          >
+            Sync again
+          </Button>
+        )}
         {picked.theme !== null && <ThemeMenu themes={themeIds} theme={picked.theme} onPick={picked.setTheme} onMenuOpen={setIsMenuOpen} />}
       </DesignSystemHeader>
       {isFolderGone ? (

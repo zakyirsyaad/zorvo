@@ -4,6 +4,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.21.1] - 2026-11-26
+
 ### Fixed
 
 - **The next-step box survives a restart.** After Zorvo restarted, the box under a session's last turn went inert or disappeared, since every session reads ended then. It now stays usable while the session can be continued, and a press continues the session with that message, as Send would.
@@ -567,7 +569,8 @@ Tagged but never published; its fix shipped in 0.11.2.
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.21.1...HEAD
+[0.21.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.21.0...v0.21.1
 [0.21.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.20.1...v0.21.0
 [0.20.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.20.0...v0.20.1
 [0.20.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.19.0...v0.20.0

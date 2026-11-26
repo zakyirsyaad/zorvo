@@ -31,7 +31,7 @@ import { fileNameAndFolder, pathInFolder, type CreatedFile } from "../../lib/cre
 import { LOOK_STYLE, pullRequestLine, pullRequestLook, type PullRequestLook } from "../../lib/pull-request-look";
 import { formatRelativeTime } from "../../lib/relative-time";
 import { newestVersion } from "../../lib/artifacts";
-import { pillParts, SECTION_CAP, type Overview, type OverviewTask } from "../../lib/session-overview";
+import { pillRunning, SECTION_CAP, type Overview, type OverviewTask } from "../../lib/session-overview";
 import { ImagePreviewDialog } from "../composer/ImagePreviewDialog";
 import { IconButton } from "../ui/IconButton";
 
@@ -297,7 +297,6 @@ export function OverviewCard({
       <OverviewPill
         ref={pillRef}
         overview={overview}
-        changes={changes}
         onExpand={() => {
           // Floating only takes effect on a narrow sheet; a wide one docks the card as before.
           setIsFloating(true);
@@ -371,7 +370,6 @@ export function OverviewCard({
           <OverviewPill
             ref={pillRef}
             overview={overview}
-            changes={changes}
             onExpand={() => {
               setIsFloating(true);
               focusNextRef.current = "collapse";
@@ -457,29 +455,24 @@ function PullRequestRow({ pullRequest, onOpenUrl }: { pullRequest: PullRequestSt
   );
 }
 
-/** The folded card: what runs and what changed, in one line; a click opens the card again. */
-function OverviewPill({ overview, changes, onExpand, ref }: {
+/** The folded card: what runs, if anything, and nothing else; a click opens the card again. */
+function OverviewPill({ overview, onExpand, ref }: {
   overview: Overview;
-  changes: OverviewCardProps["changes"];
   onExpand: () => void;
   ref?: Ref<HTMLButtonElement>;
 }) {
-  const parts = pillParts(overview.runningCount, changes ?? null);
-  const hasChanges = parts.added > 0 || parts.removed > 0;
-  const said = [parts.running, hasChanges ? `${parts.added} lines added, ${parts.removed} removed` : null].filter(Boolean).join(", ");
+  const running = pillRunning(overview.runningCount);
   return (
     <button
       ref={ref}
       type="button"
-      aria-label={said ? `Expand session overview: ${said}` : "Expand session overview"}
+      aria-label={running ? `Expand session overview: ${running}` : "Expand session overview"}
       aria-expanded="false"
       onClick={onExpand}
       className="focus-ring mt-4 mr-4 flex h-8 shrink-0 items-center gap-2 self-start rounded-full border border-border bg-surface-2 pr-2 pl-2.5 text-ui-sm text-fg-secondary transition-colors hover:bg-surface-hover"
     >
       <PanelRight aria-hidden="true" className="size-3.5 text-fg-muted" />
-      {parts.running ?? (hasChanges ? null : "Overview")}
-      {parts.running && hasChanges && <span aria-hidden="true" className="h-3.5 w-px bg-border" />}
-      {hasChanges && <ChangeCounts added={parts.added} removed={parts.removed} />}
+      {running ?? "Overview"}
       <ChevronDown aria-hidden="true" className="size-3.5 text-fg-muted" />
     </button>
   );

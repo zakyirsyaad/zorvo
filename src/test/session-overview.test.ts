@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { overviewOf, pillParts, type OverviewInputs } from "../lib/session-overview";
+import { overviewOf, pillRunning, type OverviewInputs } from "../lib/session-overview";
 import type { BackgroundTask } from "../lib/background-tasks";
 import type { AgentTask } from "../lib/agent-tasks";
 import type { ChatMessage, ToolExecution } from "../types";
@@ -118,11 +118,10 @@ describe("overviewOf", () => {
   });
 });
 
-describe("pillParts", () => {
-  it("names only what is not zero", () => {
-    expect(pillParts(3, { added: 42, removed: 11 })).toEqual({ running: "3 running", added: 42, removed: 11 });
-    expect(pillParts(0, { added: 0, removed: 0 })).toEqual({ running: null, added: 0, removed: 0 });
-    expect(pillParts(0, null)).toEqual({ running: null, added: 0, removed: 0 });
+describe("pillRunning", () => {
+  it("says how many tasks run, and nothing when none does", () => {
+    expect(pillRunning(3)).toBe("3 running");
+    expect(pillRunning(0)).toBeNull();
   });
 });
 

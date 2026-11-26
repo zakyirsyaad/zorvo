@@ -158,7 +158,7 @@ export function canvasCountLabel(count: number): string {
 const ORIGIN = 'zorvo-artifact://localhost/';
 
 /** One path segment as the backend writes it: RFC 3986 unreserved characters kept, every other byte `%XX`. */
-function encodeSegment(segment: string): string {
+export function encodeSegment(segment: string): string {
   let out = '';
   for (const byte of new TextEncoder().encode(segment)) {
     const char = String.fromCharCode(byte);

@@ -130,3 +130,6 @@ export function systemsLine(list: SystemList): string {
   const problem = problemLine(list.defaultProblem);
   return [`Design systems in this folder: ${named}.`, read, ...(problem ? [problem] : []), ...dropped, SEARCH_SCOPE].join(' ');
 }
+
+export * from './design-system-read';
+export { dsFileUrl, dsShellState, dsShellUrl, MAX_SHELL_STATE_BYTES } from './ds-shell-state';

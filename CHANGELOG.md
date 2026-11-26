@@ -4,6 +4,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-11-26
+
 ### Added
 
 - **Agents can make videos.** Ask any agent for a video or motion graphics and it writes a composition (a page that moves, with a `motion.json`), shows it beside the chat with a play head, checks stills with motion blur, and renders MP4s of every format you asked for, with sound only when you ask. Zorvo renders with WebKit and AVFoundation on your Mac: nothing is downloaded, and the preview is the same engine as the video. Export saves one format or all of them.
@@ -561,7 +563,8 @@ Tagged but never published; its fix shipped in 0.11.2.
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.20.1...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.20.1...v0.21.0
 [0.20.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.20.0...v0.20.1
 [0.20.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.18.0...v0.19.0

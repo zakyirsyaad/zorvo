@@ -111,7 +111,7 @@ pub(crate) fn encode_segment(segment: &str) -> String {
 }
 
 /// The inverse of `encode_segment`; refuses a bad escape, invalid UTF-8 and an encoded `/`.
-fn decode_segment(segment: &str) -> Option<String> {
+pub(crate) fn decode_segment(segment: &str) -> Option<String> {
     let bytes = segment.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut at = 0;

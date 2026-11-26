@@ -7,6 +7,7 @@ pub mod canvas_shell;
 pub mod canvas_view;
 pub mod design_system;
 pub mod ds_commands;
+pub mod ds_markdown;
 pub mod ds_tokens;
 pub mod ds_tokens_css;
 pub mod motion;

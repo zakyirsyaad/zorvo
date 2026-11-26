@@ -82,6 +82,26 @@ describe('usePullRequestsWiring', () => {
     expect(invoke).not.toHaveBeenCalledWith('session_pull_request', expect.anything());
   });
 
+  it('lists every pull request the agent made, else the one pull request shown', async () => {
+    const older = pr('feat/parser', 272);
+    const newer = pr('feat/pipeline', 273);
+    invoke.mockImplementation(async (cmd) => {
+      if (cmd === 'workspace_pull_requests') return { branch: 'feat/pipeline', pullRequests: [newer, older] };
+      return null;
+    });
+    const active = makeSession('s-1', { agentWork: { branches: ['feat/parser', 'feat/pipeline'], pullRequestUrls: [] } });
+    const { result, rerender } = renderHook((props: PullRequestsWiringDeps) => usePullRequestsWiring(props), {
+      initialProps: makeDeps({ sessions: [active], activeSession: active, branch: 'feat/pipeline' }),
+    });
+
+    await waitFor(() => expect(result.current.pullRequests).toEqual([newer, older]));
+    expect(result.current.pullRequest).toEqual(newer);
+
+    const plain = makeSession('s-1');
+    rerender(makeDeps({ sessions: [plain], activeSession: plain, branch: 'feat/pipeline' }));
+    await waitFor(() => expect(result.current.pullRequests).toEqual([newer]));
+  });
+
   it('falls back to session_pull_request only when listedPullRequest is null and isRepository is true', async () => {
     const fallbackPr = pr('feat/outside', 99);
     invoke.mockImplementation(async (cmd) => {

@@ -780,7 +780,7 @@ export default function App() {
   const [chatJump, setChatJump] = useState<{ messageId: string; nonce: number } | null>(null);
   // The diff view shows beside the chat, or in its place once expanded.
   const isDiffOpen = inspector.isDiffOpen && Boolean(filesFolder) && isRepository;
-  const { pullRequest, pullRequestOf, repoPullRequests, openPullRequest } = usePullRequestsWiring({
+  const { pullRequests, pullRequestOf, repoPullRequests, openPullRequest } = usePullRequestsWiring({
     sessions,
     activeSession,
     isSessionBusy,
@@ -1307,12 +1307,12 @@ export default function App() {
             shellTasks: sessionShellTasks,
             pages: sessionArtifacts,
             files: createdFiles,
-            pullRequest,
+            pullRequests,
             agentTasks: agentTasks?.tasks,
             agentTasksAsOf: agentTasks?.asOf,
           })
         : null,
-    [activeSession, activeTranscript, isActiveSessionBusy, sessionShellTasks, sessionArtifacts, createdFiles, pullRequest, agentTasks],
+    [activeSession, activeTranscript, isActiveSessionBusy, sessionShellTasks, sessionArtifacts, createdFiles, pullRequests, agentTasks],
   );
   const sessionPlan = currentPlan(currentMessages);
   const composer = composerStateFor({

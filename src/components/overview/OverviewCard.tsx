@@ -22,6 +22,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import type { PullRequestStatus } from "../../hooks/usePullRequest";
 import { useNow } from "../../hooks/useNow";
 import type { TaskTab } from "../../hooks/useTaskTabs";
 import { fileNameOf } from "../../lib/attachments";
@@ -358,9 +359,9 @@ export function OverviewCard({
     ...overview.files.map((file) => <FileRow key={file.path} file={file} filesRoot={filesRoot} onOpenFile={onOpenFile} />),
   ];
 
-  const pullRequest = overview.pullRequest;
-  const look = pullRequest ? pullRequestLook(pullRequest) : null;
-  const PullRequestIcon = look ? PULL_REQUEST_ICON[look] : GitPullRequest;
+  const pullRequestRows = overview.pullRequests.map((pullRequest) => (
+    <PullRequestRow key={pullRequest.url} pullRequest={pullRequest} onOpenUrl={onOpenUrl} />
+  ));
 
   return (
     <>
@@ -423,26 +424,36 @@ export function OverviewCard({
                 </p>,
               ]}
         </Section>
-        {pullRequest && look && (
-          <Section id="overview-pull-request" title="Pull request">
-            {[
-              <button
-                key="pull-request"
-                type="button"
-                aria-label={`Open pull request ${pullRequest.number} in your browser. ${pullRequestLine(pullRequest)}.`}
-                onClick={() => onOpenUrl(pullRequest.url)}
-                className={ROW}
-              >
-                <PullRequestIcon aria-hidden="true" className={`size-3.5 shrink-0 ${LOOK_STYLE[look]}`} />
-                <Label name={pullRequest.title} detail={`#${pullRequest.number} · ${pullRequestLine(pullRequest)}`} />
-                <ExternalLink aria-hidden="true" className={ICON} />
-              </button>,
-            ]}
+        {pullRequestRows.length > 0 && (
+          <Section
+            id="overview-pull-request"
+            title={pullRequestRows.length > 1 ? "Pull requests" : "Pull request"}
+            count={pullRequestRows.length > 1 ? pullRequestRows.length : undefined}
+          >
+            {pullRequestRows}
           </Section>
         )}
       </section>
       {previewPath && <ImagePreviewDialog path={previewPath} onClose={() => setPreviewPath(null)} />}
     </>
+  );
+}
+
+/** One pull request of the session; a click opens it on GitHub. */
+function PullRequestRow({ pullRequest, onOpenUrl }: { pullRequest: PullRequestStatus; onOpenUrl: (url: string) => void }) {
+  const look = pullRequestLook(pullRequest);
+  const PullRequestIcon = PULL_REQUEST_ICON[look];
+  return (
+    <button
+      type="button"
+      aria-label={`Open pull request ${pullRequest.number} in your browser. ${pullRequestLine(pullRequest)}.`}
+      onClick={() => onOpenUrl(pullRequest.url)}
+      className={ROW}
+    >
+      <PullRequestIcon aria-hidden="true" className={`size-3.5 shrink-0 ${LOOK_STYLE[look]}`} />
+      <Label name={pullRequest.title} detail={`#${pullRequest.number} · ${pullRequestLine(pullRequest)}`} />
+      <ExternalLink aria-hidden="true" className={ICON} />
+    </button>
   );
 }
 

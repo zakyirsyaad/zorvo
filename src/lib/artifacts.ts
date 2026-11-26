@@ -3,9 +3,10 @@ import type { Artifact, ArtifactCard, ArtifactVersion, Session } from '../types'
 import type { CanvasEntry } from './canvas';
 import { isArchived } from './session-helpers';
 import guide from './artifact-guide.md?raw';
+import craft from './design-craft.md?raw';
 
-/** What `artifact_guide` answers: how to make a page that reads well in Zorvo. */
-export const ARTIFACT_GUIDE: string = guide;
+/** What `artifact_guide` answers: how to make a page that reads well in Zorvo, then how to design it well. */
+export const ARTIFACT_GUIDE: string = guide + craft;
 
 /**
  * The sentences the backend refuses a page with. They are written for the

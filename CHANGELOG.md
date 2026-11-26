@@ -4,6 +4,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.21.2] - 2026-11-26
+
 ### Fixed
 
 - **The overview card lists every pull request a session opened.** A session whose agent opened two pull requests showed only one, and which one changed with the branch the folder had checked out. The card now lists each pull request the agent made, newest first. Google Antigravity's pull requests are now recognised too: it names its commands in the tool's title, which Zorvo did not read.
@@ -574,7 +576,8 @@ Tagged but never published; its fix shipped in 0.11.2.
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.21.1...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.21.2...HEAD
+[0.21.2]: https://github.com/zakyirsyaad/zorvo/compare/v0.21.1...v0.21.2
 [0.21.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.21.0...v0.21.1
 [0.21.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.20.1...v0.21.0
 [0.20.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.20.0...v0.20.1

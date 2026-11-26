@@ -1,6 +1,6 @@
-import { useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronDown, ChevronRight, Maximize2, RefreshCw } from "lucide-react";
+import { ChevronDown, ChevronRight, Maximize2, RefreshCw, Undo2 } from "lucide-react";
 import { formatLineCount, type DiffTargets, type FileStat } from "../../lib/diff-stats";
 import { commitPathsOf, type ChangeKind, type FileChange } from "../../lib/git-changes";
 import { Button } from "../ui/Button";
@@ -62,9 +62,81 @@ const KIND_LABEL: Record<ChangeKind, { letter: string; name: string; style: stri
   renamed: { letter: "R", name: "Renamed", style: "text-fg-secondary" },
 };
 
-type CommitState = { status: "idle" } | { status: "committing" } | { status: "done"; hash: string } | { status: "failed"; error: string };
+/** How long Discard/Delete waits for its confirming second click. */
+const CONFIRM_DISCARD_MS = 4000;
 
-function ChangeCard({ change, stat, commentCount, isChecked, isOpen, onCheck, onOpen, children }: {
+type CommitState =
+  | { status: "idle" }
+  | { status: "committing" }
+  | { status: "done"; hash: string }
+  | { status: "failed"; error: string };
+
+type DiscardNotice = { tone: "status" | "alert"; text: string };
+
+/**
+ * Discards one file's uncommitted changes (or deletes an untracked/added file)
+ * in two clicks, matching Rewind's confirm-then-act pattern.
+ */
+function DiscardFileButton({
+  change,
+  disabled,
+  onDiscard,
+}: {
+  change: FileChange;
+  disabled: boolean;
+  onDiscard: () => void;
+}) {
+  const [isConfirming, setIsConfirming] = useState(false);
+
+  useEffect(() => {
+    if (!isConfirming) return;
+    const timer = setTimeout(() => setIsConfirming(false), CONFIRM_DISCARD_MS);
+    return () => clearTimeout(timer);
+  }, [isConfirming]);
+
+  if (change.path.endsWith("/")) return null;
+
+  const isRemoval = change.kind === "untracked" || change.kind === "added";
+  const idleLabel = isRemoval ? `Delete ${change.path}` : `Discard changes to ${change.path}`;
+  const confirmWord = isRemoval ? "Delete?" : "Discard?";
+  const confirmLabel = isRemoval ? `Confirm delete ${change.path}` : `Confirm discard ${change.path}`;
+  const confirmTitle = isRemoval
+    ? `Permanently delete ${change.path}`
+    : `Discard uncommitted changes to ${change.path}`;
+
+  // One button for both steps, so keyboard focus stays on it when it asks to confirm and after.
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-label={isConfirming ? confirmLabel : idleLabel}
+      title={isConfirming ? confirmTitle : idleLabel}
+      onClick={() => {
+        if (!isConfirming) {
+          setIsConfirming(true);
+          return;
+        }
+        setIsConfirming(false);
+        onDiscard();
+      }}
+      onKeyDown={(e) => {
+        if (isConfirming && e.key === "Escape") {
+          e.stopPropagation();
+          setIsConfirming(false);
+        }
+      }}
+      className={
+        isConfirming
+          ? "relative z-10 shrink-0 cursor-pointer rounded-sm bg-danger-surface px-1.5 py-0.5 text-micro font-medium text-danger focus-ring disabled:cursor-not-allowed disabled:opacity-40"
+          : "relative z-10 inline-flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-md text-fg-muted transition-colors hover:bg-surface-hover hover:text-danger focus-ring disabled:cursor-not-allowed disabled:opacity-40"
+      }
+    >
+      {isConfirming ? confirmWord : <Undo2 size={12} aria-hidden="true" />}
+    </button>
+  );
+}
+
+function ChangeCard({ change, stat, commentCount, isChecked, isOpen, isDiscardDisabled, onCheck, onOpen, onDiscard, children }: {
   change: FileChange;
   /** The file's counts against HEAD, once read. */
   stat: FileStat | undefined;
@@ -72,8 +144,10 @@ function ChangeCard({ change, stat, commentCount, isChecked, isOpen, onCheck, on
   commentCount: number;
   isChecked: boolean;
   isOpen: boolean;
+  isDiscardDisabled: boolean;
   onCheck: (isChecked: boolean) => void;
   onOpen: () => void;
+  onDiscard: () => void;
   /** The file's diff, while it is open. */
   children?: ReactNode;
 }) {
@@ -109,6 +183,7 @@ function ChangeCard({ change, stat, commentCount, isChecked, isOpen, onCheck, on
           </span>
         )}
         {stat && !stat.isBinary && <LineCounts added={stat.added} removed={stat.removed} />}
+        <DiscardFileButton change={change} disabled={isDiscardDisabled} onDiscard={onDiscard} />
         <Chevron size={12} aria-hidden="true" className="shrink-0 text-fg-muted" />
       </div>
       {/* A long line scrolls here, never widening the inspector. */}
@@ -119,7 +194,7 @@ function ChangeCard({ change, stat, commentCount, isChecked, isOpen, onCheck, on
 
 /**
  * What changed in a session's repository since the last commit: each file's
- * diff, and a commit of the files chosen. It never pushes or throws changes away.
+ * diff, committing a chosen set of files, and discarding single-file changes.
  */
 export function ChangesPanel({
   rootPath,
@@ -145,6 +220,8 @@ export function ChangesPanel({
   const [openPath, setOpenPath] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [commit, setCommit] = useState<CommitState>({ status: "idle" });
+  const [discardingPath, setDiscardingPath] = useState<string | null>(null);
+  const [discardNotice, setDiscardNotice] = useState<DiscardNotice | null>(null);
 
   const messageId = useId();
   const statOf = useMemo(() => new Map((stats ?? []).map((stat) => [stat.path, stat])), [stats]);
@@ -165,7 +242,8 @@ export function ChangesPanel({
   const onHead = useMemo(() => checked.filter(({ comment }) => comment.target === TARGET), [checked]);
   const list = changes ?? [];
   const chosen = list.filter((change) => !excluded.has(change.path));
-  const canCommit = chosen.length > 0 && message.trim() !== "" && commit.status !== "committing";
+  const isBusy = commit.status === "committing" || discardingPath !== null;
+  const canCommit = chosen.length > 0 && message.trim() !== "" && !isBusy;
 
   const setIncluded = (path: string, isIncluded: boolean) =>
     setExcluded((prev) => {
@@ -177,6 +255,7 @@ export function ChangesPanel({
 
   const handleCommit = async () => {
     if (!canCommit) return;
+    setDiscardNotice(null);
     setCommit({ status: "committing" });
     try {
       const hash = await invoke<string>("commit_session_changes", {
@@ -189,6 +268,33 @@ export function ChangesPanel({
       setOpenPath(null);
     } catch (error) {
       setCommit({ status: "failed", error: String(error) });
+    }
+    onReload();
+  };
+
+  const handleDiscard = async (change: FileChange) => {
+    if (isBusy) return;
+    setCommit({ status: "idle" });
+    setDiscardNotice(null);
+    setDiscardingPath(change.path);
+    try {
+      await invoke<void>("discard_session_change", { path: rootPath, file: change.path });
+      if (openPath === change.path) setOpenPath(null);
+      setExcluded((prev) => {
+        if (!prev.has(change.path)) return prev;
+        const next = new Set(prev);
+        next.delete(change.path);
+        return next;
+      });
+      const isRemoval = change.kind === "untracked" || change.kind === "added";
+      setDiscardNotice({
+        tone: "status",
+        text: isRemoval ? `Deleted ${change.path}.` : `Discarded changes to ${change.path}.`,
+      });
+    } catch (error) {
+      setDiscardNotice({ tone: "alert", text: String(error) });
+    } finally {
+      setDiscardingPath(null);
     }
     onReload();
   };
@@ -254,8 +360,10 @@ export function ChangesPanel({
               commentCount={fileReview?.checked.length ?? 0}
               isChecked={!excluded.has(change.path)}
               isOpen={openPath === change.path}
+              isDiscardDisabled={isBusy}
               onCheck={(isChecked) => setIncluded(change.path, isChecked)}
               onOpen={() => setOpenPath((current) => (current === change.path ? null : change.path))}
+              onDiscard={() => void handleDiscard(change)}
             >
               <FileDiff
                 rootPath={rootPath}
@@ -321,6 +429,14 @@ export function ChangesPanel({
       {commit.status === "failed" && (
         <p role="alert" className="border-t border-border px-4 py-1.5 text-caption text-danger">
           {commit.error}
+        </p>
+      )}
+      {discardNotice && (
+        <p
+          role={discardNotice.tone}
+          className={`border-t border-border px-4 py-1.5 text-caption ${discardNotice.tone === "status" ? "text-status-running" : "text-danger"}`}
+        >
+          {discardNotice.text}
         </p>
       )}
     </aside>

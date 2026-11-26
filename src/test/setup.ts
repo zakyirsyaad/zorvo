@@ -72,6 +72,10 @@ function handleStoreCommand(cmd: string, args: StoreArgs | undefined): Promise<u
     case "delete_transcript":
       delete store.transcripts[args?.sessionId ?? ""];
       return Promise.resolve(undefined);
+    case "create_turn_checkpoint":
+      return Promise.resolve(null);
+    case "restore_turn_checkpoint":
+      return Promise.resolve(0);
     case "acp_start_session":
     case "acp_fork_session":
     case "acp_reopen_session":

@@ -34,6 +34,7 @@ import { elicitationActions, type InFlightAnswer } from './elicitation-actions';
 import { privateModelIdOf, privateOpenError, privateSessionCapOf, withoutModelChanges, type CreditsOutReason } from '../../lib/private-session';
 import { privateOpenOutcome, privateTurnRefusal } from './private-engine';
 import { isCommandsUpdate, sessionTitleOf, turnEndNotice } from './update-readers';
+import { createTurnCheckpoint } from '../../lib/turn-checkpoints';
 
 /** The message a session starts (or resumes) with. */
 export interface FirstMessage {
@@ -168,6 +169,9 @@ export function useAcpEngine({
   // Sessions with a turn running that no turn end or exit has settled yet. A ref, not state: both
   // events can reach the page before React renders, and `acp.isBusy` would still read the old render.
   const unsettledTurn = useRef(new Set<string>());
+  /** Sessions whose prompt waits for its pre-turn checkpoint, and those of them the user stopped meanwhile. */
+  const awaitingCheckpoint = useRef(new Set<string>());
+  const stoppedBeforeSend = useRef(new Set<string>());
   // Sessions whose turn an exit settled first: the turn end that follows settles nothing again.
   const settledByExit = useRef(new Set<string>());
   const forgetStopAsked = (sessionId: string) =>
@@ -434,13 +438,44 @@ export function useAcpEngine({
     onPromptStarted?.(sessionId);
     unsettledTurn.current.add(sessionId);
     settledByExit.current.delete(sessionId);
-    lastPromptRef.current.set(sessionId, { message, context: carried, ...(toolsDue ? { toolsContext: toolsDue } : {}) });
+    const cwd = sessionsRef.current.find((session) => session.id === sessionId)?.cwd;
+    let promptMessage = message;
+    lastPromptRef.current.set(sessionId, { message: promptMessage, context: carried, ...(toolsDue ? { toolsContext: toolsDue } : {}) });
     // A new turn starts: the failure of the last one no longer applies.
     failedPromptRef.current.delete(sessionId);
     onTurnFailed?.(sessionId, null);
+    if (cwd && !promptMessage.checkpoint) {
+      awaitingCheckpoint.current.add(sessionId);
+      stoppedBeforeSend.current.delete(sessionId);
+      const checkpoint = await createTurnCheckpoint(cwd);
+      awaitingCheckpoint.current.delete(sessionId);
+      // Stop pressed while the checkpoint was taken: the message never goes out, and comes back
+      // to the composer like any message the agent did not take.
+      if (stoppedBeforeSend.current.delete(sessionId)) {
+        unsettledTurn.current.delete(sessionId);
+        if (lastPromptRef.current.get(sessionId)?.message.id === promptMessage.id) lastPromptRef.current.delete(sessionId);
+        if (context) unsentContextRef.current.set(sessionId, context);
+        updateNow(sessionId, (prev) => withoutMessage(prev, message.id));
+        return false;
+      }
+      if (isStopped(sessionId)) {
+        unsettledTurn.current.delete(sessionId);
+        if (lastPromptRef.current.get(sessionId)?.message.id === promptMessage.id) {
+          lastPromptRef.current.delete(sessionId);
+        }
+        return false;
+      }
+      if (checkpoint) {
+        promptMessage = { ...promptMessage, checkpoint };
+        if (lastPromptRef.current.get(sessionId)?.message.id === promptMessage.id) {
+          lastPromptRef.current.set(sessionId, { message: promptMessage, context: carried, ...(toolsDue ? { toolsContext: toolsDue } : {}) });
+        }
+        updateNow(sessionId, (prev) => prev.map((m) => (m.id === promptMessage.id ? { ...m, checkpoint } : m)));
+      }
+    }
     const hidden = toolsDue ? withToolsContext(carried, toolsDue) : carried;
     try {
-      await acp.prompt(sessionId, hidden ? `${hidden}\n\n${message.content}` : message.content, message.attachments);
+      await acp.prompt(sessionId, hidden ? `${hidden}\n\n${promptMessage.content}` : promptMessage.content, promptMessage.attachments);
       // Only now: a refused prompt leaves it due for the next message. A turn that fails
       // later puts it back (see `onTurnEnd`).
       if (toolsDue) toolsContextDueRef.current.delete(sessionId);
@@ -877,6 +912,11 @@ export function useAcpEngine({
    * starting, stopping ends the session instead.
    */
   const interrupt = (sessionId: string, messages: ChatMessage[] | undefined) => {
+    // The prompt has not gone out yet (its checkpoint is still being taken): it never will.
+    if (awaitingCheckpoint.current.has(sessionId)) {
+      stoppedBeforeSend.current.add(sessionId);
+      return;
+    }
     if (starting.has(sessionId)) {
       void stop(sessionId);
       patchSession(sessionId, { status: 'terminated', endedAt: Date.now() });

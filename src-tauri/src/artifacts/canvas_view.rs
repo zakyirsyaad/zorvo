@@ -47,6 +47,7 @@ pub fn canvas_message_source(frame_url: &str, canvas: &ShownCanvas) -> Source {
             session_id,
             key,
             relative,
+            ..
         }) if session_id == canvas.session_id && key == canvas.key => Source::Board(relative),
         _ => Source::Other,
     }

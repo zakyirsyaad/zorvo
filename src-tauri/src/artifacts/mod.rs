@@ -6,6 +6,7 @@ pub mod canvas_export;
 pub mod canvas_shell;
 pub mod canvas_view;
 pub mod design_system;
+pub mod ds_canvas;
 pub mod ds_commands;
 pub mod ds_content;
 pub mod ds_markdown;

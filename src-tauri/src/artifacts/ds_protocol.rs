@@ -157,7 +157,28 @@ fn respond_file(
     let Some(root) = system_root(served, session_id, key) else {
         return not_found();
     };
-    let tokens = tokens_of(&root);
+    let base = ds_file_url(session_id, key, theme, "");
+    serve_system_file(&root, theme, relative, Some(&base))
+}
+
+/// A system's themes as its tokens name them; `default` alone when it has none.
+pub(crate) fn themes_of(root: &Path) -> Vec<String> {
+    match tokens_of(root) {
+        Some(tokens) => tokens.themes.into_iter().map(|t| t.id).collect(),
+        None => vec![NO_THEME.to_string()],
+    }
+}
+
+/// One file of a system folder (already checked), for `theme`: `tokens.css` is built, a preview
+/// gets the system around it when `preview_base` names where the system is served from, and
+/// every other servable file goes out as it is. An unknown theme is 404.
+pub(crate) fn serve_system_file(
+    root: &Path,
+    theme: &str,
+    relative: &str,
+    preview_base: Option<&str>,
+) -> Response<Vec<u8>> {
+    let tokens = tokens_of(root);
     let has_theme = match &tokens {
         Some(tokens) => tokens.themes.iter().any(|t| t.id == theme),
         None => theme == NO_THEME,
@@ -172,20 +193,23 @@ fn respond_file(
             .unwrap_or_default();
         return canvas_response("text/css", None, css.into_bytes());
     }
-    let Some((path, kind)) = canvas_file(&root, relative) else {
+    let Some((path, kind)) = canvas_file(root, relative) else {
         return not_found();
     };
     let Ok(body) = read_bytes_checked(&path) else {
         return not_found();
     };
+    // Only a component's preview runs as a page; any other file, HTML included, runs nothing.
     if !kind.starts_with("text/html") || !is_preview(relative) {
         return canvas_response(kind, Some(FILE_CSP), body);
     }
-    let (Ok(html), Some(index)) = (String::from_utf8(body), index_of(&root)) else {
+    let Some(base) = preview_base else {
+        return canvas_response(kind, Some(BOARD_CSP), body);
+    };
+    let (Ok(html), Some(index)) = (String::from_utf8(body), index_of(root)) else {
         return not_found();
     };
-    let base = ds_file_url(session_id, key, theme, "");
-    let tags = preview_tags(&base, &index, &root);
+    let tags = preview_tags(base, &index, root);
     canvas_response(kind, Some(BOARD_CSP), with_tags(&html, &tags).into_bytes())
 }
 

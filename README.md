@@ -189,8 +189,9 @@ Private mode is off until you turn it on, and works with Qwen Code.
   its words as your message, so the agent does the work with its own tools.
 - **A session overview beside the chat.** A panel on the right of the chat
   says where the session works (its changes, its folder, its branch), what is
-  running, the files you attached, and the pages and files the agent made. A
-  click opens the matching tab, and the panel folds to a pill.
+  running, the files you attached, the pages and files the agent made, and the
+  pull requests it opened. A click opens the matching tab, and the panel folds
+  to a pill.
 - **One inspector beside the chat.** The top bar's **Inspector** button opens a
   panel with six tabs: Changes, Activity, Files, Artifacts, Browser and
   Terminal. Drag its edge to resize it; Zorvo remembers the width.
@@ -222,9 +223,11 @@ Private mode is off until you turn it on, and works with Qwen Code.
   sent nothing for a minute, Zorvo says so under **Working…**, with a Stop
   button. If the agent has not stopped ten seconds after **Stop**, **End
   agent** ends its process.
-- **Follow your pull request.** The session's overview and its row in the sidebar
-  show the branch's pull request and how its checks stand, read with your own
-  `gh`.
+- **Follow your pull requests.** The session's overview lists every pull
+  request the agent opened in it, newest first, with how its checks stand; the
+  session's row in the sidebar marks the newest one. A session whose agent
+  opened none shows the pull request of the branch it works on. All of it is
+  read with your own `gh`.
 - **Connect to GitHub.** **Settings → GitHub** shows whether your
   GitHub CLI is installed and signed in. If it is not signed in, **Connect**
   opens a terminal where `gh` signs you in through your browser; `gh` asks a few

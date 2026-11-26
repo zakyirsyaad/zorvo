@@ -44,6 +44,7 @@ pub struct SessionArtifacts {
     pub canvases: Vec<ListedCanvas>,
     pub motions: Vec<super::motion_store::MotionEntry>,
     pub videos: Vec<super::motion_store::VideoEntry>,
+    pub design_systems: Vec<super::ds_store::DesignSystemEntry>,
 }
 
 /// A canvas in `artifact_list`: its entry, and whether its folder is gone. Only the folder is
@@ -402,10 +403,15 @@ pub fn list_sessions(artifacts: &ArtifactStore, session_ids: &[String]) -> Vec<S
             let canvases = artifacts.canvases(session_id);
             let motions = artifacts.motions(session_id);
             let videos = artifacts.videos(session_id);
+            let design_systems = artifacts.design_systems(session_id);
             // Any file unreadable: the answer says nothing about what is gone.
-            let failed =
-                listed.is_err() || canvases.is_err() || motions.is_err() || videos.is_err();
+            let failed = listed.is_err()
+                || canvases.is_err()
+                || motions.is_err()
+                || videos.is_err()
+                || design_systems.is_err();
             SessionArtifacts {
+                design_systems: design_systems.unwrap_or_default(),
                 motions: motions.unwrap_or_default(),
                 videos: videos.unwrap_or_default(),
                 session_id: session_id.clone(),
@@ -1402,6 +1408,14 @@ mod tests {
         std::fs::create_dir_all(data.0.join("badc-4")).unwrap();
         std::fs::write(data.0.join("badc-4").join("canvases.json"), b"{").unwrap();
         assert!(list_sessions(&artifacts, &["badc-4".to_string()])[0].failed);
+        // And so does an unreadable design-systems.json.
+        std::fs::create_dir_all(data.0.join("badd-5")).unwrap();
+        std::fs::write(data.0.join("badd-5").join("design-systems.json"), b"{").unwrap();
+        assert!(list_sessions(&artifacts, &["badd-5".to_string()])[0].failed);
+        assert_eq!(
+            serde_json::to_value(&listed[0]).unwrap()["designSystems"],
+            serde_json::json!([])
+        );
         // No index at all is a session with no pages, not a failure.
         assert!(!listed[2].failed);
         assert_eq!(

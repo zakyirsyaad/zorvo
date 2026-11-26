@@ -98,7 +98,7 @@ pub fn thumb_url(sha256: &str) -> String {
 }
 
 /// Keeps RFC 3986 unreserved characters, writes every other byte as `%XX`.
-fn encode_segment(segment: &str) -> String {
+pub(crate) fn encode_segment(segment: &str) -> String {
     let mut out = String::with_capacity(segment.len());
     for byte in segment.bytes() {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {

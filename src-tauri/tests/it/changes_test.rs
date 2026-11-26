@@ -478,3 +478,42 @@ fn refuses_invalid_or_unchanged_paths_on_discard() {
 
     fs::remove_dir_all(repo).ok();
 }
+
+#[test]
+fn discards_staged_new_file_deleted_from_disk_and_rename_overwriting_tracked_file() {
+    let repo = repo("discard-edge-cases");
+
+    // Case 1: staged new file deleted from disk (git status `AD`).
+    fs::write(repo.join("ghost.ts"), "temp\n").expect("write ghost");
+    git(&repo, &["add", "ghost.ts"]);
+    fs::remove_file(repo.join("ghost.ts")).expect("remove ghost");
+
+    discard_file(&git_path(), &repo, "ghost.ts").expect("discard AD file");
+    assert!(!repo.join("ghost.ts").exists());
+    assert!(list_changes(&git_path(), &repo)
+        .expect("list changes")
+        .is_empty());
+
+    // Case 2: move overwriting another tracked file (`git mv -f old.md gone.txt`).
+    // Git reports `D old.md` + `M gone.txt` (or `R` if detected as a rename);
+    // discarding `gone.txt` must restore its HEAD content rather than deleting it.
+    git(&repo, &["mv", "-f", "old.md", "gone.txt"]);
+
+    discard_file(&git_path(), &repo, "gone.txt").expect("discard overwritten tracked file");
+    assert_eq!(
+        fs::read_to_string(repo.join("gone.txt")).expect("gone.txt restored"),
+        "bye\n"
+    );
+    if !repo.join("old.md").exists() {
+        discard_file(&git_path(), &repo, "old.md").expect("discard deleted source");
+    }
+    assert_eq!(
+        fs::read_to_string(repo.join("old.md")).expect("old.md restored"),
+        "moving\n"
+    );
+    assert!(list_changes(&git_path(), &repo)
+        .expect("list changes")
+        .is_empty());
+
+    fs::remove_dir_all(repo).ok();
+}

@@ -42,8 +42,9 @@ export interface SessionStartWiringDeps {
 }
 
 /**
- * Coordinates creating, starting, selecting, and navigating across sessions and compare runs,
- * including worktree provisioning and attachment path remapping for new sessions.
+ * Stateless action factory (named `use*Wiring` for parity with sibling wiring modules)
+ * that coordinates creating, starting, selecting, and navigating across sessions and
+ * compare runs, including worktree provisioning and attachment path remapping.
  */
 export function useSessionStartWiring(deps: SessionStartWiringDeps) {
   const {

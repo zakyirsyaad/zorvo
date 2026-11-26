@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { activityOf } from './activity';
 import type { ChatMessage } from '../types';
 
-const CHECKPOINT_SHA = /^[0-9a-f]{40,64}$/;
+const CHECKPOINT_SHA = /^([0-9a-f]{40}|[0-9a-f]{64})$/;
 
 /** True when `value` matches a git object SHA-1 or SHA-256 hash. */
 export function isValidCheckpoint(value: unknown): value is string {

@@ -320,3 +320,33 @@ fn gives_up_a_checkpoint_that_runs_over_its_budget() {
 
     fs::remove_dir_all(dir).ok();
 }
+
+#[test]
+fn restores_file_replaced_by_a_directory_during_turn() {
+    let dir = repo("file-to-dir");
+    let cp = create_checkpoint(&git_path(), &dir)
+        .expect("cp")
+        .expect("sha");
+
+    // Agent replaces `keep.txt` file with a directory `keep.txt/child.ts`.
+    fs::remove_file(dir.join("keep.txt")).expect("remove keep.txt");
+    fs::create_dir_all(dir.join("keep.txt")).expect("mkdir keep.txt");
+    fs::write(dir.join("keep.txt/child.ts"), "new child\n").expect("write child");
+
+    let changed = restore_checkpoint(
+        &git_path(),
+        &dir,
+        &cp,
+        &paths(&["keep.txt", "keep.txt/child.ts"]),
+    )
+    .expect("restore file replaced by dir");
+
+    assert_eq!(changed, 2);
+    assert!(dir.join("keep.txt").is_file());
+    assert_eq!(
+        fs::read_to_string(dir.join("keep.txt")).expect("read restored keep.txt"),
+        "keep\n"
+    );
+
+    fs::remove_dir_all(dir).ok();
+}

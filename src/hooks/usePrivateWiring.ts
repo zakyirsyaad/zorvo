@@ -261,13 +261,16 @@ export function usePrivateRuntime({
   const [chatTopupSession, setChatTopupSession] = useState<string | null>(null);
   const [isAnsweringTopup, setIsAnsweringTopup] = useState(false);
 
+  const { requests: topupBySession, answer: answerTopup } = topupRequests;
+  const { buy: buyCredits } = credits;
+
   /** The user's answer to an agent's ask; an approval starts the existing checkout flow. */
   const answerTopupRequest = useCallback(
     async (sessionId: string, requestId: string, approve: boolean) => {
-      const request = topupRequests.requests[sessionId];
+      const request = topupBySession[sessionId];
       if (!request || request.requestId !== requestId || isAnsweringTopup) return;
       setIsAnsweringTopup(true);
-      const ok = await topupRequests.answer(sessionId, requestId, approve);
+      const ok = await answerTopup(sessionId, requestId, approve);
       setIsAnsweringTopup(false);
       if (!ok) {
         setNotice('That top-up request is no longer waiting.', 'warning');
@@ -275,10 +278,10 @@ export function usePrivateRuntime({
       }
       if (approve) {
         setChatTopupSession(sessionId);
-        void credits.buy(request.usd);
+        void buyCredits(request.usd);
       }
     },
-    [isAnsweringTopup, credits, setNotice, topupRequests],
+    [isAnsweringTopup, topupBySession, answerTopup, buyCredits, setNotice],
   );
 
   const isPrivateSessionId = useCallback(

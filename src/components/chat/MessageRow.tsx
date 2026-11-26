@@ -5,6 +5,7 @@ import { ElicitationCard } from "./ElicitationCard";
 import { MarkdownRenderer } from "../MarkdownRenderer";
 import { MessageActionBar } from "../MessageActionBar";
 import type { RewindOptions } from "../../hooks/useSessionRewind";
+import { isValidCheckpoint } from "../../lib/turn-checkpoints";
 import { UserMessageBar } from "./UserMessageBar";
 import { AttachmentChips } from "../composer/AttachmentChips";
 import { ToolsPart } from "./ToolsPart";
@@ -290,7 +291,7 @@ export const MessageRow = memo(function MessageRow({
           <UserMessageBar
             copied={copied}
             onCopy={() => onCopy(message.id, message.content)}
-            canRestoreFiles={Boolean(message.checkpoint)}
+            canRestoreFiles={isValidCheckpoint(message.checkpoint)}
             onRewind={onRewind ? (options) => (options ? onRewind(message.id, options) : onRewind(message.id)) : undefined}
           />
         </>

@@ -113,8 +113,10 @@ export function useSessionRewind(deps: SessionRewindDeps): SessionRewind {
 
     if (options?.restoreFiles && message.checkpoint) {
       const checkpoint = message.checkpoint;
+      const previousRestore = restoresRef.current.get(session.id);
       const restoring = (async () => {
         await stopsRef.current.get(session.id);
+        await previousRestore;
         if (changedFiles.length === 0) {
           onNotice('Rewound chat. The agent reported no file changes after that message.', 'info');
           return;

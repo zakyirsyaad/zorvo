@@ -444,6 +444,10 @@ pub(crate) fn remove_worktree_file(toplevel: &Path, rel_path: &str) -> Result<()
     fs::remove_file(&full).map_err(|e| format!("Could not remove {rel_path}: {e}"))
 }
 
+fn in_head(git: &Path, toplevel: &Path, path: &str) -> bool {
+    run_git(git, toplevel, &["cat-file", "-e", &format!("HEAD:{path}")]).is_ok()
+}
+
 /// Discards uncommitted changes to a single changed file (or deletes an untracked/added file).
 pub fn discard_file(git: &Path, dir: &Path, file: &str) -> Result<(), String> {
     if !is_inside(file) || file.ends_with('/') {
@@ -481,8 +485,20 @@ pub fn discard_file(git: &Path, dir: &Path, file: &str) -> Result<(), String> {
             remove_worktree_file(&toplevel, &change.path)
         }
         ChangeKind::Modified | ChangeKind::Deleted => {
-            if !has_head {
-                return Err("Cannot restore a file before the first commit".to_string());
+            if !has_head || !in_head(git, &toplevel, &change.path) {
+                // Staged new file subsequently deleted from disk (`AD`), or before first commit.
+                if has_head {
+                    run_git(git, &toplevel, &["reset", "-q", "HEAD", "--", &change.path])
+                        .map_err(|e| format!("Could not unstage {file}: {e}"))?;
+                } else {
+                    run_git(
+                        git,
+                        &toplevel,
+                        &["rm", "--cached", "-f", "--", &change.path],
+                    )
+                    .map_err(|e| format!("Could not unstage {file}: {e}"))?;
+                }
+                return remove_worktree_file(&toplevel, &change.path);
             }
             run_git(git, &toplevel, &["reset", "-q", "HEAD", "--", &change.path])
                 .map_err(|e| format!("Could not unstage {file}: {e}"))?;
@@ -510,7 +526,12 @@ pub fn discard_file(git: &Path, dir: &Path, file: &str) -> Result<(), String> {
             run_git(git, &toplevel, &["checkout", "-q", "--", old_path])
                 .map_err(|e| format!("Could not restore {old_path}: {e}"))?;
             if change.path != old_path {
-                remove_worktree_file(&toplevel, &change.path)?;
+                if in_head(git, &toplevel, &change.path) {
+                    run_git(git, &toplevel, &["checkout", "-q", "--", &change.path])
+                        .map_err(|e| format!("Could not restore {file}: {e}"))?;
+                } else {
+                    remove_worktree_file(&toplevel, &change.path)?;
+                }
             }
             Ok(())
         }

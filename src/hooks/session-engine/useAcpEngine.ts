@@ -463,6 +463,8 @@ export function useAcpEngine({
         if (lastPromptRef.current.get(sessionId)?.message.id === promptMessage.id) {
           lastPromptRef.current.delete(sessionId);
         }
+        if (context) unsentContextRef.current.set(sessionId, context);
+        updateNow(sessionId, (prev) => withoutMessage(prev, message.id));
         return false;
       }
       if (checkpoint) {

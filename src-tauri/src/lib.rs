@@ -873,7 +873,9 @@ fn sanitize_export_filename(name: &str) -> String {
         .chars()
         .filter(|c| !c.is_control() && *c != '/' && *c != '\\')
         .collect();
-    let trimmed = base.trim().trim_start_matches('.');
+    let trimmed = base
+        .trim_start_matches(|c: char| c.is_whitespace() || c == '.')
+        .trim_end();
     let stem = if trimmed.is_empty() {
         "conversation"
     } else {
@@ -923,6 +925,7 @@ mod export_tests {
         assert_eq!(sanitize_export_filename("fix-login.md"), "fix-login.md");
         assert_eq!(sanitize_export_filename("notes"), "notes.md");
         assert_eq!(sanitize_export_filename("../secret/chat"), "secretchat.md");
+        assert_eq!(sanitize_export_filename(".. .foo"), "foo.md");
         assert_eq!(sanitize_export_filename("   ...  "), "conversation.md");
     }
 }

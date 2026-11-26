@@ -157,6 +157,54 @@ describe('useSessionRewind file restore', () => {
     expect(deps.onRewound).toHaveBeenCalledWith('s1');
     expect(deps.onNotice).toHaveBeenCalledWith('Rewound chat, but could not restore files: missing tree object');
   });
+
+  it('serializes back-to-back rewind file restores for the same session', async () => {
+    const sha2 = 'b'.repeat(40);
+    const secondUserMsg: ChatMessage = { id: 'm3', role: 'user', content: 'second', timestamp: 30, checkpoint: sha2 };
+    const secondAgentMsg: ChatMessage = {
+      id: 'm4',
+      role: 'agent',
+      content: 'done 2',
+      timestamp: 40,
+      tools: [{ id: 't3', name: 'Edit', kind: 'edit', status: 'completed', details: [{ kind: 'diff', path: '/w/repo/src/app.ts', isNewFile: false, rows: [] }] }],
+    };
+
+    const calls: string[] = [];
+    let resolveFirst!: (count: number) => void;
+    const firstRestore = new Promise<number>((res) => {
+      resolveFirst = res;
+    });
+
+    vi.spyOn(tauriInternals(), 'invoke').mockImplementation((cmd, args) => {
+      if (cmd === 'restore_turn_checkpoint') {
+        const cp = String((args as { checkpoint?: string })?.checkpoint ?? '');
+        calls.push(cp);
+        return cp === sha2 ? firstRestore : Promise.resolve(1);
+      }
+      return Promise.resolve(undefined);
+    });
+
+    const { result } = setup({
+      transcripts: { s1: [userMsg, agentMsg, secondUserMsg, secondAgentMsg] },
+    });
+
+    await act(async () => {
+      result.current.rewind(session, 'm3', { restoreFiles: true });
+      result.current.rewind({ ...session, status: 'terminated' }, 'm1', { restoreFiles: true });
+      await Promise.resolve();
+    });
+
+    // Second restore must wait until the first restore settles.
+    expect(calls).toEqual([sha2]);
+
+    await act(async () => {
+      resolveFirst(1);
+      await firstRestore;
+      await Promise.resolve();
+    });
+
+    expect(calls).toEqual([sha2, VALID_SHA]);
+  });
 });
 
 describe('restore scope', () => {

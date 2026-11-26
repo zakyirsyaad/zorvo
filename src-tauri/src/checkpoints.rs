@@ -55,7 +55,8 @@ impl Drop for TempIndex {
 }
 
 fn is_valid_tree_sha(sha: &str) -> bool {
-    (40..=64).contains(&sha.len()) && sha.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    (sha.len() == 40 || sha.len() == 64)
+        && sha.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// Runs git with `index` as its index, killed when `deadline` passes. Its output is read on a
@@ -153,8 +154,8 @@ fn snapshot_tree(git: &Path, toplevel: &Path, budget: Duration) -> Result<String
     };
 
     let temp = TempIndex::new();
-    if real_index.exists() {
-        let _ = fs::copy(&real_index, &temp.0);
+    if real_index.exists() && fs::copy(&real_index, &temp.0).is_err() {
+        let _ = fs::remove_file(&temp.0);
     }
     // Tracked files as they are now (changed and deleted ones included), then the untracked
     // files the limits allow. Never `add -A`, which would hash every untracked file.
@@ -323,6 +324,7 @@ pub fn restore_checkpoint(
     for path in &to_remove {
         match remove_worktree_file(&toplevel, path) {
             Ok(()) => {
+                prune_empty_parents(&toplevel, path);
                 done += 1;
                 removed.push(path);
             }
@@ -377,6 +379,27 @@ pub fn restore_checkpoint(
                 String::new()
             }
         ))
+    }
+}
+
+/// Prunes empty ancestor directories of `rel_path` strictly inside `toplevel` so a file that was
+/// replaced by a directory during a turn can be checked out again cleanly.
+fn prune_empty_parents(toplevel: &Path, rel_path: &str) {
+    let Ok(root) = toplevel.canonicalize() else {
+        return;
+    };
+    let mut dir = toplevel.join(rel_path).parent().map(Path::to_path_buf);
+    while let Some(current) = dir {
+        let Ok(canon) = current.canonicalize() else {
+            break;
+        };
+        if canon == root || !canon.starts_with(&root) {
+            break;
+        }
+        if fs::remove_dir(&current).is_err() {
+            break;
+        }
+        dir = current.parent().map(Path::to_path_buf);
     }
 }
 

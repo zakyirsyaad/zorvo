@@ -1,11 +1,14 @@
 //! A project's design system: a folder holding `design-system.json`, read leniently.
 //! Design: `docs/superpowers/specs/2026-11-26-design-system-design.md`.
 
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
+use super::ds_tokens::{parse_tokens, DsDropped};
+use super::source::read_checked;
 use super::store::clean_title_within;
 
 pub const INDEX_FILE: &str = "design-system.json";
@@ -134,6 +137,161 @@ pub fn is_ds_key(text: &str) -> bool {
                 .chars()
                 .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
     })
+}
+
+pub const MAX_FIND_DEPTH: usize = 4;
+pub const MAX_FIND_ENTRIES: usize = 5000;
+pub const MAX_SYSTEMS: usize = 20;
+
+/// A system found in a session's folder.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FoundSystem {
+    pub key: String,
+    #[serde(skip)]
+    pub folder: PathBuf,
+    /// The folder relative to the session's folder; `.` for the session's folder itself.
+    pub relative: String,
+    pub title: String,
+    /// The computed default, not the index's own flag.
+    pub is_default: bool,
+    /// The tokens `tokens.json` could not read, so the guide line repeats them.
+    pub dropped: Vec<DsDropped>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SystemList {
+    pub systems: Vec<FoundSystem>,
+    pub default_problem: Option<DefaultProblem>,
+}
+
+/// Why several systems have no default.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum DefaultProblem {
+    SeveralMarked { relatives: Vec<String> },
+    NoneMarked { relatives: Vec<String> },
+}
+
+pub fn find_systems(session_folder: &Path) -> SystemList {
+    find_systems_within(session_folder, MAX_FIND_ENTRIES)
+}
+
+/// Folders never searched: they hold dependencies, build output or a tool's own files.
+const SKIPPED_FOLDERS: &[&str] = &["node_modules", ".git", "target", "dist"];
+const TOKENS_FILE: &str = "tokens.json";
+
+/// A system as read, before the default is worked out.
+struct Candidate {
+    found: FoundSystem,
+    is_marked: bool,
+}
+
+/// `find_systems` with an entry limit of the caller's choosing. Each folder is read in name
+/// order and every entry counts, so a large project always stops at the same entries; a
+/// folder is judged when its entry is read, and a link is never followed.
+fn find_systems_within(root: &Path, max_entries: usize) -> SystemList {
+    let Ok(root) = fs::canonicalize(root) else {
+        return with_default(Vec::new());
+    };
+    let mut found: Vec<Candidate> = read_system(&root, ".").into_iter().collect();
+    let mut seen = 0usize;
+    let mut folders = vec![(root.clone(), String::new(), 0usize)];
+    'walk: while let Some((folder, prefix, depth)) = folders.pop() {
+        let Ok(entries) = fs::read_dir(&folder) else {
+            continue;
+        };
+        let mut entries: Vec<_> = entries.flatten().collect();
+        entries.sort_by_key(|entry| entry.file_name());
+        let mut subfolders = Vec::new();
+        for entry in entries {
+            if seen >= max_entries || found.len() >= MAX_SYSTEMS {
+                break 'walk;
+            }
+            seen += 1;
+            let Some(name) = entry.file_name().to_str().map(str::to_string) else {
+                continue;
+            };
+            let is_folder = entry.file_type().is_ok_and(|kind| kind.is_dir());
+            if !is_folder || name.starts_with('.') || SKIPPED_FOLDERS.contains(&name.as_str()) {
+                continue;
+            }
+            let relative = format!("{prefix}{name}");
+            found.extend(read_system(&entry.path(), &relative));
+            if depth + 1 < MAX_FIND_DEPTH {
+                subfolders.push((entry.path(), format!("{relative}/"), depth + 1));
+            }
+        }
+        // Pushed in reverse, so the first name is walked first.
+        folders.extend(subfolders.into_iter().rev());
+    }
+    found.truncate(MAX_SYSTEMS);
+    with_default(found)
+}
+
+/// The regular file at `path`, read without following a link; `None` for anything else.
+fn regular_file(path: &Path) -> Option<Vec<u8>> {
+    let metadata = fs::symlink_metadata(path).ok()?;
+    if !metadata.is_file() {
+        return None;
+    }
+    read_checked(path).ok()
+}
+
+/// The system in `folder`, when it holds a `design-system.json` that reads.
+fn read_system(folder: &Path, relative: &str) -> Option<Candidate> {
+    let index = parse_index(&regular_file(&folder.join(INDEX_FILE))?).ok()?;
+    let folder = fs::canonicalize(folder).ok()?;
+    let dropped = regular_file(&folder.join(TOKENS_FILE))
+        .and_then(|bytes| parse_tokens(&bytes).ok())
+        .map(|tokens| tokens.dropped)
+        .unwrap_or_default();
+    Some(Candidate {
+        found: FoundSystem {
+            key: system_key(&folder),
+            folder,
+            relative: relative.to_string(),
+            title: index.title,
+            is_default: false,
+            dropped,
+        },
+        is_marked: index.is_default,
+    })
+}
+
+/// The one system marked default; with exactly one system and none marked, that one.
+/// Otherwise no default, and the problem names the systems.
+fn with_default(found: Vec<Candidate>) -> SystemList {
+    let marked: Vec<String> = found
+        .iter()
+        .filter(|c| c.is_marked)
+        .map(|c| c.found.relative.clone())
+        .collect();
+    let default_problem = match (marked.len(), found.len()) {
+        (0, 0 | 1) | (1, _) => None,
+        (0, _) => Some(DefaultProblem::NoneMarked {
+            relatives: found.iter().map(|c| c.found.relative.clone()).collect(),
+        }),
+        _ => Some(DefaultProblem::SeveralMarked {
+            relatives: marked.clone(),
+        }),
+    };
+    let systems = found
+        .into_iter()
+        .map(|candidate| {
+            let is_default =
+                default_problem.is_none() && (candidate.is_marked || marked.is_empty());
+            FoundSystem {
+                is_default,
+                ..candidate.found
+            }
+        })
+        .collect();
+    SystemList {
+        systems,
+        default_problem,
+    }
 }
 
 #[cfg(test)]
@@ -275,5 +433,206 @@ mod tests {
         assert!(!is_ds_key("c-0123456789abcdef"));
         assert!(!is_ds_key("d-0123456789ABCDEF"));
         assert!(is_ds_key("d-0123456789abcdef"));
+    }
+
+    use super::super::test_support::Temp;
+
+    fn system(root: &Path, relative: &str, json: &str) {
+        let folder = root.join(relative);
+        fs::create_dir_all(&folder).unwrap();
+        fs::write(folder.join(INDEX_FILE), json).unwrap();
+    }
+
+    fn titled(root: &Path, relative: &str) {
+        system(root, relative, &format!(r#"{{"title": "{relative}"}}"#));
+    }
+
+    fn relatives(list: &SystemList) -> Vec<&str> {
+        list.systems.iter().map(|s| s.relative.as_str()).collect()
+    }
+
+    #[test]
+    fn finds_systems_four_levels_deep_and_not_five() {
+        let temp = Temp::new("ds-depth");
+        titled(&temp.0, "a/b/c/d");
+        titled(&temp.0, "e/f/g/h/i");
+        assert_eq!(relatives(&find_systems(&temp.0)), ["a/b/c/d"]);
+    }
+
+    #[test]
+    fn the_session_folder_itself_can_be_a_system() {
+        let temp = Temp::new("ds-root");
+        system(&temp.0, ".", r#"{"title": "Root"}"#);
+        let list = find_systems(&temp.0);
+        assert_eq!(relatives(&list), ["."]);
+        assert_eq!(list.systems[0].folder, temp.0);
+        assert_eq!(list.systems[0].key, system_key(&temp.0));
+    }
+
+    #[test]
+    fn skips_node_modules_git_target_dist_and_hidden_folders() {
+        let temp = Temp::new("ds-skip");
+        for skipped in ["node_modules/x", ".git", "target", "dist/ds", ".hidden"] {
+            titled(&temp.0, skipped);
+        }
+        titled(&temp.0, "docs/design-system");
+        assert_eq!(relatives(&find_systems(&temp.0)), ["docs/design-system"]);
+    }
+
+    #[test]
+    fn never_follows_a_symlinked_folder() {
+        let temp = Temp::new("ds-link");
+        let elsewhere = Temp::new("ds-link-target");
+        titled(&elsewhere.0, "brand");
+        std::os::unix::fs::symlink(elsewhere.0.join("brand"), temp.0.join("brand")).unwrap();
+        std::os::unix::fs::symlink(&elsewhere.0, temp.0.join("outside")).unwrap();
+        assert!(find_systems(&temp.0).systems.is_empty());
+    }
+
+    #[test]
+    fn an_index_that_is_a_link_is_not_a_system() {
+        let temp = Temp::new("ds-index-link");
+        let elsewhere = Temp::new("ds-index-link-target");
+        fs::write(elsewhere.0.join(INDEX_FILE), r#"{"title": "Elsewhere"}"#).unwrap();
+        fs::create_dir_all(temp.0.join("brand")).unwrap();
+        std::os::unix::fs::symlink(
+            elsewhere.0.join(INDEX_FILE),
+            temp.0.join("brand").join(INDEX_FILE),
+        )
+        .unwrap();
+        assert!(find_systems(&temp.0).systems.is_empty());
+    }
+
+    #[test]
+    fn stops_at_the_entry_limit_in_name_order() {
+        let temp = Temp::new("ds-limit");
+        for n in 0..10 {
+            fs::write(temp.0.join(format!("f{n:04}")), "").unwrap();
+        }
+        titled(&temp.0, "zz");
+        assert!(find_systems_within(&temp.0, 10).systems.is_empty());
+        assert_eq!(relatives(&find_systems_within(&temp.0, 11)), ["zz"]);
+        fs::rename(temp.0.join("zz"), temp.0.join("aa")).unwrap();
+        assert_eq!(relatives(&find_systems_within(&temp.0, 10)), ["aa"]);
+        assert_eq!(MAX_FIND_ENTRIES, 5000);
+    }
+
+    #[test]
+    fn keeps_at_most_20() {
+        let temp = Temp::new("ds-many");
+        for n in 0..21 {
+            titled(&temp.0, &format!("s{n:02}"));
+        }
+        let list = find_systems(&temp.0);
+        assert_eq!(list.systems.len(), MAX_SYSTEMS);
+        assert_eq!(list.systems[0].relative, "s00");
+        assert_eq!(list.systems[19].relative, "s19");
+    }
+
+    #[test]
+    fn an_index_that_does_not_parse_is_not_a_system() {
+        let temp = Temp::new("ds-bad");
+        system(&temp.0, "a", r#"{"title": ""}"#);
+        system(&temp.0, "b", "not json");
+        fs::create_dir_all(temp.0.join("c").join(INDEX_FILE)).unwrap();
+        titled(&temp.0, "d");
+        assert_eq!(relatives(&find_systems(&temp.0)), ["d"]);
+    }
+
+    #[test]
+    fn a_found_system_carries_its_dropped_tokens() {
+        let temp = Temp::new("ds-dropped");
+        titled(&temp.0, "a");
+        fs::write(
+            temp.0.join("a/tokens.json"),
+            r#"{"color": {"tokens": [{"name": "brand", "value": "var(--x)"}]}}"#,
+        )
+        .unwrap();
+        titled(&temp.0, "b");
+        let list = find_systems(&temp.0);
+        assert_eq!(
+            list.systems[0].dropped,
+            vec![DsDropped {
+                family: "color".into(),
+                name: "brand".into(),
+                reason: "var()"
+            }]
+        );
+        assert!(list.systems[1].dropped.is_empty());
+    }
+
+    #[test]
+    fn the_default() {
+        let one = Temp::new("ds-default-one");
+        titled(&one.0, "a");
+        let list = find_systems(&one.0);
+        assert!(list.systems[0].is_default);
+        assert_eq!(list.default_problem, None);
+
+        let marked = Temp::new("ds-default-marked");
+        titled(&marked.0, "a");
+        system(
+            &marked.0,
+            "b",
+            r#"{"title": "B", "zorvo": {"default": true}}"#,
+        );
+        let list = find_systems(&marked.0);
+        let defaults: Vec<bool> = list.systems.iter().map(|s| s.is_default).collect();
+        assert_eq!(defaults, [false, true]);
+        assert_eq!(list.default_problem, None);
+
+        let several = Temp::new("ds-default-several");
+        system(
+            &several.0,
+            "a",
+            r#"{"title": "A", "zorvo": {"default": true}}"#,
+        );
+        system(
+            &several.0,
+            "b",
+            r#"{"title": "B", "zorvo": {"default": true}}"#,
+        );
+        titled(&several.0, "c");
+        let list = find_systems(&several.0);
+        assert!(list.systems.iter().all(|s| !s.is_default));
+        assert_eq!(
+            list.default_problem,
+            Some(DefaultProblem::SeveralMarked {
+                relatives: vec!["a".into(), "b".into()]
+            })
+        );
+
+        let none = Temp::new("ds-default-none");
+        for name in ["a", "b", "c"] {
+            titled(&none.0, name);
+        }
+        let list = find_systems(&none.0);
+        assert!(list.systems.iter().all(|s| !s.is_default));
+        assert_eq!(
+            list.default_problem,
+            Some(DefaultProblem::NoneMarked {
+                relatives: vec!["a".into(), "b".into(), "c".into()]
+            })
+        );
+
+        let empty = Temp::new("ds-default-empty");
+        assert_eq!(
+            find_systems(&empty.0),
+            SystemList {
+                systems: vec![],
+                default_problem: None
+            }
+        );
+    }
+
+    #[test]
+    fn a_list_serializes_for_the_webview() {
+        let temp = Temp::new("ds-json");
+        titled(&temp.0, "a");
+        titled(&temp.0, "b");
+        let json = serde_json::to_value(find_systems(&temp.0)).unwrap();
+        assert!(json["systems"][0].get("folder").is_none());
+        assert_eq!(json["systems"][0]["isDefault"], false);
+        assert_eq!(json["defaultProblem"]["kind"], "noneMarked");
     }
 }

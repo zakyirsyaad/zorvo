@@ -10,6 +10,7 @@ use crate::installer::plan::{InstalledTools, PlannedStep};
 use crate::installer::prerequisites::{prerequisites_for, Prerequisite};
 use crate::installer::runtimes::{RuntimeKind, MIN_USER_NODE_MAJOR};
 use crate::profiles::AgentProfile;
+use crate::registry::cli_launch::{cli_launch_for, is_new_enough, CliLaunch};
 use crate::registry::schema::{current_platform, BinaryTarget, Distribution, RegistryEntry};
 
 /// Old built-in profile ids and the registry ids that replace them.
@@ -63,15 +64,35 @@ impl SystemTools<'_> {
         }
     }
 
-    /// The first `binary` on `PATH` that is not one of Apple's system tools,
-    /// so a binary agent named like one never counts as installed.
+    /// [`first_user_program`] on this machine's `PATH`.
     fn locate_user_installed(&self, binary: &str) -> Option<String> {
-        self.path_var?
-            .split(':')
-            .filter_map(|dir| find_binary_in_path_str(binary, dir))
-            .find(|path| !is_system_tool(path))
-            .map(|path| path.to_string_lossy().to_string())
+        first_user_program(binary, self.path_var?)
     }
+}
+
+/// The first `binary` on `path_var` that is not one of Apple's system tools,
+/// so a binary agent named like one never counts as installed.
+pub fn first_user_program(binary: &str, path_var: &str) -> Option<String> {
+    path_var
+        .split(':')
+        .filter_map(|dir| find_binary_in_path_str(binary, dir))
+        .find(|path| !is_system_tool(path))
+        .map(|path| path.to_string_lossy().to_string())
+}
+
+/// The user's CLI that runs a binary agent in place of the registry's program.
+struct UserCli {
+    launch: &'static CliLaunch,
+    path: String,
+}
+
+/// The CLI [`cli_launch_for`] names for `entry`, when it is on `PATH` and
+/// reported a version from its minimum on.
+fn user_cli(entry: &RegistryEntry, tools: &SystemTools) -> Option<UserCli> {
+    let launch = cli_launch_for(&entry.id)?;
+    let path = tools.locate_user_installed(launch.program)?;
+    let version = tools.installed.cli_versions.get(&path)?;
+    is_new_enough(version, launch.min_version).then_some(UserCli { launch, path })
 }
 
 /// Where Apple keeps its own command-line tools and developer tools.
@@ -219,9 +240,18 @@ fn uvx_program(tools: &SystemTools) -> (Program, Option<RuntimeKind>) {
     (program, Some(RuntimeKind::Uv))
 }
 
-/// The `cmd` basename on `PATH` outside Apple's system tool dirs, else Zorvo's
-/// copy at the entry's version, run by its full path inside the install dir.
-fn binary_program(entry: &RegistryEntry, target: &BinaryTarget, tools: &SystemTools) -> Program {
+/// The user's CLI for the agent, else the `cmd` basename on `PATH` outside
+/// Apple's system tool dirs, else Zorvo's copy at the entry's version, run by
+/// its full path inside the install dir.
+fn binary_program(
+    entry: &RegistryEntry,
+    target: &BinaryTarget,
+    cli: Option<&UserCli>,
+    tools: &SystemTools,
+) -> Program {
+    if let Some(cli) = cli {
+        return Program::Found(Located::as_is(cli.path.clone()));
+    }
     if let Some(path) = tools.locate_user_installed(basename(&target.cmd)) {
         return Program::Found(Located::as_is(path));
     }
@@ -237,6 +267,7 @@ fn binary_program(entry: &RegistryEntry, target: &BinaryTarget, tools: &SystemTo
 }
 
 fn resolve<'e>(entry: &'e RegistryEntry, tools: &SystemTools) -> Resolution<'e> {
+    let cli = user_cli(entry, tools);
     // `setup_args` is the same launch without the entry's own arguments, which are its ACP flags.
     let (kind, command, args, setup_args, installed_on_system, target) = match &entry.distribution {
         // `npx` here only names the kind: the program is the installed package's own.
@@ -258,17 +289,24 @@ fn resolve<'e>(entry: &'e RegistryEntry, tools: &SystemTools) -> Resolution<'e> 
         ),
         Distribution::Binary { platforms } => {
             let target = platforms.get(current_platform());
-            let command = target.map_or_else(String::new, |t| basename(&t.cmd).to_string());
-            let args = target.map_or_else(Vec::new, |t| t.args.clone());
-            // Apple's own tools never count as the agent (see `locate_user_installed`).
-            let installed = tools.locate_user_installed(&command).is_some();
+            // The CLI's own arguments replace the registry build's.
+            let (command, args, installed) = match &cli {
+                Some(cli) => (cli.launch.program.to_string(), cli.launch.args(), true),
+                None => {
+                    let command = target.map_or_else(String::new, |t| basename(&t.cmd).to_string());
+                    let args = target.map_or_else(Vec::new, |t| t.args.clone());
+                    // Apple's own tools never count as the agent (see `first_user_program`).
+                    let installed = tools.locate_user_installed(&command).is_some();
+                    (command, args, installed)
+                }
+            };
             ("binary", command, args, Vec::new(), installed, target)
         }
     };
     let (program, zorvo_runtime) = match (kind, target) {
         ("npx", _) => npm_agent_program(entry, tools),
         ("uvx", _) => uvx_program(tools),
-        (_, Some(target)) => (binary_program(entry, target, tools), None),
+        (_, Some(target)) => (binary_program(entry, target, cli.as_ref(), tools), None),
         (_, None) => (Program::NotInstalled, None),
     };
 

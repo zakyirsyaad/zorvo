@@ -4,11 +4,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
-### Changed
-
-- **The folded session overview is a smaller pill.** It no longer repeats the lines added and removed, which the top bar already shows; it says how many tasks run, or Overview.
-
-## [0.22.0] - 2026-11-26
+## [0.22.1] - 2026-11-27
 
 ### Added
 
@@ -22,10 +18,15 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - **Google Antigravity runs through your own `agy` CLI.** When `agy` 1.5.17 or newer is on your PATH, Zorvo starts Antigravity with `agy acp` instead of its download of the registry's server, so your own subagents and skills from `~/.gemini/config` work in Zorvo too. Sessions you started before still continue. Without `agy`, nothing changes.
 - **Agents design pages and canvases with more care.** The guide an agent reads before it shows you a page or a canvas now tells it to follow your project's own design system when there is one, ask its questions once, write placeholders instead of made-up names and numbers, use real buttons, links and labels, and keep text readable in both themes. On a canvas it builds one artboard at a time, so you watch the screens appear.
+- **The folded session overview is a smaller pill.** It no longer repeats the lines added and removed, which the top bar already shows; it says how many tasks run, or Overview.
 
 ### Fixed
 
 - **A reloaded window no longer keeps an artifact drawn over the chat.** When Zorvo's window reloaded, the page, canvas or video shown in the Artifacts tab stayed on screen at its old place, over the chat, with nothing that could close it. A reload now closes it, as it already closed the Browser panel's pages.
+
+## [0.22.0] - 2026-11-26
+
+Tagged but never published; its changes shipped in 0.22.1.
 
 ## [0.21.2] - 2026-11-26
 
@@ -600,7 +601,8 @@ Tagged but never published; its fix shipped in 0.11.2.
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.22.1...HEAD
+[0.22.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.22.0...v0.22.1
 [0.22.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.21.2...v0.22.0
 [0.21.2]: https://github.com/zakyirsyaad/zorvo/compare/v0.21.1...v0.21.2
 [0.21.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.21.0...v0.21.1

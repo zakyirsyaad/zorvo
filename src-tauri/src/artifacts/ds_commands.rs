@@ -11,6 +11,7 @@ use tauri::{AppHandle, State};
 use super::commands::{bounds_in_window, changed, is_inside_known_session_folder, now_ms};
 use super::design_system::{find_systems, system_key, SystemList, INDEX_FILE, NOT_A_DESIGN_SYSTEM};
 use super::ds_content::{read_content, DsContent};
+use super::ds_source::{source_state, SourceState};
 use super::ds_store::DesignSystemEntry;
 use super::ds_tokens::DsTokens;
 use super::ds_view::{ds_apply_script, ShownDesignSystem};
@@ -275,6 +276,50 @@ pub fn ds_view_show(
             Err(view::COULD_NOT_SHOW.to_string())
         }
     }
+}
+
+/// Whether the code a remembered system was made from changed since: read-only git in its
+/// repository, only for a system still inside a known session folder.
+pub fn source_state_of(
+    artifacts: &ArtifactStore,
+    is_known: impl Fn(&Path) -> bool,
+    git: &Path,
+    session_id: &str,
+    key: &str,
+) -> Result<SourceState, String> {
+    let entry = artifacts
+        .design_system(session_id, key)
+        .ok_or_else(|| FAILED.to_string())?;
+    let root = PathBuf::from(&entry.folder);
+    let relative = if entry.relative == "." {
+        ""
+    } else {
+        entry.relative.as_str()
+    };
+    if !is_inside_known_session_folder(&root, relative, &is_known) {
+        return Ok(SourceState::None);
+    }
+    let source = read_content(&root)
+        .ok()
+        .and_then(|content| content.tokens)
+        .and_then(|tokens| tokens.source);
+    Ok(source_state(git, &root, source.as_ref()))
+}
+
+#[tauri::command(async)]
+pub fn ds_source_state(
+    store: State<'_, AppStore>,
+    artifacts: State<'_, Arc<ArtifactStore>>,
+    session_id: String,
+    key: String,
+) -> Result<SourceState, String> {
+    source_state_of(
+        &artifacts,
+        |root| store.is_known_workspace(root).unwrap_or(false),
+        &crate::git_info::git_binary(),
+        &session_id,
+        &key,
+    )
 }
 
 /// The components `ds_view_apply` reads for `key`: none when the system is forgotten or no

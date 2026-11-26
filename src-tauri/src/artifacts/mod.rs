@@ -13,6 +13,7 @@ pub mod ds_markdown;
 pub mod ds_preview;
 pub mod ds_protocol;
 pub mod ds_shell;
+pub mod ds_source;
 pub mod ds_store;
 pub mod ds_tokens;
 pub mod ds_tokens_css;

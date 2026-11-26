@@ -737,6 +737,7 @@ pub fn run() {
             artifacts::ds_commands::ds_forget,
             artifacts::ds_commands::ds_view_show,
             artifacts::ds_commands::ds_view_apply,
+            artifacts::ds_commands::ds_source_state,
             artifacts::motion_commands::motion_show,
             artifacts::motion_commands::video_show,
             artifacts::motion_commands::motion_read,

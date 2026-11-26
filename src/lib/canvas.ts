@@ -49,6 +49,8 @@ export interface CanvasSection {
 export interface Canvas {
   title: string;
   sections: CanvasSection[];
+  /** The design system's folder relative to the canvas folder, as `canvas.json` names it. */
+  designSystem?: string;
 }
 
 export interface BoardState {
@@ -103,11 +105,12 @@ function parseSection(value: unknown): CanvasSection | null {
 
 function parseCanvas(value: unknown): Canvas | null {
   if (!isObject(value)) return null;
-  const { title, sections } = value;
+  const { title, sections, designSystem } = value;
   if (typeof title !== 'string' || !Array.isArray(sections)) return null;
   const parsed = sections.map(parseSection);
   if (parsed.some((section) => section === null)) return null;
-  return { title, sections: parsed as CanvasSection[] };
+  const canvas = { title, sections: parsed as CanvasSection[] };
+  return typeof designSystem === 'string' ? { ...canvas, designSystem } : canvas;
 }
 
 function parseBoard(value: unknown): BoardState | null {

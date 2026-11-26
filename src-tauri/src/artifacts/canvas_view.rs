@@ -504,6 +504,7 @@ mod tests {
                 title: "s".to_string(),
                 artboards: vec![board("pay-a", "pay/a.html"), board("pay-b", "pay/b.html")],
             }],
+            design_system: None,
         }
     }
 

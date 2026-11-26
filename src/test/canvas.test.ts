@@ -171,3 +171,13 @@ describe("the Pick and Build messages", () => {
     expect(buildMessage("", PAY_B)).toContain("`pay-b.html`");
   });
 });
+
+describe("a canvas's design system", () => {
+  it("keeps designSystem only when it is a string", () => {
+    const base = { entry: ENTRY, error: null, boards: [] };
+    const named = parseCanvasRead({ ...base, canvas: { ...CANVAS, designSystem: "../ds" } });
+    expect(named?.canvas?.designSystem).toBe("../ds");
+    const odd = parseCanvasRead({ ...base, canvas: { ...CANVAS, designSystem: 3 } });
+    expect(odd?.canvas && "designSystem" in odd.canvas).toBe(false);
+  });
+});

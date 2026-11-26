@@ -15,6 +15,13 @@ pub const INDEX_FILE: &str = "design-system.json";
 pub const MAX_INDEX_BYTES: usize = 256 * 1024;
 pub const MAX_DS_TITLE_CHARS: usize = 120;
 
+pub const NOT_A_DESIGN_SYSTEM: &str =
+    "The design system must be a folder with a design-system.json inside this folder.";
+pub const UNREADABLE_INDEX: &str =
+    "design-system.json could not be read: it must be a JSON object with a title.";
+pub const NO_README: &str = "A design system needs a README.md beside its design-system.json.";
+pub const TOO_BIG: &str = "A file of this design system is over its limit.";
+
 /// What Zorvo reads of `design-system.json`. Every other field is ignored.
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]

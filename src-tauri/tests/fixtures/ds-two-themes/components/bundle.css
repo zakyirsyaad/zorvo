@@ -1,0 +1,2 @@
+.acme-button { background: var(--accent); color: var(--bg); border-radius: var(--radius-m); padding: var(--space-2) var(--space-4); }
+.acme-swatch { width: 40px; height: 40px; background: var(--accent); }

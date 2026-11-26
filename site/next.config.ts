@@ -23,6 +23,8 @@ interface Release {
   tag_name: string;
   draft: boolean;
   prerelease: boolean;
+  /** Null for a draft. */
+  published_at: string | null;
   assets: Array<{ name: string; download_count: number }>;
 }
 
@@ -30,7 +32,12 @@ interface Published {
   downloads: string;
   /** The newest published release of this repository, without the "v". */
   version?: string;
+  /** Each published release's counts as JSON, for the home page's Numbers section (lib/release-stats.ts checks them). */
+  releaseStats: string;
 }
+
+const countOf = (release: Release, suffix: string): number =>
+  release.assets.filter((asset) => asset.name.endsWith(suffix)).reduce((sum, asset) => sum + asset.download_count, 0);
 
 /**
  * How often the .dmg was downloaded and which version is the newest published one, from GitHub's public
@@ -49,6 +56,7 @@ async function readReleases(): Promise<Published | undefined> {
   try {
     let total = 0;
     let version: string | undefined;
+    const perRelease: Array<{ tag: string; publishedOn: string; installers: number; updates: number }> = [];
     for (const repository of RELEASE_REPOSITORIES) {
       for (let page = 1; page <= 5; page += 1) {
         const response = await fetch(`https://api.github.com/repos/${repository}/releases?per_page=100&page=${page}`, {
@@ -66,11 +74,18 @@ async function readReleases(): Promise<Published | undefined> {
           for (const asset of release.assets) {
             if (asset.name.endsWith(".dmg")) total += asset.download_count;
           }
+          if (release.draft || !release.published_at) continue;
+          perRelease.push({
+            tag: release.tag_name,
+            publishedOn: release.published_at.slice(0, 10),
+            installers: countOf(release, ".dmg"),
+            updates: countOf(release, ".app.tar.gz"),
+          });
         }
         if (releases.length < 100) break;
       }
     }
-    return { downloads: String(total), version };
+    return { downloads: String(total), version, releaseStats: JSON.stringify(perRelease) };
   } catch (error) {
     return fallback(error instanceof Error ? error.name : "request failed");
   }
@@ -81,5 +96,9 @@ export default async function config(): Promise<NextConfig> {
   const env: Record<string, string> = {};
   if (published) env.ZORVO_DOWNLOADS = published.downloads;
   if (published?.version) env.ZORVO_VERSION = published.version;
+  if (published) {
+    env.ZORVO_RELEASE_STATS = published.releaseStats;
+    env.ZORVO_STATS_READ_ON = new Date().toISOString().slice(0, 10);
+  }
   return { ...nextConfig, env };
 }

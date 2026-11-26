@@ -109,7 +109,7 @@ describe("landing page", () => {
     return body.textContent ?? "";
   })();
 
-  it("has the sixteen sections in order, the paid extra after the free app, and no pricing", () => {
+  it("has the seventeen sections in order, the paid extra after the free app, and no pricing", () => {
     const names = [...document.querySelectorAll("main > section")].map(
       (section) => section.id || section.getAttribute("aria-label"),
     );
@@ -117,6 +117,7 @@ describe("landing page", () => {
       "top",
       "Agents",
       "community",
+      "stats",
       "sessions",
       "compare",
       "delegate",
@@ -744,7 +745,7 @@ describe("search engines", () => {
   it("lets crawlers in and points them at a sitemap of the page", () => {
     const base = siteUrl().href;
     expect(robots()).toMatchObject({ rules: { userAgent: "*", allow: "/" }, sitemap: `${base}sitemap.xml` });
-    expect(sitemap().map((entry) => entry.url)).toEqual([base, ...DOCS_PAGES.map((page) => `${base}${page.href.slice(1)}/`)];
+    expect(sitemap().map((entry) => entry.url)).toEqual([base, ...DOCS_PAGES.map((page) => `${base}${page.href.slice(1)}/`)]);
   });
 
   it("describes Zorvo as a free macOS app in structured data", () => {

@@ -1,6 +1,7 @@
 import { Agents } from "../components/sections/Agents";
 import { Canvas } from "../components/sections/Canvas";
 import { Community } from "../components/sections/Community";
+import { Stats } from "../components/sections/Stats";
 import { Compare } from "../components/sections/Compare";
 import { Control } from "../components/sections/Control";
 import { Delegate } from "../components/sections/Delegate";
@@ -42,6 +43,8 @@ export default function Home() {
         <Agents />
         {/* Right under the strip of agents: who makes Zorvo, and where to follow it. */}
         <Community />
+        {/* Built in the open, then the numbers that shows: every count Zorvo has about its use. */}
+        <Stats />
         <Sessions />
         <Compare />
         <Delegate />

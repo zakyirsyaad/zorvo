@@ -4,8 +4,11 @@ import { escapeVisible } from './visible-text';
 
 /** One failed request is routine (the agent retries); this many in a row is worth saying. */
 export const STALL_MIN_FAILURES = 2;
-/** How long an agent may send nothing before the chat says so. */
-export const STALL_SILENCE_MS = 60_000;
+/**
+ * How long an agent may send nothing before the chat says so. Three minutes, not one: a model at a
+ * high effort (Gemini in Antigravity) thinks for over a minute without streaming a word.
+ */
+export const STALL_SILENCE_MS = 3 * 60_000;
 /** How long a running tool may go without news: a build or a test suite takes minutes. */
 export const STALL_TOOL_SILENCE_MS = 5 * 60_000;
 /** How long after Stop the turn may go on before End agent is offered: an agent may finish a step first. */

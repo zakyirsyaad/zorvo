@@ -1,2 +1,368 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>Design system</title></head><body></body></html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design system</title>
+<style>
+  /* The app's design tokens (src/styles/globals.css): dark values, then the light ones. The
+     system's own Theme changes only swatches, type samples and previews, never this chrome. */
+  :root {
+    --ds-ground: #0a0a0b;
+    --ds-text: #a1a1aa;
+    --ds-text-strong: #d4d4d8;
+    --ds-line: #71717a;
+    --ds-box: #111113;
+    --ds-shadow: rgba(0, 0, 0, 0.6);
+    --ds-mark: #2563eb;
+    --ds-danger: #f87171;
+    /* A preview is a web page, drawn on white as a browser draws one. */
+    --ds-page: #ffffff;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --ds-ground: #f4f4f5;
+      --ds-text: #52525b;
+      --ds-text-strong: #27272a;
+      --ds-line: #808088;
+      --ds-box: #ffffff;
+      --ds-shadow: rgba(9, 9, 11, 0.18);
+      --ds-danger: #b91c1c;
+    }
+  }
+  html, body { margin: 0; height: 100%; background: var(--ds-ground); }
+  body { display: flex; font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; color: var(--ds-text); }
+  #index { flex: 0 0 200px; overflow-y: auto; padding: 16px 8px; box-sizing: border-box; border-right: 1px solid var(--ds-line); }
+  #index a { display: block; padding: 4px 8px; border-radius: 6px; color: var(--ds-text); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #index a:hover, #index a:focus-visible { color: var(--ds-text-strong); background: var(--ds-box); }
+  #index .group { padding-left: 20px; }
+  #main { flex: 1 1 auto; overflow-y: auto; padding: 24px 32px 64px; box-sizing: border-box; }
+  h1 { margin: 0 0 16px; font-size: 22px; font-weight: 600; color: var(--ds-text-strong); }
+  h2.family { margin: 40px 0 12px; font-size: 16px; font-weight: 600; color: var(--ds-text-strong); }
+  #notes { margin: 0 0 16px; color: var(--ds-danger); }
+  #notes:empty { display: none; }
+  #notes p { margin: 0 0 4px; }
+  article { max-width: 720px; color: var(--ds-text-strong); }
+  article img { max-width: 100%; }
+  article a { color: var(--ds-mark); }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; text-align: left; cursor: pointer; }
+  button:focus-visible, a:focus-visible { outline: 2px solid var(--ds-mark); outline-offset: 2px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; }
+  .swatch { display: flex; flex-direction: column; gap: 4px; padding: 8px; border-radius: 8px; background: var(--ds-box); }
+  .swatch .chip { height: 56px; border-radius: 6px; border: 1px solid var(--ds-line); }
+  .swatch strong, .row strong { color: var(--ds-text-strong); font-weight: 600; }
+  code { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+  .row { display: flex; align-items: center; gap: 16px; padding: 8px 0; border-bottom: 1px solid var(--ds-line); }
+  .row .name { flex: 0 0 160px; }
+  .sample { color: var(--ds-text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; }
+  .bar { height: 12px; background: var(--ds-mark); border-radius: 2px; }
+  .shape { width: 48px; height: 48px; background: var(--ds-box); border: 1px solid var(--ds-line); }
+  .lift { width: 72px; height: 48px; background: var(--ds-box); border-radius: 6px; }
+  .component { margin: 0 0 24px; }
+  .component > button { margin: 0 0 8px; font-weight: 600; color: var(--ds-text-strong); }
+  .preview { position: relative; border-radius: 8px; overflow: hidden; background: var(--ds-page); box-shadow: 0 1px 4px var(--ds-shadow); }
+  .preview iframe { display: block; width: 100%; height: 100%; border: 0; background: var(--ds-page); }
+  .preview .placeholder { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--ds-box); color: var(--ds-text); }
+  .asset img { width: 100%; height: 96px; object-fit: contain; background: var(--ds-box); border-radius: 6px; }
+  .missing { color: var(--ds-danger); }
+</style>
+</head>
+<body>
+<nav id="index" aria-label="Design system"></nav>
+<main id="main"><h1 id="title"></h1><div id="notes" role="status"></div><div id="content"></div></main>
+<script>
+(function () {
+  "use strict";
+
+  var LIVE_BUDGET = 12;
+  var CUT_LINE = "Some sections are too long to show here.";
+  var MISSING = "Not in this folder";
+
+  var indexEl = document.getElementById("index");
+  var mainEl = document.getElementById("main");
+  var titleEl = document.getElementById("title");
+  var notesEl = document.getElementById("notes");
+  var contentEl = document.getElementById("content");
+
+  var current = null;
+  var previews = [];
+  var fontStyle = null;
+  var fontLink = null;
+  var commentMode = false;
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    return node;
+  }
+
+  function list(value) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  function slug(text) {
+    return String(text).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "x";
+  }
+
+  function addLink(id, text, indented) {
+    var link = el("a", indented ? "group" : "", text);
+    link.setAttribute("href", "#" + id);
+    indexEl.appendChild(link);
+  }
+
+  function family(id, title) {
+    var heading = el("h2", "family", title);
+    heading.id = id;
+    contentEl.appendChild(heading);
+    addLink(id, title, false);
+    return heading;
+  }
+
+  function sizeText(bytes) {
+    if (typeof bytes !== "number") return "";
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  }
+
+  function notes(state) {
+    notesEl.textContent = "";
+    var lines = list(state.notes).slice();
+    if (state.sectionsCut) lines.push(CUT_LINE);
+    lines.forEach(function (line) { notesEl.appendChild(el("p", "", line)); });
+  }
+
+  function fonts(state) {
+    if (!fontStyle) {
+      fontStyle = document.createElement("style");
+      fontStyle.setAttribute("data-font-css", "");
+      document.head.appendChild(fontStyle);
+    }
+    fontStyle.textContent = typeof state.fontCss === "string" ? state.fontCss : "";
+    var url = typeof state.googleFontsUrl === "string" ? state.googleFontsUrl : null;
+    if (url && !fontLink) {
+      fontLink = document.createElement("link");
+      fontLink.rel = "stylesheet";
+      document.head.appendChild(fontLink);
+    }
+    if (fontLink) {
+      if (url) fontLink.href = url;
+      else { fontLink.remove(); fontLink = null; }
+    }
+  }
+
+  function sections(state) {
+    list(state.sections).forEach(function (section) {
+      var id = "sec-" + slug(section.id);
+      var block = el("section");
+      var heading = el("h2", "family", section.title);
+      heading.id = id;
+      var article = el("article");
+      // Cleaned in Rust (ammonia): no script, no handlers, ids prefixed `ds-u-`.
+      article.innerHTML = typeof section.html === "string" ? section.html : "";
+      block.appendChild(heading);
+      block.appendChild(article);
+      contentEl.appendChild(block);
+      addLink(id, section.title, false);
+    });
+  }
+
+  function colours(state) {
+    var items = list(state.colours);
+    if (!items.length) return;
+    family("colours", "Colours");
+    var grid = el("div", "grid");
+    items.forEach(function (token) {
+      var swatch = el("button", "swatch");
+      swatch.type = "button";
+      swatch.setAttribute("data-token", token.name);
+      var chip = el("span", "chip");
+      chip.style.background = String(token.value);
+      swatch.appendChild(chip);
+      swatch.appendChild(el("strong", "", token.name));
+      swatch.appendChild(el("code", "", token.value));
+      if (token.usage) swatch.appendChild(el("span", "", token.usage));
+      grid.appendChild(swatch);
+    });
+    contentEl.appendChild(grid);
+  }
+
+  function typeStyles(state) {
+    var items = list(state.type);
+    if (!items.length) return;
+    family("type", "Type");
+    items.forEach(function (style) {
+      var row = el("div", "row");
+      row.setAttribute("data-token", style.name);
+      row.appendChild(el("strong", "name", style.name));
+      var sample = el("span", "sample", style.group ? style.group + " " + style.name : style.name);
+      sample.style.cssText = String(style.css || "");
+      row.appendChild(sample);
+      contentEl.appendChild(row);
+    });
+  }
+
+  function measures(state, key, id, title, draw) {
+    var items = list(state[key]);
+    if (!items.length) return;
+    family(id, title);
+    items.forEach(function (token) {
+      var row = el("div", "row");
+      row.setAttribute("data-token", token.name);
+      row.appendChild(el("strong", "name", token.name));
+      row.appendChild(draw(token.value));
+      row.appendChild(el("code", "", token.value));
+      contentEl.appendChild(row);
+    });
+  }
+
+  function components(state) {
+    previews = [];
+    var groups = [];
+    var byGroup = {};
+    list(state.components).forEach(function (component) {
+      var group = component.group || "Components";
+      if (!Object.prototype.hasOwnProperty.call(byGroup, group)) {
+        byGroup[group] = [];
+        groups.push(group);
+      }
+      byGroup[group].push(component);
+    });
+    groups.forEach(function (group) {
+      var heading = el("h2", "family", group);
+      heading.id = "group-" + slug(group);
+      contentEl.appendChild(heading);
+      addLink(heading.id, group, true);
+      byGroup[group].forEach(function (component) {
+        var block = el("div", "component");
+        var name = el("button", "", component.name);
+        name.type = "button";
+        name.setAttribute("data-component", component.name);
+        block.appendChild(name);
+        var box = el("div", "preview");
+        box.style.height = Math.max(40, Math.min(4000, Number(component.height) || 120)) + "px";
+        box.appendChild(el("div", "placeholder", component.url ? component.name : "No preview"));
+        block.appendChild(box);
+        contentEl.appendChild(block);
+        previews.push({ name: component.name, url: component.url, box: box, frame: null });
+      });
+    });
+  }
+
+  function assets(state, key, id, title) {
+    var items = list(state[key]);
+    if (!items.length) return;
+    family(id, title);
+    var grid = el("div", "grid");
+    items.forEach(function (asset) {
+      var tile = el("div", "asset");
+      if (asset.url && asset.kind === "image") {
+        var image = el("img");
+        image.src = asset.url;
+        image.alt = asset.file;
+        tile.appendChild(image);
+      }
+      tile.appendChild(el("code", "", asset.file || asset.family));
+      if (asset.url === null && key === "assets") tile.appendChild(el("span", "missing", MISSING));
+      else if (asset.size !== undefined && asset.size !== null) tile.appendChild(el("span", "", sizeText(asset.size)));
+      grid.appendChild(tile);
+    });
+    contentEl.appendChild(grid);
+  }
+
+  function liveIds(viewport) {
+    var top = viewport && typeof viewport.top === "number" ? viewport.top : 0;
+    var height = viewport && typeof viewport.height === "number" ? viewport.height : 0;
+    var middle = top + height / 2;
+    var origin = contentEl.getBoundingClientRect().top;
+    var visible = previews.filter(function (preview) {
+      if (!preview.url) return false;
+      var rect = preview.box.getBoundingClientRect();
+      var start = rect.top - origin;
+      return start + rect.height >= top && start <= top + height;
+    }).map(function (preview) {
+      var rect = preview.box.getBoundingClientRect();
+      return { name: preview.name, distance: Math.abs(rect.top - origin + rect.height / 2 - middle) };
+    });
+    visible.sort(function (a, b) { return a.distance - b.distance; });
+    return visible.slice(0, LIVE_BUDGET).map(function (item) { return item.name; });
+  }
+
+  function updateLive() {
+    var live = liveIds({ top: mainEl.scrollTop, height: mainEl.clientHeight || window.innerHeight || 0 });
+    previews.forEach(function (preview) {
+      var wanted = live.indexOf(preview.name) !== -1;
+      if (wanted && !preview.frame) {
+        var frame = document.createElement("iframe");
+        frame.setAttribute("sandbox", "allow-scripts");
+        frame.setAttribute("title", preview.name);
+        frame.src = preview.url;
+        preview.box.textContent = "";
+        preview.box.appendChild(frame);
+        preview.frame = frame;
+      } else if (!wanted && preview.frame) {
+        preview.frame.remove();
+        preview.frame = null;
+        preview.box.appendChild(el("div", "placeholder", preview.name));
+      }
+    });
+  }
+
+  var pending = false;
+  function scheduleLive() {
+    if (pending) return;
+    pending = true;
+    (window.requestAnimationFrame || setTimeout)(function () { pending = false; updateLive(); });
+  }
+
+  function apply(state) {
+    if (!state || typeof state !== "object") return;
+    current = state;
+    indexEl.textContent = "";
+    contentEl.textContent = "";
+    titleEl.textContent = typeof state.title === "string" ? state.title : "";
+    notes(state);
+    fonts(state);
+    sections(state);
+    colours(state);
+    typeStyles(state);
+    measures(state, "spacing", "spacing", "Spacing", function (value) {
+      var bar = el("span", "bar");
+      bar.style.width = String(value);
+      return bar;
+    });
+    measures(state, "radius", "radius", "Radius", function (value) {
+      var shape = el("span", "shape");
+      shape.style.borderRadius = String(value);
+      return shape;
+    });
+    measures(state, "shadow", "shadow", "Shadow", function (value) {
+      var lift = el("span", "lift");
+      lift.style.boxShadow = String(value);
+      return lift;
+    });
+    components(state);
+    assets(state, "assets", "assets", "Assets");
+    assets(state, "fonts", "fonts", "Fonts");
+    updateLive();
+  }
+
+  mainEl.addEventListener("scroll", scheduleLive, { passive: true });
+  window.addEventListener("resize", scheduleLive);
+
+  Object.defineProperty(window, "__zorvoDs", {
+    value: Object.freeze({
+      apply: apply,
+      mode: function (on) { commentMode = on === true; return commentMode; },
+      marks: function () {},
+      liveIds: liveIds,
+      current: function () { return current; },
+    }),
+    writable: false,
+    configurable: false,
+  });
+})();
+</script>
+</body>
+</html>

@@ -161,3 +161,13 @@ export function designSystemResultText(read: DesignSystemRead): string {
   const dropped = droppedLine(read.content?.tokens?.dropped ?? []);
   return dropped ? `${shown} ${dropped}` : shown;
 }
+
+/** The viewer's line when several systems leave the folder without a default. */
+export function defaultProblemLine(problem: DefaultProblem): string {
+  const names = joinedNames(problem.relatives.map(quoted));
+  if (problem.kind === 'severalMarked') {
+    const amount = problem.relatives.length === 2 ? 'both' : 'all';
+    return `No default design system: ${names} are ${amount} marked default.`;
+  }
+  return `No default design system: none of ${names} is marked default.`;
+}

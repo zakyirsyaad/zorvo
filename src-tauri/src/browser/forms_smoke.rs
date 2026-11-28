@@ -104,7 +104,7 @@ async fn strict_csp(app: &AppHandle, base: &url::Url) -> Result<Value, String> {
 pub(super) async fn smoke(app: &AppHandle, base: &url::Url) -> Result<Value, String> {
     let result = async {
         let tab = open(app, base.as_str()).await?;
-        super::dialog_smoke::wait_document(app, SESSION, &tab, base.as_str(), None).await?;
+        super::smoke::wait_document(app, SESSION, &tab, base.as_str(), None).await?;
         let snapshot = call(app, &tab, json!({"operation":"snapshot"})).await?;
         let button = reference(&snapshot, "Shadow increment")?;
         let input = reference(&snapshot, "Shadow input")?;
@@ -126,12 +126,10 @@ pub(super) async fn smoke(app: &AppHandle, base: &url::Url) -> Result<Value, Str
         let checked = reference(&snapshot, "Controlled check")?;
         let last = reference(&snapshot, "Long field 39")?;
         let submit = reference(&snapshot, "Submit controlled form")?;
-        call(app, &tab, json!({"operation":"fill_form","fields":[
-            {"ref":text,"value":"controlled state changed"},
-            {"ref":choice,"value":"b"},
-            {"ref":checked,"value":true},
-            {"ref":last,"value":"last controlled field"}
-        ]})).await?;
+        call(app, &tab, json!({"operation":"fill","ref":text,"value":"controlled state changed"})).await?;
+        call(app, &tab, json!({"operation":"select","ref":choice,"value":"b"})).await?;
+        call(app, &tab, json!({"operation":"check","ref":checked,"checked":true})).await?;
+        call(app, &tab, json!({"operation":"fill","ref":last,"value":"last controlled field"})).await?;
         wait_value(app, &tab, "document.querySelector('#react-state').textContent==='controlled state changed'").await?;
         call(app, &tab, json!({"operation":"scroll","y":5000})).await?;
         wait_value(app, &tab, "scrollY>1000").await?;

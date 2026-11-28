@@ -44,8 +44,7 @@
     "createUpdaterArtifacts": true,
     "targets": "all",
     "resources": [
-      "resources/zorvo-private-mcp.mjs",
-      "resources/browser-cdp"
+      "resources/zorvo-private-mcp.mjs"
     ],
     "macOS": {
       "signingIdentity": "-",

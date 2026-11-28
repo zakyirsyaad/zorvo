@@ -15,14 +15,25 @@ export const STAGE_INSET = 8;
 export const MIN_CHAT_WIDTH = 536;
 
 /** A width the inspector may take: rounded, within its bounds, the initial width when not a number. */
-export function clampInspectorWidth(px: number): number {
-  if (!Number.isFinite(px)) return INSPECTOR_WIDTH.initial;
-  return Math.min(INSPECTOR_WIDTH.max, Math.max(INSPECTOR_WIDTH.min, Math.round(px)));
+export function clampInspectorWidth(px: number, max: number = INSPECTOR_WIDTH.max, fallback: number = INSPECTOR_WIDTH.initial): number {
+  if (!Number.isFinite(px)) return fallback;
+  return Math.min(max, Math.max(INSPECTOR_WIDTH.min, Math.round(px)));
 }
 
 /**
- * The Terminal, Output and Tasks tabs, and the Files tab while a file is open in it, need room for a
- * shell, a page or a line of code. Output is wide for its list too, so opening a page does not move the edge.
+ * The widest the Browser tab's remembered width may be. A page needs the room a browser window has, so it is
+ * not held to `INSPECTOR_WIDTH.max`; what shows is still capped by the window (`maxInspectorWidth`).
+ */
+export const BROWSER_MAX_WIDTH = 4000;
+
+/** How far a drag or an arrow key may widen this tab: the Browser tab up to the window's room, the rest to 720. */
+export function maxResizeWidth(tab: InspectorTab, maxWidth: number): number {
+  return tab === "browser" ? maxWidth : Math.min(INSPECTOR_WIDTH.max, maxWidth);
+}
+
+/**
+ * The Terminal, Artifacts and Tasks tabs, and the Files tab while a file is open in it, need room for a
+ * shell, a page or a line of code. Artifacts is wide for its list too, so opening a page does not move the edge.
  */
 function isWideTab(tab: InspectorTab, isViewingFile: boolean): boolean {
   return tab === "terminal" || tab === "artifacts" || tab === "browser" || tab === "tasks" || (tab === "files" && isViewingFile);
@@ -62,7 +73,7 @@ export function minInspectorWidth(tab: InspectorTab, isViewingFile = false): num
 
 /**
  * The tabs that apply: Changes in a repository, Activity with a session, Files and Terminal with a folder,
- * Output (the `artifacts` tab) for every session, Context while the agent has reported its window's use,
+ * Artifacts for every session, Context while the agent has reported its window's use,
  * Tasks while the session has a task tab open (all three between Files and Terminal), and Private only
  * while a private session is on screen.
  */
@@ -80,7 +91,7 @@ export function offeredTabs(on: {
   if (on.hasFolder && on.isRepository) tabs.push("changes");
   if (on.hasSession) tabs.push("activity");
   if (on.hasFolder) tabs.push("files");
-  // Output is always offered for a session: empty, it says what will show there.
+  // Artifacts is always offered for a session: empty, it says what will show there.
   if (on.hasSession) tabs.push("artifacts");
   if (on.hasSession) tabs.push("browser");
   if (on.hasSession && on.hasUsage) tabs.push("context");

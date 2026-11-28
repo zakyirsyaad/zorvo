@@ -10,9 +10,9 @@ import { createServer } from "node:http";
 import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { secp256k1 } from "@noble/curves/secp256k1";
-import { keccak_256 } from "@noble/hashes/sha3";
-import { bytesToHex } from "@noble/hashes/utils";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { keccak_256 } from "@noble/hashes/sha3.js";
+import { bytesToHex } from "@noble/hashes/utils.js";
 import {
   attestationAllows,
   eip191Digest,
@@ -35,7 +35,7 @@ function utf8(text) {
 /** A throwaway secp256k1 key and its checksum-less address. */
 function testWallet() {
   let privateKey = randomBytes(32);
-  while (!secp256k1.utils.isValidPrivateKey(privateKey)) privateKey = randomBytes(32);
+  while (!secp256k1.utils.isValidSecretKey(privateKey)) privateKey = randomBytes(32);
   const publicKey = secp256k1.getPublicKey(privateKey, false);
   return { privateKey, address: `0x${bytesToHex(keccak_256(publicKey.slice(1)).slice(-20))}` };
 }
@@ -47,9 +47,10 @@ function testWallet() {
  * @returns {string}
  */
 function signText(text, privateKey, legacyV = false) {
-  const signature = secp256k1.sign(eip191Digest(text), privateKey);
-  const recovery = legacyV ? signature.recovery + 27 : signature.recovery;
-  return `0x${bytesToHex(signature.toCompactRawBytes())}${recovery.toString(16).padStart(2, "0")}`;
+  const raw = secp256k1.sign(eip191Digest(text), privateKey, { prehash: false, format: "recovered" });
+  const signature = secp256k1.Signature.fromBytes(raw, "recovered");
+  const recovery = (signature.recovery ?? 0) + (legacyV ? 27 : 0);
+  return `0x${bytesToHex(signature.toBytes("compact"))}${recovery.toString(16).padStart(2, "0")}`;
 }
 
 describe("hashing the exact bytes", () => {

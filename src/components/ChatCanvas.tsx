@@ -1,8 +1,14 @@
 import type { ModelPrice } from "../lib/private-credits";
+import type { RewindOptions } from "../hooks/useSessionRewind";
+import type { NextStepView } from "./chat/NextStepBox";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ArrowDown } from "lucide-react";
 import { useArrivedKeys } from "../hooks/useArrivedKeys";
 import { MessageRow } from "./chat/MessageRow";
 import { WorkingIndicator } from "./chat/ReplyExtras";
+import { BackgroundAgentsNotice } from "./chat/BackgroundAgentsNotice";
+import type { AgentTasks } from "../lib/agent-tasks";
+import { visibleAgentTasks } from "../lib/session-overview";
 import { AgentStallNotice } from "./chat/AgentStallNotice";
 import { SelectionToolbar } from "./chat/SelectionToolbar";
 import type { AgentFailures } from "../lib/agent-stall";
@@ -13,6 +19,8 @@ import { useChatSelection } from "../hooks/useChatSelection";
 import { replyQuote } from "../lib/reply-quote";
 import { isAwaitingUser } from "../lib/acp-elicitation";
 import type { ArtifactCard, ChatMessage, ElicitationAnswer } from "../types";
+import type { ContinuedFromView } from "./chat/ContinuedFromLine";
+import type { SwitchTarget } from "../lib/agent-switch";
 
 export type { ChatMessage, ToolExecution } from "../types";
 
@@ -29,11 +37,12 @@ function turnStartedAt(messages: readonly ChatMessage[]): number | undefined {
 }
 const COPIED_FEEDBACK_MS = 2000;
 
-/** An agent reply with no text, reasoning, plan, tools or card is noise, not a message. */
+/** An agent reply with no text, reasoning, plan, tools, card or visual is noise, not a message. */
 function hasSomethingToShow(msg: ChatMessage): boolean {
   if (msg.role === "user") return true;
   return Boolean(
-    msg.content.trim() || msg.thinking || msg.plan?.length || msg.tools?.length || msg.actionCard || msg.elicitation || msg.artifactCard,
+    msg.content.trim() || msg.thinking || msg.plan?.length || msg.tools?.length || msg.actionCard || msg.elicitation || msg.artifactCard ||
+      msg.parts?.some((part) => part.kind === "visual"),
   );
 }
 
@@ -45,9 +54,16 @@ export interface ChatCanvasProps {
   onJumped?: () => void;
   /** Display name of the agent behind this conversation, e.g. "Claude Code". */
   agentName?: string;
+  /** The session on screen, so a reply can read its inline visuals. Absent in a popout. */
+  visualSessionId?: string;
   /** The agent's id, for its logo over each reply. */
   agentProfileId?: string;
-  onForkBranch?: (messageId: string) => void;
+  /** No agent id: fork with the session's own agent. */
+  onForkBranch?: (messageId: string, agentId?: string) => void;
+  /** The agents the Fork menu offers, the session's own first. */
+  forkAgents?: readonly SwitchTarget[];
+  /** Names the agent and source of a message that continued another agent's conversation. */
+  continuedFromOf?: (mark: NonNullable<ChatMessage["continuedFrom"]>) => ContinuedFromView;
   /** Answers an ACP permission card with one of the agent's options; `answers` are a question card's typed answers. */
   onChooseOption?: (cardId: string, optionId: string, answers?: Record<string, string>) => void;
   /** Answers an agent's request for input or to open a page. */
@@ -56,7 +72,7 @@ export interface ChatCanvasProps {
   onReopenElicitationUrl?: (key: string) => void;
   /** The ids of the session's artifacts, so a card of a deleted one reads Removed. */
   artifactIds?: ReadonlySet<string>;
-  /** Shows an artifact card's version in the Output tab; absent in a popout. */
+  /** Shows an artifact card's version in the Artifacts tab; absent in a popout. */
   onOpenArtifact?: (card: ArtifactCard) => void;
   /** Opens NEAR AI's Verification Center from a private reply's badge. */
   onOpenUrl?: (url: string) => void;
@@ -66,8 +82,12 @@ export interface ChatCanvasProps {
   privateModel?: ModelPrice | null;
   /** True while the agent works on its turn: shown under the last message. */
   isWorking?: boolean;
+  /** The active next-step box; null when none is active; left out in a popout, which shows the words only. */
+  nextStep?: NextStepView | null;
   /** Failed requests in a row the agent reported while it works. */
   failures?: AgentFailures;
+  /** Qwen Code's background agents, for the notice that says they have gone quiet; never while a turn runs. */
+  agentTasks?: AgentTasks | null;
   /** Stops the turn; offered in the notice shown when the agent seems stuck. */
   onStop?: () => void;
   /** When the user pressed Stop in this turn, until it ends. */
@@ -77,7 +97,7 @@ export interface ChatCanvasProps {
   /** Which conversation is shown; switching starts at its newest output. */
   conversationId?: string;
   /** Starts again from before one of your messages; Rewind is offered only when given. */
-  onRewind?: (messageId: string) => void;
+  onRewind?: (messageId: string, options?: RewindOptions) => void;
   /** Shown above the conversation, e.g. the folder and branch the session works in. */
   header?: ReactNode;
   /** B's quiet line above its first message: who delegated this session. */
@@ -113,8 +133,11 @@ export function ChatCanvas({
   jumpTo,
   onJumped,
   agentName = DEFAULT_AGENT_NAME,
+  visualSessionId,
   agentProfileId,
   onForkBranch,
+  forkAgents,
+  continuedFromOf,
   onChooseOption,
   onAnswerElicitation,
   onReopenElicitationUrl,
@@ -124,7 +147,9 @@ export function ChatCanvas({
   privateModelId,
   privateModel,
   isWorking = false,
+  nextStep,
   failures,
+  agentTasks,
   onStop,
   stopAskedAt,
   onEndAgent,
@@ -196,6 +221,7 @@ export function ChatCanvas({
   }, [messages, isWorking, conversationId, stickToBottom.scrollToBottom, stickToBottom.followNewContent]);
 
   const onForkRef = useLatest(onForkBranch);
+  const continuedFromRef = useLatest(continuedFromOf);
   const onRewindRef = useLatest(onRewind);
   const onChooseOptionRef = useLatest(onChooseOption);
   const onAnswerElicitationRef = useLatest(onAnswerElicitation);
@@ -212,8 +238,19 @@ export function ChatCanvas({
   }, []);
   // These take the message id, so every row gets the same function and an
   // unchanged row is not re-rendered when the host makes a new closure.
-  const handleFork = useCallback((id: string) => onForkRef.current?.(id), [onForkRef]);
-  const handleRewind = useCallback((id: string) => onRewindRef.current?.(id), [onRewindRef]);
+  const handleFork = useCallback(
+    (id: string, agentId?: string) => (agentId === undefined ? onForkRef.current?.(id) : onForkRef.current?.(id, agentId)),
+    [onForkRef],
+  );
+  const handleContinuedFrom = useCallback(
+    (mark: NonNullable<ChatMessage["continuedFrom"]>) =>
+      continuedFromRef.current?.(mark) ?? { agentName, sourceName: null },
+    [continuedFromRef, agentName],
+  );
+  const handleRewind = useCallback(
+    (id: string, options?: RewindOptions) => (options ? onRewindRef.current?.(id, options) : onRewindRef.current?.(id)),
+    [onRewindRef],
+  );
   const handleChooseOption = useCallback(
     (cardId: string, optionId: string, answers?: Record<string, string>) =>
       answers ? onChooseOptionRef.current?.(cardId, optionId, answers) : onChooseOptionRef.current?.(cardId, optionId),
@@ -254,67 +291,99 @@ export function ChatCanvas({
   const workStartedAt = workingSince !== null && sentAt !== undefined ? Math.max(sentAt, workingSince) : (workingSince ?? sentAt);
 
   return (
-    <div
-      ref={stickToBottom.containerRef}
-      onScroll={(event) => {
-        stickToBottom.onScroll();
-        chatSelection.onScroll(event.currentTarget);
-      }}
-      onMouseUp={(event) => chatSelection.onMouseUp(event.currentTarget)}
-      onWheel={stickToBottom.onWheel}
-      onKeyDown={stickToBottom.onKeyDown}
-      onTouchStart={stickToBottom.onTouchStart}
-      onTouchMove={stickToBottom.onTouchMove}
-      data-testid="chat-canvas-container"
-      className="flex-1 overflow-y-auto pt-9 px-8 pb-4 space-y-8"
-    >
-      {header && <div className="mx-auto w-full max-w-chat">{header}</div>}
-      {delegatedFrom && <div className="mx-auto w-full max-w-chat">{delegatedFrom}</div>}
-      {visibleMessages.map((msg, index) => (
-        <MessageRow
-          key={msg.id}
-          message={msg}
-          agentName={agentName}
-          agentProfileId={agentProfileId}
-          isLast={msg === lastMessage}
-          isCurrentTurn={msg.role === "agent" && index >= currentTurnStartsAt}
-          showActions={msg.role !== "user" && index < runningTurnStartsAt}
-          copied={copiedMessageId === msg.id}
-          speaking={readAloud.speakingMessageId === msg.id}
-          readAloudSupported={readAloud.supported}
-          onCopy={handleCopyMessage}
-          onFork={onForkBranch ? handleFork : undefined}
-          onRewind={onRewind ? handleRewind : undefined}
-          onToggleReadAloud={handleToggleReadAloud}
-          onChooseOption={onChooseOption ? handleChooseOption : undefined}
-          onAnswerElicitation={onAnswerElicitation ? handleAnswerElicitation : undefined}
-          onReopenElicitationUrl={onReopenElicitationUrl ? handleReopenElicitationUrl : undefined}
-          artifactIds={artifactIds}
-          onOpenArtifact={onOpenArtifact ? handleOpenArtifact : undefined}
-          onOpenUrl={onOpenUrl}
-          privateModelId={privateModelId}
-          privateModel={privateModel}
-          showSubagentSteps={showSubagentSteps}
-          appears={arrived.has(msg.id)}
-          cardAppears={!arrived.has(msg.id) && arrived.has(cardKeyOf(msg) ?? "")}
-        />
-      ))}
-      {delegationStatus}
-      {computerUseStatus}
-      {isWorking && <WorkingIndicator agentName={shownAgentName} since={workStartedAt} />}
-      {isWorking && (
-        <AgentStallNotice
-          agentName={shownAgentName}
-          messages={messages}
-          failures={failures}
-          onStop={onStop}
-          stopAskedAt={stopAskedAt}
-          onEndAgent={onEndAgent}
-        />
-      )}
-      {footer && <div className="mx-auto w-full max-w-chat">{footer}</div>}
-      {chatSelection.selected && (
-        <SelectionToolbar selection={chatSelection.selected} blockedReason={replyBlockedReason} onReply={replyToSelection} />
+    // The frame the jump button floats in, so it stays put while the chat under it scrolls.
+    <div className="relative flex min-h-0 flex-1 flex-col">
+      <div
+        ref={stickToBottom.containerRef}
+        onScroll={(event) => {
+          stickToBottom.onScroll();
+          chatSelection.onScroll(event.currentTarget);
+        }}
+        onMouseUp={(event) => chatSelection.onMouseUp(event.currentTarget)}
+        onWheel={stickToBottom.onWheel}
+        onKeyDown={stickToBottom.onKeyDown}
+        onTouchStart={stickToBottom.onTouchStart}
+        onTouchMove={stickToBottom.onTouchMove}
+        data-testid="chat-canvas-container"
+        // Relative, so what is absolutely placed inside the chat (its sr-only live lines) scrolls and clips
+        // with it; placed by the frame around it, it would stretch the main column into a second scroll.
+        className="relative flex-1 overflow-y-auto pt-9 px-8 pb-4"
+      >
+        {/* The content alone, so its growth can be watched apart from the frame's own size. */}
+        <div ref={stickToBottom.contentRef} className="space-y-8">
+          {header && <div className="mx-auto w-full max-w-chat">{header}</div>}
+          {delegatedFrom && <div className="mx-auto w-full max-w-chat">{delegatedFrom}</div>}
+          {visibleMessages.map((msg, index) => (
+            <MessageRow
+              key={msg.id}
+              message={msg}
+              agentName={agentName}
+              agentProfileId={agentProfileId}
+              visualSessionId={visualSessionId}
+              isLast={msg === lastMessage}
+              // Only the row the box belongs to gets the view, so the others keep their memo.
+              nextStep={nextStep === undefined ? undefined : nextStep?.messageId === msg.id ? nextStep : null}
+              isCurrentTurn={msg.role === "agent" && index >= currentTurnStartsAt}
+              showActions={msg.role !== "user" && index < runningTurnStartsAt}
+              copied={copiedMessageId === msg.id}
+              speaking={readAloud.speakingMessageId === msg.id}
+              readAloudSupported={readAloud.supported}
+              onCopy={handleCopyMessage}
+              onFork={onForkBranch ? handleFork : undefined}
+              forkAgents={forkAgents}
+              continuedFromOf={continuedFromOf ? handleContinuedFrom : undefined}
+              onRewind={onRewind ? handleRewind : undefined}
+              onToggleReadAloud={handleToggleReadAloud}
+              onChooseOption={onChooseOption ? handleChooseOption : undefined}
+              onAnswerElicitation={onAnswerElicitation ? handleAnswerElicitation : undefined}
+              onReopenElicitationUrl={onReopenElicitationUrl ? handleReopenElicitationUrl : undefined}
+              artifactIds={artifactIds}
+              onOpenArtifact={onOpenArtifact ? handleOpenArtifact : undefined}
+              onOpenUrl={onOpenUrl}
+              privateModelId={privateModelId}
+              privateModel={privateModel}
+              showSubagentSteps={showSubagentSteps}
+              appears={arrived.has(msg.id)}
+              cardAppears={!arrived.has(msg.id) && arrived.has(cardKeyOf(msg) ?? "")}
+            />
+          ))}
+          {delegationStatus}
+          {computerUseStatus}
+          {isWorking && <WorkingIndicator agentName={shownAgentName} since={workStartedAt} />}
+          {isWorking && (
+            <AgentStallNotice
+              agentName={shownAgentName}
+              messages={messages}
+              failures={failures}
+              onStop={onStop}
+              stopAskedAt={stopAskedAt}
+              onEndAgent={onEndAgent}
+            />
+          )}
+          {!isTurnOpen && agentTasks && (
+            <BackgroundAgentsNotice
+              agentName={agentName === DEFAULT_AGENT_NAME ? undefined : agentName}
+              tasks={visibleAgentTasks(agentTasks.tasks, messages)}
+              asOf={agentTasks.asOf}
+            />
+          )}
+          {footer && <div className="mx-auto w-full max-w-chat">{footer}</div>}
+          {chatSelection.selected && (
+            <SelectionToolbar selection={chatSelection.selected} blockedReason={replyBlockedReason} onReply={replyToSelection} />
+          )}
+        </div>
+      </div>
+      {stickToBottom.isAwayFromBottom && (
+        <button
+          type="button"
+          aria-label="Jump to the newest message"
+          title="Jump to the newest message"
+          onClick={stickToBottom.scrollToBottom}
+          // Round and raised, since it floats over the messages; none of IconButton's sizes is one to aim at over text.
+          className="focus-ring absolute bottom-4 left-1/2 z-10 flex size-9 -translate-x-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-surface-2 text-fg-secondary shadow-popover transition-colors hover:bg-surface-hover hover:text-fg active:bg-surface-3 motion-safe:animate-appear"
+        >
+          <ArrowDown size={16} aria-hidden="true" />
+        </button>
       )}
     </div>
   );

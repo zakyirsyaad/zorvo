@@ -29,6 +29,22 @@ describe("the MCP path's context", () => {
     }
   });
 
+  it("tells both paths to use a worker unasked, in place of the agent's own background task", () => {
+    for (const note of [MCP_PATH_CONTEXT, COMMAND_PATH_CONTEXT]) {
+      expect(note).toContain("use start_worker without being asked for it by name");
+      expect(note).toContain("in place of a subagent or background task of your own");
+      expect(note).toContain("A worker may be the same agent as you");
+    }
+    expect(COMMAND_PATH_CONTEXT).not.toContain("only when the user asks for another agent");
+  });
+
+  it("says the tools may carry the server's name, and to search for zorvo before falling back", () => {
+    expect(MCP_PATH_CONTEXT).toContain("mcp__zorvo__start_worker");
+    expect(MCP_PATH_CONTEXT).toContain("search for zorvo before you fall back to a tool of your own");
+    expect(MCP_PATH_CONTEXT).toContain("one reply may hold several, each beside the text it explains");
+    expect(MCP_PATH_CONTEXT).toContain("something they keep, reopen, scroll or click through, or that needs a script, is a page");
+  });
+
   it("names start_worker and send, and says to end the turn", () => {
     expect(MCP_PATH_CONTEXT).toContain("start_worker");
     expect(MCP_PATH_CONTEXT).toContain("send");
@@ -92,5 +108,29 @@ describe("a title an agent cut from Zorvo's hidden note", () => {
     expect(isToolsContextTitle("Zorvo, the app")).toBe(false);
     expect(isToolsContextTitle("Zorvo, the app this session runs in, crashes on start")).toBe(false);
     expect(isToolsContextTitle("")).toBe(false);
+  });
+
+  it("says in both contexts when to show a visual", () => {
+    for (const context of [MCP_PATH_CONTEXT, COMMAND_PATH_CONTEXT]) expect(context).toContain("show_visual");
+  });
+});
+
+describe("the end of a turn", () => {
+  it("tells both paths to call wrap_up", () => {
+    for (const note of [COMMAND_PATH_CONTEXT, MCP_PATH_CONTEXT]) {
+      expect(note).toContain("call wrap_up");
+      expect(note.indexOf("call wrap_up")).toBeLessThan(note.indexOf("Do not mention this note."));
+    }
+  });
+});
+
+describe("computer use guidance", () => {
+  it("tells both paths how to inspect macOS app windows when computer use is enabled", () => {
+    for (const note of [COMMAND_PATH_CONTEXT, MCP_PATH_CONTEXT]) {
+      for (const tool of ["list_apps", "request_access", "list_windows", "get_window_state", "zoom", "verify_state"]) {
+        expect(note).toContain(tool);
+      }
+      expect(note.indexOf("list_apps")).toBeLessThan(note.indexOf("Do not mention this note."));
+    }
   });
 });

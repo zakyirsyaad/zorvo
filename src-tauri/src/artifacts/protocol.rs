@@ -12,7 +12,10 @@ use tauri::http::Response;
 use super::canvas::canvas_file;
 use super::canvas_shell::CANVAS_SHELL;
 use super::commands::is_inside_known_session_folder;
+use super::ds_tokens::is_theme_id;
 use super::store::{is_artifact_id, is_canvas_key, is_session_id, ArtifactStore};
+use super::visual_wrapper::{document, Theme};
+use super::visuals::is_visual_id;
 
 pub const SCHEME: &str = "zorvo-artifact";
 const ORIGIN: &str = "zorvo-artifact://localhost/";
@@ -72,6 +75,8 @@ pub enum CanvasUrl {
     File {
         session_id: String,
         key: String,
+        /// The design system theme a canvas that names one is served in (`t/<theme>/f/...`).
+        theme: Option<String>,
         relative: String,
     },
     Thumb {
@@ -91,12 +96,22 @@ pub fn canvas_file_url(session_id: &str, key: &str, relative: &str) -> String {
     format!("{ORIGIN}canvas/{session_id}/{key}/f/{}", encoded.join("/"))
 }
 
+/// A file of a canvas that names a design system, in `theme`: relative links inherit the theme.
+pub fn canvas_themed_file_url(session_id: &str, key: &str, theme: &str, relative: &str) -> String {
+    let encoded: Vec<String> = relative.split('/').map(encode_segment).collect();
+    format!(
+        "{ORIGIN}canvas/{session_id}/{key}/t/{}/f/{}",
+        encode_segment(theme),
+        encoded.join("/")
+    )
+}
+
 pub fn thumb_url(sha256: &str) -> String {
     format!("{ORIGIN}thumb/{sha256}.png")
 }
 
 /// Keeps RFC 3986 unreserved characters, writes every other byte as `%XX`.
-fn encode_segment(segment: &str) -> String {
+pub(crate) fn encode_segment(segment: &str) -> String {
     let mut out = String::with_capacity(segment.len());
     for byte in segment.bytes() {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
@@ -109,7 +124,7 @@ fn encode_segment(segment: &str) -> String {
 }
 
 /// The inverse of `encode_segment`; refuses a bad escape, invalid UTF-8 and an encoded `/`.
-fn decode_segment(segment: &str) -> Option<String> {
+pub(crate) fn decode_segment(segment: &str) -> Option<String> {
     let bytes = segment.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut at = 0;
@@ -148,7 +163,7 @@ pub fn parse_canvas_url(uri: &str) -> Option<CanvasUrl> {
         });
     }
     let rest = path.strip_prefix(CANVAS_PREFIX)?;
-    let mut parts = rest.splitn(4, '/');
+    let mut parts = rest.splitn(6, '/');
     let (session_id, key, after) = (parts.next()?, parts.next()?, parts.next()?);
     if !is_session_id(session_id) || !is_canvas_key(key) {
         return None;
@@ -160,10 +175,37 @@ pub fn parse_canvas_url(uri: &str) -> Option<CanvasUrl> {
             Some(_) => None,
         };
     }
-    if after != "f" {
+    let theme = if after == "t" {
+        let theme = parts.next().filter(|theme| is_theme_id(theme))?;
+        if parts.next()? != "f" {
+            return None;
+        }
+        Some(theme.to_string())
+    } else if after == "f" {
+        None
+    } else {
         return None;
-    }
-    let tail = parts.next()?;
+    };
+    let tail = match theme {
+        Some(_) => parts.next()?,
+        None => {
+            // Without a theme the rest of the path is the file: join what `splitn` split.
+            let rest: Vec<&str> = parts.collect();
+            if rest.is_empty() {
+                return None;
+            }
+            return finish_file(session_id, key, None, &rest.join("/"));
+        }
+    };
+    finish_file(session_id, key, theme, tail)
+}
+
+fn finish_file(
+    session_id: String,
+    key: String,
+    theme: Option<String>,
+    tail: &str,
+) -> Option<CanvasUrl> {
     let relative = tail
         .split('/')
         .map(decode_segment)
@@ -172,6 +214,7 @@ pub fn parse_canvas_url(uri: &str) -> Option<CanvasUrl> {
     (!tail.is_empty()).then_some(CanvasUrl::File {
         session_id,
         key,
+        theme,
         relative,
     })
 }
@@ -203,13 +246,64 @@ pub fn served_body(stored: Vec<u8>) -> Vec<u8> {
     stored
 }
 
-fn not_found() -> Response<Vec<u8>> {
+/// What a visual's document may do while it is drawn for a PNG: style itself and show `data:`
+/// pictures. No `script-src`, so nothing runs, and `sandbox` with no allowance. Changing this
+/// changes a security boundary: `the_visual_csp_is_exactly` makes that a visible diff.
+pub const VISUAL_CSP: &str =
+    "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox";
+
+const VISUAL_PREFIX: &str = "visual/";
+
+/// Where the hidden drawing view finds a visual, in one theme: a PNG has no page behind it.
+pub fn visual_url(session_id: &str, id: &str, theme: Theme) -> String {
+    let theme = match theme {
+        Theme::Dark => "dark",
+        Theme::Light => "light",
+    };
+    format!("{ORIGIN}{VISUAL_PREFIX}{session_id}/{id}?theme={theme}")
+}
+
+pub fn parse_visual_url(uri: &str) -> Option<(String, String, Theme)> {
+    let rest = uri.strip_prefix(ORIGIN)?.strip_prefix(VISUAL_PREFIX)?;
+    let (path, query) = rest.split_once('?')?;
+    let (session_id, id) = path.split_once('/')?;
+    if !is_session_id(session_id) || !is_visual_id(id) {
+        return None;
+    }
+    let theme = match query {
+        "theme=dark" => Theme::Dark,
+        "theme=light" => Theme::Light,
+        _ => return None,
+    };
+    Some((session_id.to_string(), id.to_string(), theme))
+}
+
+/// Answers the drawing view's request for a visual. Only that view calls this: `respond`, which
+/// every other view of the scheme uses, never serves a visual.
+pub fn respond_visual(store: &ArtifactStore, method: &str, uri: &str) -> Response<Vec<u8>> {
+    if method != "GET" {
+        return not_found();
+    }
+    let Some((session_id, id, theme)) = parse_visual_url(uri) else {
+        return not_found();
+    };
+    let Ok((_, markup)) = store.visual(&session_id, &id) else {
+        return not_found();
+    };
+    canvas_response(
+        "text/html; charset=utf-8",
+        Some(VISUAL_CSP),
+        document(&markup, Some(theme)).into_bytes(),
+    )
+}
+
+pub(crate) fn not_found() -> Response<Vec<u8>> {
     let mut response = Response::new(Vec::new());
     *response.status_mut() = tauri::http::StatusCode::NOT_FOUND;
     response
 }
 
-fn canvas_response(kind: &str, csp: Option<&str>, body: Vec<u8>) -> Response<Vec<u8>> {
+pub(crate) fn canvas_response(kind: &str, csp: Option<&str>, body: Vec<u8>) -> Response<Vec<u8>> {
     let mut builder = Response::builder()
         .status(200)
         .header("Content-Type", kind)
@@ -236,6 +330,7 @@ fn respond_canvas(served: &Served, url: CanvasUrl) -> Response<Vec<u8>> {
         CanvasUrl::File {
             session_id,
             key,
+            theme,
             relative,
         } => {
             let Some(entry) = served.store.canvas(&session_id, &key) else {
@@ -245,6 +340,9 @@ fn respond_canvas(served: &Served, url: CanvasUrl) -> Response<Vec<u8>> {
             let known = |path: &Path| (served.is_known)(path);
             if !is_inside_known_session_folder(&root, &entry.relative, &known) {
                 return not_found();
+            }
+            if theme.is_some() || relative.starts_with("_ds/") {
+                return respond_with_system(&root, &entry.relative, theme.as_deref(), &relative);
             }
             let Some((path, kind)) = canvas_file(&root, &relative) else {
                 return not_found();
@@ -270,6 +368,60 @@ fn respond_canvas(served: &Served, url: CanvasUrl) -> Response<Vec<u8>> {
     }
 }
 
+/// A file of a canvas that names a design system: `_ds/...` from the system's folder, built
+/// `tokens.css` included, and any other file of the canvas in a theme the system has. A canvas
+/// that names no system, or one that is gone, answers 404 for both. The permission is read again
+/// on every request, so reading a canvas records nothing.
+fn respond_with_system(
+    root: &Path,
+    relative_to_session: &str,
+    theme: Option<&str>,
+    relative: &str,
+) -> Response<Vec<u8>> {
+    let Ok(canvas) = super::canvas::read_canvas(root) else {
+        return not_found();
+    };
+    let Some(path) = canvas.design_system.as_deref() else {
+        // A canvas that names no system keeps a real `_ds/` folder of its own; a theme it cannot have.
+        return match theme {
+            Some(_) => not_found(),
+            None => serve_canvas_file(root, relative),
+        };
+    };
+    let Some(session) = super::ds_canvas::session_folder_of(root, relative_to_session) else {
+        return not_found();
+    };
+    let Some(system) = super::ds_canvas::linked_system(root, &session, path) else {
+        return not_found();
+    };
+    if theme.is_some_and(|asked| !system.themes.iter().any(|t| t == asked)) {
+        return not_found();
+    }
+    let Some(chosen) = super::ds_canvas::chosen_theme(&system.themes, theme) else {
+        return not_found();
+    };
+    match relative.strip_prefix("_ds/") {
+        Some(rest) => super::ds_protocol::serve_system_file(&system.root, &chosen, rest, None),
+        None => serve_canvas_file(root, relative),
+    }
+}
+
+/// One file of a canvas folder, under the board or file CSP.
+fn serve_canvas_file(root: &Path, relative: &str) -> Response<Vec<u8>> {
+    let Some((path, kind)) = canvas_file(root, relative) else {
+        return not_found();
+    };
+    let Ok(body) = super::source::read_bytes_checked(&path) else {
+        return not_found();
+    };
+    let csp = if kind.starts_with("text/html") {
+        BOARD_CSP
+    } else {
+        FILE_CSP
+    };
+    canvas_response(kind, Some(csp), body)
+}
+
 /// Whether the canvas view may go to `url`: the wrapper and the files of this canvas only.
 pub fn is_allowed_canvas_navigation(url: &str, session_id: &str, key: &str) -> bool {
     match parse_canvas_url(url) {
@@ -290,6 +442,12 @@ pub fn is_allowed_canvas_navigation(url: &str, session_id: &str, key: &str) -> b
 pub fn respond(served: &Served, method: &str, uri: &str) -> Response<Vec<u8>> {
     if method != "GET" {
         return not_found();
+    }
+    if let Some(answer) = super::motion_protocol::respond_motion(served, uri) {
+        return answer;
+    }
+    if let Some(answer) = super::ds_protocol::respond_ds(served, uri) {
+        return answer;
     }
     if let Some(url) = parse_canvas_url(uri) {
         return respond_canvas(served, url);
@@ -411,6 +569,71 @@ mod tests {
         assert!(PAGE_CSP.ends_with("; sandbox allow-scripts"));
         assert!(!PAGE_CSP.contains("allow-same-origin"));
         assert!(!PAGE_CSP.contains("unsafe-eval"));
+    }
+
+    const VISUAL_SESSION: &str = "session-1794800000000-k3x9a";
+
+    #[test]
+    fn the_visual_csp_is_exactly() {
+        assert_eq!(
+            VISUAL_CSP,
+            "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox"
+        );
+        assert!(!VISUAL_CSP.contains("script-src"));
+    }
+
+    #[test]
+    fn a_visual_url_round_trips_and_a_malformed_one_does_not_parse() {
+        let url = visual_url(VISUAL_SESSION, "v-0123456789abcdef", Theme::Light);
+        assert_eq!(
+            parse_visual_url(&url),
+            Some((
+                VISUAL_SESSION.to_string(),
+                "v-0123456789abcdef".to_string(),
+                Theme::Light
+            ))
+        );
+        let base = format!("zorvo-artifact://localhost/visual/{VISUAL_SESSION}");
+        for bad in [
+            format!("{base}/v-0123456789abcdef"),
+            format!("{base}/v-0123456789abcdef?theme=blue"),
+            format!("{base}/nope?theme=dark"),
+            format!("{base}/v-0123456789abcdef/x?theme=dark"),
+            "zorvo-artifact://localhost/visual/../x/v-0123456789abcdef?theme=dark".to_string(),
+        ] {
+            assert_eq!(parse_visual_url(&bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn a_stored_visual_is_served_as_a_fixed_theme_document_that_cannot_run() {
+        let temp = Temp::new("visual-serve");
+        let store = Arc::new(ArtifactStore::new(temp.0.clone()));
+        let entry = store
+            .put_visual(VISUAL_SESSION, "Flow", b"<svg><rect/></svg>", 1)
+            .unwrap();
+        let url = visual_url(VISUAL_SESSION, &entry.id, Theme::Dark);
+        let response = respond_visual(&store, "GET", &url);
+        assert_eq!(response.status(), 200);
+        assert_eq!(header(&response, "Content-Security-Policy"), VISUAL_CSP);
+        let body = String::from_utf8(response.body().clone()).unwrap();
+        assert!(body.contains("<rect") && body.contains("background: var(--sheet)"));
+        assert!(!body.contains("prefers-color-scheme"));
+        assert_eq!(respond_visual(&store, "POST", &url).status(), 404);
+        let gone = visual_url(VISUAL_SESSION, "v-0000000000000000", Theme::Dark);
+        assert_eq!(respond_visual(&store, "GET", &gone).status(), 404);
+    }
+
+    #[test]
+    fn the_shared_views_never_serve_a_visual() {
+        let temp = Temp::new("visual-shared");
+        let store = Arc::new(ArtifactStore::new(temp.0.clone()));
+        let entry = store
+            .put_visual(VISUAL_SESSION, "Flow", b"<p>a</p>", 1)
+            .unwrap();
+        let url = visual_url(VISUAL_SESSION, &entry.id, Theme::Dark);
+        assert_eq!(respond(&served_from(&store), "GET", &url).status(), 404);
+        assert!(!is_allowed_navigation(&url));
     }
 
     #[test]
@@ -572,6 +795,7 @@ mod tests {
             Some(CanvasUrl::File {
                 session_id: SESSION.into(),
                 key: KEY.into(),
+                theme: None,
                 relative: "screens/cart page.html".into()
             })
         );
@@ -587,6 +811,7 @@ mod tests {
             Some(CanvasUrl::File {
                 session_id: SESSION.into(),
                 key: KEY.into(),
+                theme: None,
                 relative: "../x".into()
             })
         );
@@ -792,5 +1017,191 @@ mod tests {
         ] {
             assert!(!is_allowed_canvas_navigation(&url, SESSION, KEY), "{url}");
         }
+    }
+
+    /// `canvas_fixture`'s canvas naming `../ds`, a system with two themes, a bundle and a logo.
+    fn linked_fixture(temp: &Temp) -> (Served, std::path::PathBuf, String) {
+        let (served, root, key) = canvas_fixture(temp, Arc::new(AtomicBool::new(true)));
+        std::fs::write(
+            root.join("canvas.json"),
+            r#"{"version":1,"title":"T","designSystem":"../ds","sections":[{"id":"s","title":"S","artboards":[{"id":"a","title":"A","file":"screens/cart.html","width":400,"height":400}]}]}"#,
+        )
+        .unwrap();
+        let ds = root.parent().unwrap().join("ds");
+        std::fs::create_dir_all(ds.join("components")).unwrap();
+        std::fs::create_dir_all(ds.join("assets/Logos")).unwrap();
+        std::fs::write(ds.join("design-system.json"), r#"{"title":"Acme"}"#).unwrap();
+        std::fs::write(
+            ds.join("tokens.json"),
+            r##"{"color":{"themes":[{"id":"dark","name":"Dark"},{"id":"light","name":"Light"}],"tokens":[{"name":"accent","value":{"dark":"#111111","light":"#eeeeee"}}]}}"##,
+        )
+        .unwrap();
+        std::fs::write(ds.join("components/bundle.css"), ".b{}").unwrap();
+        std::fs::write(ds.join("assets/Logos/mark.svg"), "<svg/>").unwrap();
+        (served, root, key)
+    }
+
+    #[test]
+    fn serves_ds_files_from_the_linked_system() {
+        let temp = Temp::new("ds-linked");
+        let (served, root, key) = linked_fixture(&temp);
+        let get = |url: String| respond(&served, "GET", &url);
+        let bundle = get(canvas_themed_file_url(
+            SESSION,
+            &key,
+            "dark",
+            "_ds/components/bundle.css",
+        ));
+        assert_eq!(bundle.status(), 200);
+        assert_eq!(bundle.body(), b".b{}");
+        assert_eq!(
+            get(canvas_themed_file_url(
+                SESSION,
+                &key,
+                "dark",
+                "_ds/assets/Logos/mark.svg"
+            ))
+            .status(),
+            200
+        );
+        let light = get(canvas_themed_file_url(
+            SESSION,
+            &key,
+            "light",
+            "_ds/tokens.css",
+        ));
+        assert!(String::from_utf8_lossy(light.body()).contains("#eeeeee"));
+        let plain = get(canvas_file_url(SESSION, &key, "_ds/tokens.css"));
+        assert!(String::from_utf8_lossy(plain.body()).contains("#111111"));
+        let page = get(canvas_themed_file_url(
+            SESSION,
+            &key,
+            "light",
+            "screens/cart.html",
+        ));
+        assert_eq!(page.status(), 200);
+        assert_eq!(header(&page, "Content-Security-Policy"), BOARD_CSP);
+        // A real `_ds` folder in the canvas is hidden by the virtual one.
+        std::fs::create_dir_all(root.join("_ds")).unwrap();
+        std::fs::write(root.join("_ds/tokens.css"), "real").unwrap();
+        let hidden = get(canvas_themed_file_url(
+            SESSION,
+            &key,
+            "dark",
+            "_ds/tokens.css",
+        ));
+        assert_ne!(hidden.body(), b"real");
+    }
+
+    #[test]
+    fn ds_paths_that_leave_the_system_or_name_no_theme_are_404() {
+        let temp = Temp::new("ds-linked-404");
+        let (served, _root, key) = linked_fixture(&temp);
+        let get = |url: &str| respond(&served, "GET", url).status();
+        assert_eq!(
+            get(&canvas_themed_file_url(
+                SESSION,
+                &key,
+                "dark",
+                "_ds/../design/canvas.json"
+            )),
+            404
+        );
+        assert_eq!(
+            get(&format!(
+                "zorvo-artifact://localhost/canvas/{SESSION}/{key}/t/dark/f/_ds/%2E%2E/x"
+            )),
+            404
+        );
+        assert_eq!(
+            get(&canvas_themed_file_url(
+                SESSION,
+                &key,
+                "sepia",
+                "_ds/tokens.css"
+            )),
+            404
+        );
+        assert_eq!(
+            get(&canvas_themed_file_url(
+                SESSION,
+                &key,
+                "bad theme",
+                "screens/cart.html"
+            )),
+            404
+        );
+    }
+
+    #[test]
+    fn a_canvas_without_a_system_answers_404_for_ds_and_themes() {
+        let temp = Temp::new("ds-none");
+        let (served, root, key) = canvas_fixture(&temp, Arc::new(AtomicBool::new(true)));
+        std::fs::write(
+            root.join("canvas.json"),
+            r#"{"version":1,"title":"T","sections":[{"id":"s","title":"S","artboards":[{"id":"a","title":"A","file":"screens/cart.html","width":400,"height":400}]}]}"#,
+        )
+        .unwrap();
+        let get = |url: &str| respond(&served, "GET", url).status();
+        assert_eq!(
+            get(&canvas_themed_file_url(
+                SESSION,
+                &key,
+                "dark",
+                "screens/cart.html"
+            )),
+            404
+        );
+        assert_eq!(get(&canvas_file_url(SESSION, &key, "_ds/tokens.css")), 404);
+        assert_eq!(
+            get(&canvas_file_url(SESSION, &key, "screens/cart.html")),
+            200
+        );
+        // Its own `_ds` folder is served as any folder of the canvas.
+        std::fs::create_dir_all(root.join("_ds")).unwrap();
+        std::fs::write(root.join("_ds/logo.png"), b"\x89PNG").unwrap();
+        assert_eq!(get(&canvas_file_url(SESSION, &key, "_ds/logo.png")), 200);
+    }
+
+    #[test]
+    fn a_missing_system_is_404_and_the_canvas_still_shows() {
+        let temp = Temp::new("ds-gone");
+        let (served, root, key) = linked_fixture(&temp);
+        std::fs::remove_dir_all(root.parent().unwrap().join("ds")).unwrap();
+        let get = |url: &str| respond(&served, "GET", url).status();
+        assert_eq!(
+            get(&canvas_themed_file_url(
+                SESSION,
+                &key,
+                "dark",
+                "_ds/tokens.css"
+            )),
+            404
+        );
+        assert_eq!(get(&canvas_shell_url(SESSION, &key)), 200);
+        assert_eq!(
+            get(&canvas_file_url(SESSION, &key, "screens/cart.html")),
+            200
+        );
+    }
+
+    #[test]
+    fn themed_canvas_urls_round_trip_and_navigation_allows_them() {
+        let url = canvas_themed_file_url(SESSION, KEY, "light", "Brand Kit/Märk.svg");
+        assert_eq!(
+            parse_canvas_url(&url),
+            Some(CanvasUrl::File {
+                session_id: SESSION.into(),
+                key: KEY.into(),
+                theme: Some("light".into()),
+                relative: "Brand Kit/Märk.svg".into(),
+            })
+        );
+        assert!(is_allowed_canvas_navigation(&url, SESSION, KEY));
+        assert!(!is_allowed_canvas_navigation(
+            &url,
+            SESSION,
+            "c-ffffffffffffffff"
+        ));
     }
 }

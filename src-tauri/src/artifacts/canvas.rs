@@ -32,6 +32,10 @@ pub const SERVED_TYPES: &[(&str, &str)] = &[
     ("woff2", "font/woff2"),
     ("ttf", "font/ttf"),
     ("otf", "font/otf"),
+    ("mp3", "audio/mpeg"),
+    ("wav", "audio/wav"),
+    ("m4a", "audio/mp4"),
+    ("aac", "audio/aac"),
 ];
 
 /// A canvas folder: its canonical path, and its path relative to the session's folder.
@@ -127,6 +131,12 @@ pub fn folder_digest(root: &Path) -> String {
 }
 
 fn folder_digest_within(root: &Path, max_entries: usize) -> String {
+    digest_where(root, max_entries, &is_shared_file)
+}
+
+/// The digest `folder_digest` makes, over the servable files `keep` accepts (by relative path).
+/// Folders `keep` refuses with a trailing slash (`out/`) are not walked.
+pub(crate) fn digest_where(root: &Path, max_entries: usize, keep: &dyn Fn(&str) -> bool) -> String {
     let mut lines = Vec::new();
     let mut seen = 0usize;
     let mut folders = vec![(root.to_path_buf(), String::new(), 0usize)];
@@ -150,12 +160,12 @@ fn folder_digest_within(root: &Path, max_entries: usize) -> String {
                 continue;
             };
             if kind.is_dir() {
-                if depth + 1 < MAX_DIGEST_DEPTH {
+                if depth + 1 < MAX_DIGEST_DEPTH && keep(&format!("{relative}/")) {
                     subfolders.push((entry.path(), format!("{relative}/"), depth + 1));
                 }
                 continue;
             }
-            if !is_shared_file(&relative) {
+            if !keep(&relative) {
                 continue;
             }
             let Some((path, _)) = canvas_file(root, &relative) else {
@@ -216,6 +226,31 @@ pub const MAX_ID_CHARS: usize = 64;
 pub struct Canvas {
     pub title: String,
     pub sections: Vec<Section>,
+    /// The design system's folder relative to the canvas folder, checked for its syntax only:
+    /// whether it stays inside the session's folder is checked when it is read and served.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub design_system: Option<String>,
+}
+
+const MAX_DESIGN_SYSTEM_CHARS: usize = 512;
+const DESIGN_SYSTEM_REFUSAL: &str = "designSystem: must be a relative path of 1 to 512 characters";
+
+/// `designSystem`'s syntax: a relative path, no NUL, no leading `/`, no `\`.
+fn design_system_of(root: &Fields) -> Result<Option<String>, String> {
+    let Some(value) = root.get("designSystem") else {
+        return Ok(None);
+    };
+    let text = value.as_str().ok_or(DESIGN_SYSTEM_REFUSAL)?;
+    let length = text.chars().count();
+    if length == 0
+        || length > MAX_DESIGN_SYSTEM_CHARS
+        || text.starts_with('/')
+        || text.contains('\\')
+        || text.contains('\0')
+    {
+        return Err(DESIGN_SYSTEM_REFUSAL.into());
+    }
+    Ok(Some(text.to_string()))
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -258,7 +293,7 @@ pub(crate) fn is_id(text: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-type Fields = serde_json::Map<String, serde_json::Value>;
+pub(crate) type Fields = serde_json::Map<String, serde_json::Value>;
 
 fn object<'a>(value: &'a serde_json::Value, path: &str) -> Result<&'a Fields, String> {
     value
@@ -294,7 +329,7 @@ fn id(fields: &Fields, name: &str, path: &str) -> Result<String, String> {
 
 /// Refuses a field not in `known`. The name is echoed only when it is short and plain, so a
 /// file cannot make an error carry its own text.
-fn only_known(fields: &Fields, known: &[&str], path: &str) -> Result<(), String> {
+pub(crate) fn only_known(fields: &Fields, known: &[&str], path: &str) -> Result<(), String> {
     let Some(unknown) = fields.keys().find(|key| !known.contains(&key.as_str())) else {
         return Ok(());
     };
@@ -448,7 +483,8 @@ pub fn parse_canvas(bytes: &[u8]) -> Result<Canvas, String> {
     if root.get("version").and_then(serde_json::Value::as_u64) != Some(1) {
         return Err("version: must be 1".into());
     }
-    only_known(root, &["version", "title", "sections"], "")?;
+    only_known(root, &["version", "title", "sections", "designSystem"], "")?;
+    let design_system = design_system_of(root)?;
     let canvas_title = match root.get("title") {
         None => return Err("title: is required".into()),
         Some(v) => v.as_str().ok_or("title: must be a string")?,
@@ -478,6 +514,7 @@ pub fn parse_canvas(bytes: &[u8]) -> Result<Canvas, String> {
     Ok(Canvas {
         title: canvas_title,
         sections,
+        design_system,
     })
 }
 
@@ -793,5 +830,34 @@ mod folder_tests {
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
         assert!(file_sha256(&root.0.join("nope")).is_none());
+    }
+
+    #[test]
+    fn a_canvas_may_name_its_design_system() {
+        let body = |value: &str| {
+            format!(
+                r#"{{"version":1,"title":"T","designSystem":{value},"sections":[{{"id":"s","title":"S","artboards":[{{"id":"a","title":"A","file":"a.html","width":400,"height":400}}]}}]}}"#
+            )
+        };
+        let canvas = parse_canvas(body(r#""../../docs/design-system""#).as_bytes()).unwrap();
+        assert_eq!(
+            canvas.design_system.as_deref(),
+            Some("../../docs/design-system")
+        );
+        let long = format!("\"{}\"", "a".repeat(513));
+        for bad in [
+            r#""""#,
+            long.as_str(),
+            r#""/abs""#,
+            r#""a\\b""#,
+            r#""a\u0000b""#,
+            "3",
+        ] {
+            assert_eq!(
+                parse_canvas(body(bad).as_bytes()).unwrap_err(),
+                DESIGN_SYSTEM_REFUSAL,
+                "{bad}"
+            );
+        }
     }
 }

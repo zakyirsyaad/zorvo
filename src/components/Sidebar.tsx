@@ -54,13 +54,18 @@ export interface SidebarProps {
   onRenameSession?: (sessionId: string, name: string) => void;
   onPinSession?: (sessionId: string, isPinned: boolean) => void;
   onArchiveSession?: (sessionId: string, isArchived: boolean) => void;
+  /** Each is offered in a folder's right-click / ⋯ menu when given. */
+  onRevealFolder?: (path: string) => void;
+  onCopyFolderPath?: (path: string) => void;
+  onArchiveFolderSessions?: (path: string) => void;
+  onRemoveFolder?: (path: string) => void;
   /** Bottom bar content, e.g. the user's profile. */
   footer?: ReactNode;
   /** Hidden, the sidebar stays mounted, so its folds and its search are there when it comes back. */
   isHidden?: boolean;
   /** Hides the sidebar; the button is absent without it. */
   onHide?: () => void;
-  /** How many pages the sessions' agents have shown; the Output entry shows while there is one. */
+  /** How many pages the sessions' agents have shown; the Artifacts entry shows while there is one. */
   artifactCount?: number;
   /** The gallery is what the main sheet shows. */
   isGalleryOpen?: boolean;
@@ -144,6 +149,10 @@ export function Sidebar({
   onRenameSession,
   onPinSession,
   onArchiveSession,
+  onRevealFolder,
+  onCopyFolderPath,
+  onArchiveFolderSessions,
+  onRemoveFolder,
   footer,
   isHidden = false,
   onHide,
@@ -236,13 +245,13 @@ export function Sidebar({
         <div className="px-2 pb-1.5">
           <button
             type="button"
-            aria-label={`Output, ${artifactCount}`}
+            aria-label={`Artifacts, ${artifactCount}`}
             aria-current={isGalleryOpen ? "page" : undefined}
             onClick={onOpenGallery}
             className={`focus-ring flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-surface-hover ${isGalleryOpen ? "bg-surface-hover text-fg" : ""}`}
           >
             <PanelsTopLeft size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
-            <span className="flex-1">Output</span>
+            <span className="flex-1">Artifacts</span>
             <span className="text-caption text-fg-subtle">{artifactCount}</span>
           </button>
         </div>
@@ -271,20 +280,31 @@ export function Sidebar({
           </p>
         )}
         <ul aria-label="Workspaces" className="space-y-3">
-          {groups.map((group) => (
-            <FolderGroup
-              key={group.path}
-              group={group}
-              isActive={group.path === activeWorkspacePath}
-              isFolded={collapsedPaths.has(group.path)}
-              isForcedOpen={query !== "" || filter !== "all"}
-              onToggle={() => toggle(group.path)}
-              context={context}
-              agents={detectedAgents}
-              defaultAgentId={defaultAgentId}
-              onNewSessionIn={onNewSessionIn}
-            />
-          ))}
+          {groups.map((group) => {
+            const folderSessions = sessions.filter((s) => workspacePathOf(s) === group.path);
+            const hasBusySessions = folderSessions.some((s) => isSessionBusy(s.id));
+            const hasIdleSessions = folderSessions.some((s) => !isArchived(s) && !isSessionBusy(s.id));
+            return (
+              <FolderGroup
+                key={group.path}
+                group={group}
+                isActive={group.path === activeWorkspacePath}
+                isFolded={collapsedPaths.has(group.path)}
+                isForcedOpen={query !== "" || filter !== "all"}
+                onToggle={() => toggle(group.path)}
+                context={context}
+                agents={detectedAgents}
+                defaultAgentId={defaultAgentId}
+                onNewSessionIn={onNewSessionIn}
+                onRevealFolder={onRevealFolder}
+                onCopyFolderPath={onCopyFolderPath}
+                onArchiveFolderSessions={onArchiveFolderSessions}
+                onRemoveFolder={onRemoveFolder}
+                hasIdleSessions={hasIdleSessions}
+                hasBusySessions={hasBusySessions}
+              />
+            );
+          })}
         </ul>
         {archived.length > 0 && (
           <>

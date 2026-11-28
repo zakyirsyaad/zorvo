@@ -35,10 +35,34 @@ export function pullRequestLabel(pullRequest: PullRequestStatus): string {
   return `Pull request ${pullRequest.number}, ${LOOK_WORDS[pullRequestLook(pullRequest)]}`;
 }
 
+/** The short state word for a pull request: "Draft", "Open", "Merged", or "Closed". */
+export function pullRequestStateWord(pullRequest: PullRequestStatus): string {
+  const look = pullRequestLook(pullRequest);
+  return look === 'failing' ? 'Open' : look.charAt(0).toUpperCase() + look.slice(1);
+}
+
+export type PullRequestChecksTone = 'failing' | 'running' | 'passing';
+
+export interface PullRequestChecksSummary {
+  tone: PullRequestChecksTone;
+  label: string;
+}
+
+/** Compact check count + semantic tone for an open/draft pull request, or null when no checks apply. */
+export function pullRequestChecksSummary(pullRequest: PullRequestStatus): PullRequestChecksSummary | null {
+  const look = pullRequestLook(pullRequest);
+  const { passing, failing, pending } = pullRequest.checks;
+  const total = passing + failing + pending;
+  if (total === 0 || look === 'merged' || look === 'closed') return null;
+  if (failing > 0) return { tone: 'failing', label: `${failing}/${total} failed` };
+  if (pending > 0) return { tone: 'running', label: `${pending}/${total} running` };
+  return { tone: 'passing', label: `${passing}/${total} passed` };
+}
+
 /** The state and the checks in one line, for the row's tooltip: "Open · 2 of 5 checks failing". */
 export function pullRequestLine(pullRequest: PullRequestStatus): string {
   const look = pullRequestLook(pullRequest);
-  const state = look === 'failing' ? 'Open' : look.charAt(0).toUpperCase() + look.slice(1);
+  const state = pullRequestStateWord(pullRequest);
   const { passing, failing, pending } = pullRequest.checks;
   const total = passing + failing + pending;
   if (total === 0 || look === 'merged' || look === 'closed') return state;
@@ -87,21 +111,22 @@ export function pullRequestOnBranch(folder: FolderPullRequests, branch: string |
 }
 
 /**
- * The newest pull request the agent made itself: one whose address `gh pr create` printed, else
- * one whose head is a branch it made (`agentWorkOf`). An agent often works in a worktree of its own
- * inside the folder, whose branch the folder's checkout never shows.
+ * Every pull request the agent made itself, newest first: those whose address `gh pr create`
+ * printed and those whose head is a branch it made (`agentWorkOf`). An agent often works in a
+ * worktree of its own inside the folder, whose branch the folder's checkout never shows.
  */
+export function pullRequestsOfWork(folder: FolderPullRequests, work: AgentWork | undefined): PullRequestStatus[] {
+  if (!work) return [];
+  const urls = new Set(work.pullRequestUrls.map((url) => url.toLowerCase()));
+  const branches = new Set(work.branches);
+  return folder.pullRequests
+    .filter((pullRequest) => urls.has(pullRequest.url.toLowerCase()) || branches.has(pullRequest.branch))
+    .sort((a, b) => b.number - a.number);
+}
+
+/** The newest pull request the agent made itself (`pullRequestsOfWork`). */
 export function pullRequestOfWork(folder: FolderPullRequests, work: AgentWork | undefined): PullRequestStatus | null {
-  if (!work) return null;
-  for (const url of [...work.pullRequestUrls].reverse()) {
-    const found = folder.pullRequests.find((pullRequest) => pullRequest.url.toLowerCase() === url.toLowerCase());
-    if (found) return found;
-  }
-  for (const branch of [...work.branches].reverse()) {
-    const found = pullRequestOnBranch(folder, branch);
-    if (found) return found;
-  }
-  return null;
+  return pullRequestsOfWork(folder, work)[0] ?? null;
 }
 
 /**

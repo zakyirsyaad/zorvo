@@ -2,7 +2,10 @@ import { SquareTerminal } from "lucide-react";
 import { Button } from "./ui/Button";
 import { BlockerCard } from "./ui/BlockerCard";
 import { StatusLine } from "./ui/StatusLine";
-import { authCopy, isSetupOnly, signInButtonLabel, type AuthMethod } from "../lib/acp-auth";
+import { SignInMethods } from "./SignInMethods";
+import { authCopy, hasRunnableMethod, isSetupOnly, OPEN_SETUP_LABEL, type AuthMethod } from "../lib/acp-auth";
+
+export { OPEN_SETUP_LABEL };
 import { plainReason } from "../lib/agent-sign-in";
 
 export type AuthStatus = "idle" | "signing-in" | "checking" | "signed-in" | "failed";
@@ -28,14 +31,20 @@ function statusLine(
   status: AuthStatus,
   error: string | undefined,
   hasReturnedMessage: boolean,
-): { text: string; style: string; isWaiting?: boolean } {
+  canRunMethod: boolean,
+): { text: string; style: string; isWaiting?: boolean; next?: string } {
   switch (status) {
     case "signing-in":
       return { text: "Finish signing in in the window that opened…", style: "text-fg-muted" };
     case "checking":
       return { text: "Checking whether you are signed in…", style: "text-fg-muted" };
     case "failed":
-      return { text: `Sign-in failed: ${plainReason(error)}`, style: "text-danger" };
+      return {
+        text: `Sign-in failed: ${plainReason(error)}`,
+        style: "text-danger",
+        // A failure always says what to try next.
+        next: canRunMethod ? "Try again, or pick another way." : "Check again once it is set up.",
+      };
     case "signed-in":
       return { text: `Signed in to ${agentName}. Send your message again.`, style: "text-status-running" };
     default:
@@ -47,30 +56,6 @@ function statusLine(
   }
 }
 
-/** One way to sign in: a button when Zorvo can run it, else where to set it up, in words only. */
-function MethodRow({ method, isBusy, onSignIn }: { method: AuthMethod; isBusy: boolean; onSignIn: (id: string) => void }) {
-  const isExplained = method.kind === "explain";
-  return (
-    <li className="flex items-center gap-2.5 px-3 py-2.5">
-      <div className="flex min-w-0 flex-1 flex-col">
-        <span className={`text-ui ${isExplained ? "text-fg-secondary" : "text-fg"}`}>{method.name}</span>
-        {method.description && <span className="text-ui-sm text-fg-subtle">{method.description}</span>}
-      </div>
-      {isExplained ? (
-        // Never a field: the app never asks for or stores a key.
-        <span className="shrink-0 text-caption text-fg-subtle">In your shell</span>
-      ) : (
-        <Button variant="outline" disabled={isBusy} onClick={() => onSignIn(method.id)} className="shrink-0">
-          {/* The label carries the colour: the outline's own text-fg-secondary would win over a className. */}
-          <span className="text-fg">{method.kind === "setup" ? OPEN_SETUP_LABEL : signInButtonLabel(method)}</span>
-        </Button>
-      )}
-    </li>
-  );
-}
-
-/** The button that opens an agent's own setup in the terminal dialog. */
-const OPEN_SETUP_LABEL = "Open setup in terminal";
 
 /**
  * Shown when an agent needs a sign-in before it can start. Methods that run
@@ -93,18 +78,19 @@ export function AuthPanel({
   const isSetup = isSetupOnly(methods);
   const title = isSetup ? `Set up ${agentName}` : `Sign in to ${agentName}`;
   const isSignedIn = status === "signed-in";
-  const line = statusLine(agentName, status, error, hasReturnedMessage);
+  const line = statusLine(agentName, status, error, hasReturnedMessage, hasRunnableMethod(methods));
   const footer = (
     <div className="flex flex-wrap items-center gap-2">
       {/* Always mounted, so a change of its text is announced. */}
-      <p role="status" className={`flex min-w-0 flex-1 items-center gap-2 text-ui-sm ${line.style}`}>
-        {line.isWaiting ? <StatusLine status="attention">{line.text}</StatusLine> : line.text}
+      <p role="status" className={`flex min-w-0 flex-1 flex-col text-ui-sm ${line.style}`}>
+        {line.isWaiting ? <StatusLine status="attention">{line.text}</StatusLine> : line.text && <span>{line.text}</span>}
+        {line.next && <span className="text-fg-muted">{line.next}</span>}
       </p>
       <Button variant="ghost" tone="secondary" aria-label="Dismiss sign-in" onClick={onDismiss}>
         Dismiss
       </Button>
       {!isSignedIn && (
-        <Button disabled={isBusy} onClick={onCheckAgain}>
+        <Button variant="ghost" tone="secondary" disabled={isBusy} onClick={onCheckAgain}>
           Check again
         </Button>
       )}
@@ -120,12 +106,12 @@ export function AuthPanel({
             <p>{agentName} connects to a provider you pick in its own setup, and keeps the choice and the key in its settings.</p>
             <div className="flex flex-wrap items-center gap-2">
               <Button
-                variant="outline"
+                variant="primary"
                 disabled={isBusy}
                 onClick={() => onSignIn(setupMethod.id)}
                 icon={<SquareTerminal size={14} aria-hidden="true" />}
               >
-                <span className="text-fg">{OPEN_SETUP_LABEL}</span>
+                {OPEN_SETUP_LABEL}
               </Button>
               <span className="text-ui-sm text-fg-subtle">Already set up in {agentName}? Check again.</span>
             </div>
@@ -141,13 +127,7 @@ export function AuthPanel({
           <p>{copy.lead}</p>
           {copy.cliHint && <p className="mt-2 text-fg-secondary">{copy.cliHint}</p>}
           {copy.keysNote && <p className="mt-2">{copy.keysNote}</p>}
-          {methods.length > 0 && (
-            <ul aria-label="Sign-in methods" className="mt-3 divide-y divide-border overflow-hidden rounded-lg border border-border">
-              {methods.map((method) => (
-                <MethodRow key={method.id} method={method} isBusy={isBusy} onSignIn={onSignIn} />
-              ))}
-            </ul>
-          )}
+          {methods.length > 0 && <SignInMethods methods={methods} isBusy={isBusy} onSignIn={onSignIn} />}
         </>
       )}
     </BlockerCard>

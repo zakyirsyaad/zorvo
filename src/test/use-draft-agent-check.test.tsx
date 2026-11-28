@@ -49,6 +49,24 @@ describe("useDraftAgentCheck", () => {
     expect(probeCalls(spy)).toHaveLength(2);
   });
 
+  it("reads the login shell again before the focus check, so a key exported meanwhile is seen", async () => {
+    const spy = vi.spyOn(tauriInternals(), "invoke").mockRejectedValue(`ACP_AUTH_REQUIRED:${JSON.stringify([])}`);
+    renderHook(() =>
+      useDraftAgentCheck({ agent: QWEN, cwd: CWD, agentOptions: undefined, rememberProbed: () => {}, auth: pendingSignIn }),
+    );
+    await waitFor(() => expect(probeCalls(spy)).toHaveLength(1));
+    const before = spy.mock.calls.length;
+
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await waitFor(() => expect(probeCalls(spy)).toHaveLength(2));
+    const after = spy.mock.calls.slice(before).map(([cmd]) => cmd);
+    expect(after.indexOf("refresh_login_env")).toBeGreaterThanOrEqual(0);
+    expect(after.indexOf("refresh_login_env")).toBeLessThan(after.indexOf("acp_probe_agent"));
+  });
+
   it("drops a Ready recorded earlier when the agent opened a session but its key variable is not set", async () => {
     vi.spyOn(tauriInternals(), "invoke").mockResolvedValue({ signInChecked: false, canListSessions: false, missingEnv: ["Z_AI_API_KEY"] });
     const onSignedIn = vi.fn();

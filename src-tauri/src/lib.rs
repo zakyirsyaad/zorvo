@@ -6,11 +6,13 @@ pub mod artifacts;
 pub mod attachment_paths;
 pub mod attachments;
 pub mod background_processes;
+pub mod branch_state;
 pub mod branches;
 pub mod browser;
 pub mod browser_commands;
-pub mod browser_debug;
+pub mod browser_upload;
 pub mod changes;
+pub mod checkpoints;
 pub mod computer_use;
 pub mod data_migration;
 pub mod diff_stats;
@@ -22,6 +24,7 @@ pub mod git_info;
 pub mod github;
 pub mod installer;
 pub mod instruction_files;
+pub mod media;
 pub mod navigation_guard;
 pub mod pasted_images;
 pub mod private_mode;
@@ -123,7 +126,7 @@ fn get_agent_catalog(
 ) -> Result<registry::catalog_view::AgentCatalog, String> {
     let versions = versions_in_use(&store);
     Ok(profiles::with_system_tools(|catalog, tools| {
-        catalog.catalog_view(tools, &versions, registry::unix_now())
+        catalog.catalog_view(tools, &versions)
     }))
 }
 
@@ -250,7 +253,8 @@ fn start_screen_server(
     server
 }
 
-/// Ends every agent and terminal a previous UI left running. The UI calls this
+/// Ends every agent and terminal a previous UI left running, and closes the native views it
+/// placed (`close_native_views`). The UI calls this
 /// when it loads: a webview reload leaves the backend (and its agents) running,
 /// but the new UI knows none of them and shows their sessions as ended, so they
 /// would only linger, holding sessions the UI may resume in a new process.
@@ -269,8 +273,9 @@ fn end_orphaned_sessions(
     private: State<'_, private_mode::service::PrivateMode>,
     tools: State<'_, Arc<agent_tools::AgentTools>>,
 ) -> usize {
-    browser::close_all(&app);
-    browser_debug::close(&app, None);
+    // The new page starts with no artifact box and no Browser panel; nothing it asks for later
+    // can be closed by this, since the closes run on the main thread in the order they come.
+    close_native_views(&app);
     #[cfg(all(target_os = "macos", debug_assertions))]
     browser::frontend_ready(&app);
     let terminals = pty.session_ids();
@@ -354,6 +359,7 @@ fn delete_transcript(
     session_id: String,
 ) -> Result<(), String> {
     browser_commands::forget(&app, &session_id);
+    browser::close_session(&app, session_id.clone());
     store.delete_transcript(&session_id)
 }
 
@@ -530,6 +536,15 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(navigation_guard::plugin())
+        // Videos for the main webview: only tokens a command made, read in byte ranges off the
+        // main thread (`media.rs`).
+        .register_asynchronous_uri_scheme_protocol(media::SCHEME, |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            std::thread::spawn(move || {
+                let tokens = app.state::<media::MediaTokens>();
+                responder.respond(media::respond(&tokens, &request));
+            });
+        })
         .manage(manager)
         .manage(acp_manager)
         .manage(app_update::PendingAppUpdate::default())
@@ -579,7 +594,6 @@ pub fn run() {
             app.manage(Arc::new(browser::history::BrowserHistory::new(
                 app.state::<store::AppStore>().root(),
             )));
-            app.manage(browser_debug::DebugBrowsers::default());
             // Off until the saved switch says otherwise; no driver starts here.
             let computer_use_on = app
                 .state::<store::AppStore>()
@@ -606,7 +620,7 @@ pub fn run() {
                 artifacts::render::sweep_thumbs(&swept, std::time::SystemTime::now());
             });
             app.manage(artifacts::commands::Thumbs::default());
-            app.manage(Arc::new(artifacts::protocol::Served {
+            let served = Arc::new(artifacts::protocol::Served {
                 store: Arc::clone(&artifact_store),
                 thumbs: thumbs_dir,
                 is_known: Arc::new(move |path| {
@@ -615,8 +629,16 @@ pub fn run() {
                         .is_known_workspace(path)
                         .unwrap_or(false)
                 }),
-            }));
+            });
+            app.manage(Arc::clone(&served));
             app.manage(artifact_store);
+            // Motion renders: one worker thread, and `render_motion`/`render_status` answered by it.
+            let motion_renderer =
+                artifacts::motion_render::MotionRenderer::start(app.handle().clone(), served);
+            artifacts::motion_tools::MotionServer::new(Arc::clone(&motion_renderer))
+                .attach(&app.state::<Arc<agent_tools::AgentTools>>());
+            app.manage(motion_renderer);
+            app.manage(media::MediaTokens::default());
             if let Err(error) = migration {
                 report_migration_failure(app.handle(), &error);
             }
@@ -695,14 +717,41 @@ pub fn run() {
             browser_commands::browser_agent_execute,
             browser_commands::browser_permission,
             browser_commands::browser_file_permission,
-            browser_commands::browser_manual_file_permission,
+            browser_commands::browser_close_session,
             browser_commands::browser_catalog,
-            browser_debug::browser_runtime_install,
-            browser_debug::browser_runtime_status,
+            browser_commands::browser_permission_status,
             browser::browser_bounds,
             artifacts::commands::artifact_show,
+            artifacts::visual_commands::visual_show,
+            artifacts::visual_commands::visual_read,
+            artifacts::visual_commands::visual_sweep,
+            artifacts::visual_commands::visual_copy_session,
+            artifacts::visual_commands::visual_paths,
+            artifacts::visual_commands::visual_export,
+            artifacts::visual_commands::visual_copy_image,
             artifacts::commands::artifact_list,
             artifacts::commands::canvas_show,
+            artifacts::ds_commands::design_systems_list,
+            artifacts::ds_commands::design_system_show,
+            artifacts::ds_commands::ds_read,
+            artifacts::ds_commands::ds_forget,
+            artifacts::ds_commands::ds_view_show,
+            artifacts::ds_commands::ds_view_apply,
+            artifacts::ds_commands::ds_source_state,
+            artifacts::ds_commands::ds_comment_mode,
+            artifacts::ds_commands::ds_view_marks,
+            artifacts::motion_commands::motion_show,
+            artifacts::motion_commands::video_show,
+            artifacts::motion_commands::motion_read,
+            artifacts::motion_commands::motion_view_show,
+            artifacts::motion_commands::motion_view_apply,
+            artifacts::motion_commands::motion_view_command,
+            artifacts::motion_commands::motion_export,
+            artifacts::motion_commands::motion_render_cancel,
+            artifacts::motion_commands::media_forget,
+            media::media_url_for_file,
+            media::media_url_for_video,
+            media::media_url_for_render,
             artifacts::commands::canvas_read,
             artifacts::commands::canvas_thumbs,
             artifacts::commands::canvas_export,
@@ -754,6 +803,7 @@ pub fn run() {
             delete_transcript,
             windows::open_session_window,
             windows::reveal_in_finder,
+            windows::reveal_file_in_finder,
             windows::open_external_url,
             files::list_directory,
             files::open_path,
@@ -773,8 +823,12 @@ pub fn run() {
             changes::session_file_diff,
             diff_stats::session_diff_targets,
             diff_stats::session_diff_stats,
+            branch_state::session_branch_state,
             diff_stats::session_diff_stats_since,
             changes::commit_session_changes,
+            changes::discard_session_change,
+            checkpoints::create_turn_checkpoint,
+            checkpoints::restore_turn_checkpoint,
             worktrees::create_session_worktree,
             worktrees::remove_session_worktree,
             attachment_paths::worktree_attachment_paths,
@@ -804,6 +858,7 @@ pub fn run() {
             acp::commands::acp_set_config_option,
             acp::commands::acp_qwen_last_api_error,
             acp::commands::acp_context_usage,
+            acp::commands::acp_agent_tasks,
             instruction_files::instruction_files,
             acp::commands::acp_stop_session,
             agent_tools::commands::agent_tool_respond,
@@ -844,11 +899,49 @@ pub fn run() {
                 workspace_terminal::end_all_sessions(&pty);
                 app.state::<Arc<agent_tools::AgentTools>>().shutdown();
                 app.state::<Arc<computer_use::ComputerUse>>().stop_driver();
-                artifacts::view::close(app);
-                browser::close_all(app);
-                browser_debug::close(app, None);
+                close_native_views(app);
             }
         });
+}
+
+/// Closes every native view drawn over the main webview: the artifact view and the Browser
+/// panel's pages. They belong to the page that placed them, so they go when Zorvo exits and
+/// when a reloaded page starts; otherwise a view stays drawn over the new page at its old
+/// place, with no box under it and nothing that could close it.
+fn close_native_views(app: &AppHandle) {
+    artifacts::view::close(app);
+    browser::close_all(app);
+}
+
+/// The native views have no test window to be drawn in here, so these read the wiring itself: a
+/// reload that left the artifact view on screen came from the sweep closing only some of them.
+#[cfg(test)]
+mod native_view_tests {
+    const SOURCE: &str = include_str!("lib.rs");
+
+    /// The body of the top-level `fn name`, up to the closing brace at the start of a line.
+    fn body_of(name: &str) -> &'static str {
+        let start = [format!("\nfn {name}("), format!("\npub fn {name}(")]
+            .iter()
+            .find_map(|head| SOURCE.find(head.as_str()))
+            .unwrap_or_else(|| panic!("no fn {name} in lib.rs"));
+        let rest = &SOURCE[start..];
+        let end = rest.find("\n}\n").expect("the end of the fn");
+        &rest[..end]
+    }
+
+    #[test]
+    fn a_reloaded_page_and_an_exit_close_the_same_native_views() {
+        assert!(body_of("end_orphaned_sessions").contains("close_native_views(&app);"));
+        assert!(body_of("run").contains("close_native_views(app);"));
+        let closes = body_of("close_native_views");
+        for call in ["artifacts::view::close(app);", "browser::close_all(app);"] {
+            assert!(
+                closes.contains(call),
+                "close_native_views does not call {call}"
+            );
+        }
+    }
 }
 
 #[cfg(all(test, target_os = "macos"))]

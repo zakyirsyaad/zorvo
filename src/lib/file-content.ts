@@ -4,6 +4,7 @@ export type FileContent =
   | { kind: "binary"; size: number }
   | { kind: "tooLarge"; size: number; limit: number }
   | { kind: "preview"; mime: PreviewMime; size: number }
+  | { kind: "video"; mime: "video/mp4" | "video/quicktime"; size: number }
   | { kind: "previewTooLarge"; mime: PreviewMime; size: number; limit: number };
 
 /** The types the viewer can show; the backend tells them by the file's header, never its name. */
@@ -32,6 +33,9 @@ export function parseFileContent(value: unknown): FileContent {
     if (candidate.kind === "binary" && isNumber(candidate.size)) return { kind: "binary", size: candidate.size };
     if (candidate.kind === "tooLarge" && isNumber(candidate.size) && isNumber(candidate.limit)) {
       return { kind: "tooLarge", size: candidate.size, limit: candidate.limit };
+    }
+    if (candidate.kind === "video" && (candidate.mime === "video/mp4" || candidate.mime === "video/quicktime") && isNumber(candidate.size)) {
+      return { kind: "video", mime: candidate.mime, size: candidate.size };
     }
     if (candidate.kind === "preview" && isPreviewMime(candidate.mime) && isNumber(candidate.size)) {
       return { kind: "preview", mime: candidate.mime, size: candidate.size };

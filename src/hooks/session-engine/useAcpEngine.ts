@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { withAnswerUndone } from '../../lib/next-step-part';
 import {
   applyAcpUpdate,
   applyPermissionRequest,
@@ -26,12 +27,14 @@ import { parseAuthRequired, type AuthMethod } from '../../lib/acp-auth';
 import { isSessionGoneError, isUnknownSessionError } from '../../lib/acp-load-error';
 import { toolsRoleOf } from '../../lib/workers';
 import { isToolsContextTitle, withToolsContext, type ToolsNote } from '../../lib/agent-tools-context';
+import { isSlashCommand } from '../../lib/slash-commands';
 import { writeConversationHandoff } from '../../lib/session-handoff';
 import { applyElicitation, completeElicitation, dismissPendingElicitations } from '../../lib/acp-elicitation';
 import { elicitationActions, type InFlightAnswer } from './elicitation-actions';
 import { privateModelIdOf, privateOpenError, privateSessionCapOf, withoutModelChanges, type CreditsOutReason } from '../../lib/private-session';
 import { privateOpenOutcome, privateTurnRefusal } from './private-engine';
 import { isCommandsUpdate, sessionTitleOf, turnEndNotice } from './update-readers';
+import { createTurnCheckpoint } from '../../lib/turn-checkpoints';
 
 /** The message a session starts (or resumes) with. */
 export interface FirstMessage {
@@ -40,7 +43,7 @@ export interface FirstMessage {
   /** Sent to the agent ahead of the text but not shown: what a rewound session's fresh agent is handed. */
   context?: string;
   /** Marks the user message that is added, as a task sent to a running worker is marked. */
-  marks?: Pick<ChatMessage, 'delegationTask'>;
+  marks?: Pick<ChatMessage, 'delegationTask' | 'continuedFrom'>;
 }
 
 export type AttentionReason = 'needs-answer' | 'finished' | 'failed';
@@ -84,6 +87,10 @@ export interface AcpEngineDeps extends EngineDeps {
   onAttention?: (sessionId: string, reason: AttentionReason) => void;
   /** Every end of a turn, once: finished, failed, cancelled, or the agent's exit. Not called after Zorvo's own stop. */
   onTurnSettled?: (sessionId: string, end: { how: WorkerTurnEnd; reason?: string }) => void;
+  /** The user's End agent took effect: called just before the turn end or exit it causes settles. */
+  onAgentEnded?: (sessionId: string) => void;
+  /** A prompt is about to go out for the session, by any route: a send, a resume, a retry. */
+  onPromptStarted?: (sessionId: string) => void;
   /** The agent refused to start, or to answer, until the user signs in: the ways it offers and the unsent message. */
   onAuthRequired: (session: Pick<Session, 'id' | 'profileId' | 'cwd'>, methods: AuthMethod[], unsent?: FirstMessage) => void;
   /** Called with what an agent offers when one of its sessions opens or its commands change. */
@@ -128,6 +135,8 @@ export function useAcpEngine({
   onAuthRequired,
   onAttention,
   onTurnSettled,
+  onAgentEnded,
+  onPromptStarted,
   transcripts,
   onTurnFailed,
   saveSoon,
@@ -160,6 +169,9 @@ export function useAcpEngine({
   // Sessions with a turn running that no turn end or exit has settled yet. A ref, not state: both
   // events can reach the page before React renders, and `acp.isBusy` would still read the old render.
   const unsettledTurn = useRef(new Set<string>());
+  /** Sessions whose prompt waits for its pre-turn checkpoint, and those of them the user stopped meanwhile. */
+  const awaitingCheckpoint = useRef(new Set<string>());
+  const stoppedBeforeSend = useRef(new Set<string>());
   // Sessions whose turn an exit settled first: the turn end that follows settles nothing again.
   const settledByExit = useRef(new Set<string>());
   const forgetStopAsked = (sessionId: string) =>
@@ -251,11 +263,12 @@ export function useAcpEngine({
     onTurnEnd: unlessStopped((sessionId, { stopReason, error }: TurnResult) => {
       // End agent is the user's own stop: its turn end reads cancelled, not failed or exited.
       const wasEnded = endAgentAsked.current.delete(sessionId);
+      if (wasEnded) onAgentEnded?.(sessionId);
       const alreadySettled = settledByExit.current.delete(sessionId);
       unsettledTurn.current.delete(sessionId);
       agentFailures.clear(sessionId);
       forgetStopAsked(sessionId);
-      updateNow(sessionId, closeTurn);
+      updateNow(sessionId, (prev) => closeTurn(prev, Date.now(), error ? undefined : stopReason));
       saveSoon?.(sessionId);
       if (isPrivateSession(sessionId)) onPrivateTurnEnd?.(sessionId);
       // Only a private session's agent is launched to report credits; an ordinary one's text is its own.
@@ -300,6 +313,7 @@ export function useAcpEngine({
       // An exit ends a turn only when one is still unsettled; read from the ref, not the last render.
       const endedATurn = unsettledTurn.current.delete(sessionId);
       const wasEnded = endAgentAsked.current.delete(sessionId);
+      if (wasEnded) onAgentEnded?.(sessionId);
       agentFailures.clear(sessionId);
       forgetStopAsked(sessionId);
       updateNow(sessionId, closeTurn);
@@ -353,7 +367,8 @@ export function useAcpEngine({
     failedPromptRef.current.delete(sessionId);
     const message = refused?.message;
     // The turn end before this one lands first; the message goes back at once.
-    if (message) updateNow(sessionId, (prev) => withoutMessage(prev, message.id));
+    // A next-step press that sent it is undone too: the agent never took the answer.
+    if (message) updateNow(sessionId, (prev) => withAnswerUndone(withoutMessage(prev, message.id), message));
     if (refused?.context) unsentContextRef.current.set(sessionId, refused.context);
     if (!message) return undefined;
     return message.attachments ? { text: message.content, attachments: message.attachments } : { text: message.content };
@@ -401,19 +416,66 @@ export function useAcpEngine({
 
   const reportFailure = (what: string) => (error: unknown) => reportError(`${what}: ${String(error)}`);
 
+  /**
+   * Whether the message must go out with nothing before it: an agent knows a command only at the start
+   * of the prompt. A worker's task is left out, since the worker may get no later message to carry its
+   * handoff and its note.
+   */
+  const goesAsTyped = (sessionId: string, message: ChatMessage): boolean => {
+    if (!isSlashCommand(message.content) || message.delegationTask) return false;
+    const link = sessionsRef.current.find((session) => session.id === sessionId)?.delegatedFrom;
+    return link?.task !== message.content;
+  };
+
   /** Prompts the agent with a message already shown in the chat; removes it if the prompt is refused. */
   const prompt = async (sessionId: string, message: ChatMessage, context?: string): Promise<boolean> => {
-    // An agent with Zorvo's tools hears of them with the first message it takes.
-    const toolsDue = toolsContextDueRef.current.get(sessionId);
+    const asTyped = goesAsTyped(sessionId, message);
+    // An agent with Zorvo's tools hears of them with the first message it takes that is not a command.
+    const toolsDue = asTyped ? undefined : toolsContextDueRef.current.get(sessionId);
+    const carried = asTyped ? undefined : context;
+    // What a command cannot carry waits for the next message.
+    if (asTyped && context) unsentContextRef.current.set(sessionId, context);
+    onPromptStarted?.(sessionId);
     unsettledTurn.current.add(sessionId);
     settledByExit.current.delete(sessionId);
-    lastPromptRef.current.set(sessionId, { message, context, ...(toolsDue ? { toolsContext: toolsDue } : {}) });
+    const cwd = sessionsRef.current.find((session) => session.id === sessionId)?.cwd;
+    let promptMessage = message;
+    lastPromptRef.current.set(sessionId, { message: promptMessage, context: carried, ...(toolsDue ? { toolsContext: toolsDue } : {}) });
     // A new turn starts: the failure of the last one no longer applies.
     failedPromptRef.current.delete(sessionId);
     onTurnFailed?.(sessionId, null);
-    const hidden = toolsDue ? withToolsContext(context, toolsDue) : context;
+    if (cwd && !promptMessage.checkpoint) {
+      awaitingCheckpoint.current.add(sessionId);
+      stoppedBeforeSend.current.delete(sessionId);
+      const checkpoint = await createTurnCheckpoint(cwd);
+      awaitingCheckpoint.current.delete(sessionId);
+      // Stop pressed while the checkpoint was taken: the message never goes out, and comes back
+      // to the composer like any message the agent did not take.
+      if (stoppedBeforeSend.current.delete(sessionId)) {
+        unsettledTurn.current.delete(sessionId);
+        if (lastPromptRef.current.get(sessionId)?.message.id === promptMessage.id) lastPromptRef.current.delete(sessionId);
+        if (context) unsentContextRef.current.set(sessionId, context);
+        updateNow(sessionId, (prev) => withoutMessage(prev, message.id));
+        return false;
+      }
+      if (isStopped(sessionId)) {
+        unsettledTurn.current.delete(sessionId);
+        if (lastPromptRef.current.get(sessionId)?.message.id === promptMessage.id) {
+          lastPromptRef.current.delete(sessionId);
+        }
+        return false;
+      }
+      if (checkpoint) {
+        promptMessage = { ...promptMessage, checkpoint };
+        if (lastPromptRef.current.get(sessionId)?.message.id === promptMessage.id) {
+          lastPromptRef.current.set(sessionId, { message: promptMessage, context: carried, ...(toolsDue ? { toolsContext: toolsDue } : {}) });
+        }
+        updateNow(sessionId, (prev) => prev.map((m) => (m.id === promptMessage.id ? { ...m, checkpoint } : m)));
+      }
+    }
+    const hidden = toolsDue ? withToolsContext(carried, toolsDue) : carried;
     try {
-      await acp.prompt(sessionId, hidden ? `${hidden}\n\n${message.content}` : message.content, message.attachments);
+      await acp.prompt(sessionId, hidden ? `${hidden}\n\n${promptMessage.content}` : promptMessage.content, promptMessage.attachments);
       // Only now: a refused prompt leaves it due for the next message. A turn that fails
       // later puts it back (see `onTurnEnd`).
       if (toolsDue) toolsContextDueRef.current.delete(sessionId);
@@ -850,6 +912,11 @@ export function useAcpEngine({
    * starting, stopping ends the session instead.
    */
   const interrupt = (sessionId: string, messages: ChatMessage[] | undefined) => {
+    // The prompt has not gone out yet (its checkpoint is still being taken): it never will.
+    if (awaitingCheckpoint.current.has(sessionId)) {
+      stoppedBeforeSend.current.add(sessionId);
+      return;
+    }
     if (starting.has(sessionId)) {
       void stop(sessionId);
       patchSession(sessionId, { status: 'terminated', endedAt: Date.now() });
@@ -934,6 +1001,8 @@ export function useAcpEngine({
 
   const isBusy = (sessionId: string) => starting.has(sessionId) || acp.isBusy(sessionId);
   /** Whether a turn is under way or a launch is opening, from refs: true in the tick a prompt goes out, before any render. */
+  /** A launch is under way and no prompt has gone out yet: no turn runs, and a failed start leaves none to end. */
+  const isStarting = (sessionId: string) => starting.has(sessionId) || startingRef.current.has(sessionId);
   const isTurnUnderWay = (sessionId: string) => unsettledTurn.current.has(sessionId) || startingRef.current.has(sessionId);
 
   /** Whether the session's last turn failed with a prompt that can be sent again. */
@@ -997,8 +1066,11 @@ export function useAcpEngine({
     stop,
     /** Drops a removed session's queued transcript changes before its transcript is deleted. */
     forgetQueued: queued.forget,
+    /** Lands what the agent already sent, so a change made outside the engine goes after it. */
+    flushQueued: queued.flush,
     isBusy,
     isTurnUnderWay,
+    isStarting,
     busySinceOf: acp.busySinceOf,
     /** The failed requests in a row the session's agent reported, if any. */
     failuresOf: (sessionId: string) => agentFailures.failures[sessionId],

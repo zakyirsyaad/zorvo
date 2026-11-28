@@ -156,7 +156,7 @@ describe("AuthPanel for agents with several kinds of methods", () => {
   it("says Zorvo never stores keys and offers Check again", () => {
     const { onCheckAgain } = renderPanel();
 
-    expect(screen.getByText(/Zorvo never stores keys/)).toBeInTheDocument();
+    expect(screen.getByText(/Zorvo never sees your password or key/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Check again" }));
     expect(onCheckAgain).toHaveBeenCalledTimes(1);
   });
@@ -191,7 +191,7 @@ describe("Agents menu sign-in chips", () => {
     });
 
     expect(screen.getByText("Sign in")).toBeInTheDocument();
-    expect(screen.getByText("Not checked")).toBeInTheDocument();
+    expect(screen.getByText("Not checked yet")).toBeInTheDocument();
     expect(screen.queryByText("Ready")).toBeNull();
 
     // Each press starts that agent's sign-in and closes the menu.

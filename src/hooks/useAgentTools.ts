@@ -38,10 +38,15 @@ import {
 } from '../lib/agent-tools';
 import type { MentionAgentStatus } from '../lib/delegation';
 import { createId } from '../lib/ids';
-import { CANVAS_GUIDE, CANVAS_REFUSALS, canvasResultText, parseCanvasRead } from '../lib/canvas';
+import { CANVAS_REFUSALS, canvasResultText, parseCanvasRead } from '../lib/canvas';
+import { MOTION_PARSE_ERROR, MOTION_REFUSALS, motionResultText, parseMotionRead, parseVideoEntry, videoResultText } from '../lib/motion';
 import { toolsRoleOf } from '../lib/workers';
-import { ARTIFACT_GUIDE, ARTIFACT_REFUSALS, parseShown, shownResultText, type ShownArtifact } from '../lib/artifacts';
-import { withArtifactCard, withCanvasCard } from '../lib/artifact-card';
+import { ARTIFACT_REFUSALS, parseShown, shownResultText, type ShownArtifact } from '../lib/artifacts';
+import { withArtifactCard, withCanvasCard, withDesignSystemCard, withMotionCard, withVideoCard } from '../lib/artifact-card';
+import { VISUAL_REFUSALS, VISUAL_SHOWN_TEXT, parseVisualEntry } from '../lib/visuals';
+import { withVisualPart } from '../lib/visual-part';
+import { parseNextStep } from '../lib/next-step';
+import { WRAP_UP_SHOWN_TEXT, withNextStep } from '../lib/next-step-part';
 import { escapeVisible } from '../lib/visible-text';
 import type { AgentProfile, ChatMessage, Session } from '../types';
 import type { GiveTaskResult } from './useDelegation';
@@ -49,6 +54,8 @@ import type { StartWorkerInput, StartWorkerResult } from '../lib/delegation-help
 import { workerByHandle } from '../lib/workers';
 import type { OpenRequest, OpenResult } from './useOpenedSessions';
 import { useLatest } from './useLatest';
+import { useBrowserToolCards } from './useBrowserToolCards';
+import { guideAnswer, showDesignSystem } from '../lib/design-system-tool';
 
 /** Answered when something went wrong on Zorvo's side; never the error itself, which could hold the task. */
 const FAILED = 'Zorvo could not do that.';
@@ -73,6 +80,8 @@ export interface AgentToolsDeps {
   /** The sessions this session opened, for `list_agents`. */
   openedOf: (sessionId: string) => ListedOpened[];
   updateMessages: (sessionId: string, update: (prev: ChatMessage[]) => ChatMessage[]) => void;
+  /** Lands the agent's streamed text that still waits for a frame, so what is added next goes after it. */
+  flushUpdates?: () => void;
   onAttention: (sessionId: string, reason: 'needs-answer') => void;
   /** A session's messages, loaded from disk when it was not opened in this run. Rejects when unreadable. */
   messagesOf: (sessionId: string) => Promise<readonly ChatMessage[]>;
@@ -82,7 +91,7 @@ export interface AgentToolsDeps {
   /** Tells the user what an agent is not told: why Zorvo itself failed. */
   onNotice?: (message: string) => void;
   /** An agent showed a page: the window decides whether anything opens. */
-  onArtifactShown: (sessionId: string, shown: ShownArtifact | { kind: 'canvas'; key: string }) => void;
+  onArtifactShown: (sessionId: string, shown: ShownArtifact | { kind: 'canvas' | 'motion' | 'video' | 'design-system'; key: string }) => void;
 }
 
 /** A `start_worker`, `send` or `start_session` call that waits for the user's answer on a card. */
@@ -132,10 +141,15 @@ export function useAgentTools(deps: AgentToolsDeps): {
   chooseCard: (sessionId: string, cardId: string, optionId: string) => boolean;
   hasGrant: (sessionId: string) => boolean;
   revokeGrant: (sessionId: string) => void;
+  hasBrowserGrant: (sessionId: string) => boolean;
+  revokeBrowserGrant: (sessionId: string) => void;
   /** A Zorvo card of this session waits for the user. */
   isWaiting: (sessionId: string) => boolean;
 } {
   const latest = useLatest(deps);
+  const browser = useBrowserToolCards(deps);
+  const handleBrowserCall = browser.handleCall;
+  const handleBrowserEnded = browser.handleEnded;
   // Sessions whose agent may give tasks without asking again. Memory only.
   const grants = useRef(new Set<string>());
   const waiting = useRef(new Map<string, WaitingCard>());
@@ -268,6 +282,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
         { cardId: entry.cardId, sessionId: session.id, callerName: entry.callerName, folder: entry.folder, now: Date.now() },
         entry.calls,
       );
+      // A new card goes after the reply's text, which was sent before this call and may still wait for its frame.
+      if (isNew) latest.current.flushUpdates?.();
       latest.current.updateMessages(session.id, (prev) =>
         isNew
           ? withToolCard(prev, card, { sessionId: session.id, now: Date.now(), createId })
@@ -433,6 +449,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
         now: Date.now(),
       });
       folderCards.current.set(cardId, { sessionId: session.id, call: { ...waitingCall, folderPath: place.path } });
+      // As for the session's card: the reply's text lands first.
+      current.flushUpdates?.();
       current.updateMessages(session.id, (prev) =>
         withToolCard(prev, card, { sessionId: session.id, now: Date.now(), createId }),
       );
@@ -451,6 +469,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
           respond(call.callId, false, FAILED);
           return;
         }
+        // As for a visual: the reply's text was sent before this call, so it lands before the card.
+        latest.current.flushUpdates?.();
         latest.current.updateMessages(session.id, (prev) => withCanvasCard(prev, read, { sessionId: session.id, now: Date.now(), createId }));
         latest.current.onArtifactShown(session.id, { kind: 'canvas', key: read.entry.key });
         respond(call.callId, true, canvasResultText(read));
@@ -462,6 +482,49 @@ export function useAgentTools(deps: AgentToolsDeps): {
         }
         respond(call.callId, false, FAILED);
         latest.current.onNotice?.('Zorvo could not show the canvas an agent made.');
+      }
+    },
+    [latest],
+  );
+
+  /**
+   * `show_artifact` with `kind: "motion"` or `"video"`: the backend reads the composition (or checks the
+   * video file) inside the session's folder and remembers it; nothing is copied.
+   */
+  const handleShowMedia = useCallback(
+    async (session: Session, call: AgentToolCall, path: string, kind: 'motion' | 'video', title: string) => {
+      try {
+        const args = { sessionId: session.id, cwd: session.cwd, path, ...(title === '' ? {} : { title }) };
+        const answer = kind === 'motion' ? await invoke('motion_show', args) : await invoke('video_show', args);
+        latest.current.flushUpdates?.();
+        if (kind === 'motion') {
+          const read = parseMotionRead(answer);
+          if (read === null) {
+            respond(call.callId, false, FAILED);
+            return;
+          }
+          latest.current.updateMessages(session.id, (prev) => withMotionCard(prev, read, { sessionId: session.id, now: Date.now(), createId }));
+          latest.current.onArtifactShown(session.id, { kind: 'motion', key: read.entry.key });
+          respond(call.callId, true, motionResultText(read));
+          return;
+        }
+        const entry = parseVideoEntry(answer);
+        if (entry === null) {
+          respond(call.callId, false, FAILED);
+          return;
+        }
+        latest.current.updateMessages(session.id, (prev) => withVideoCard(prev, entry, { sessionId: session.id, now: Date.now(), createId }));
+        latest.current.onArtifactShown(session.id, { kind: 'video', key: entry.key });
+        respond(call.callId, true, videoResultText(entry));
+      } catch (error) {
+        const text = typeof error === 'string' ? error : '';
+        if (MOTION_REFUSALS.has(text) || MOTION_PARSE_ERROR.test(text)) {
+          respond(call.callId, false, text);
+          return;
+        }
+        // Never the error itself: it can name a folder the agent was not told about.
+        respond(call.callId, false, FAILED);
+        latest.current.onNotice?.(kind === 'motion' ? 'Zorvo could not show the motion an agent made.' : 'Zorvo could not show the video an agent made.');
       }
     },
     [latest],
@@ -482,8 +545,26 @@ export function useAgentTools(deps: AgentToolsDeps): {
         await handleShowCanvas(session, call, args.path);
         return;
       }
+      if (args.kind === 'design-system') {
+        const path = args.path;
+        const shown = await showDesignSystem(() => invoke('design_system_show', { sessionId: session.id, cwd: session.cwd, path }));
+        if (shown.ok) {
+          latest.current.flushUpdates?.();
+          const read = shown.read;
+          latest.current.updateMessages(session.id, (prev) => withDesignSystemCard(prev, read, { sessionId: session.id, now: Date.now(), createId }));
+          latest.current.onArtifactShown(session.id, { kind: 'design-system', key: shown.read.entry.key });
+        } else if (shown.notice) {
+          latest.current.onNotice?.(shown.notice);
+        }
+        respond(call.callId, shown.ok, shown.text);
+        return;
+      }
       // A title is shown in Zorvo's own interface, so its control and bidi characters are spelled out.
       const title = typeof args.title === 'string' ? escapeVisible(args.title).trim() : '';
+      if (args.kind === 'motion' || args.kind === 'video') {
+        await handleShowMedia(session, call, args.path, args.kind, title);
+        return;
+      }
       try {
         const answer = await invoke('artifact_show', {
           sessionId: session.id,
@@ -497,6 +578,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
           return;
         }
         if (shown.isNewVersion) {
+          // As for a visual: the reply's text was sent before this call, so it lands before the card.
+          latest.current.flushUpdates?.();
           latest.current.updateMessages(session.id, (prev) =>
             withArtifactCard(prev, shown, { sessionId: session.id, now: Date.now(), createId }),
           );
@@ -514,7 +597,68 @@ export function useAgentTools(deps: AgentToolsDeps): {
         latest.current.onNotice?.('Zorvo could not show the page an agent made.');
       }
     },
-    [latest, handleShowCanvas],
+    [latest, handleShowCanvas, handleShowMedia],
+  );
+
+  /**
+   * `wrap_up`: the agent's recap, question, pick and replies go on its turn's last reply, where the
+   * next-step box reads them. No card and no grant: it only adds words under the agent's own reply.
+   */
+  const handleWrapUp = useCallback(
+    (session: Session, call: AgentToolCall) => {
+      const step = parseNextStep(call.args);
+      if (step === null || step.recap === undefined) {
+        respond(call.callId, false, FAILED);
+        return;
+      }
+      // Kept as the agent sent them, so the limits hold again on reload; the box spells them out as it draws.
+      const shown = {
+        recap: step.recap,
+        ...(step.ask ? { ask: step.ask } : {}),
+        ...(step.pick ? { pick: step.pick } : {}),
+        ...(step.replies ? { replies: step.replies } : {}),
+      };
+      // The reply's own text may still wait for its frame: it was sent before this call, so it lands first.
+      latest.current.flushUpdates?.();
+      latest.current.updateMessages(session.id, (prev) => withNextStep(prev, shown, { sessionId: session.id, now: Date.now(), createId }));
+      respond(call.callId, true, WRAP_UP_SHOWN_TEXT);
+    },
+    [latest],
+  );
+
+  /**
+   * `show_visual`: the backend cleans and keeps the markup, and the reply gets a part that names
+   * it. No card and no grant, like a page: nothing in a visual runs, and it only reaches the user
+   * who is already here.
+   */
+  const handleShowVisual = useCallback(
+    async (session: Session, call: AgentToolCall) => {
+      const args = (typeof call.args === 'object' && call.args !== null ? call.args : {}) as Record<string, unknown>;
+      // A title is shown in Zorvo's own interface, so its control and bidi characters are spelled out.
+      const title = typeof args.title === 'string' ? escapeVisible(args.title).trim() : '';
+      const source = typeof args.code === 'string' ? { code: args.code } : typeof args.path === 'string' ? { path: args.path } : {};
+      try {
+        const entry = parseVisualEntry(await invoke('visual_show', { sessionId: session.id, cwd: session.cwd, title, ...source }));
+        if (entry === null) {
+          respond(call.callId, false, FAILED);
+          return;
+        }
+        // The reply's own text may still wait for its frame: it was sent before this call, so it lands first.
+        latest.current.flushUpdates?.();
+        latest.current.updateMessages(session.id, (prev) => withVisualPart(prev, entry, { sessionId: session.id, now: Date.now(), createId }));
+        respond(call.callId, true, VISUAL_SHOWN_TEXT);
+      } catch (error) {
+        const text = typeof error === 'string' ? error : '';
+        if (VISUAL_REFUSALS.has(text)) {
+          respond(call.callId, false, text);
+          return;
+        }
+        // Never the error itself: it can name a folder the agent was not told about.
+        respond(call.callId, false, FAILED);
+        latest.current.onNotice?.('Zorvo could not show the visual an agent made.');
+      }
+    },
+    [latest],
   );
 
   /** `read_session` and `stop_session`: only the caller's own sessions, by handle; no card and no grant. */
@@ -591,8 +735,6 @@ export function useAgentTools(deps: AgentToolsDeps): {
     (payload: unknown) => {
       const call = parseToolCall(payload);
       if (call === null) return;
-      // Browser calls have an independent session grant and upload approval flow.
-      if (call.tool === 'browser' || call.tool === 'browser_guide') return;
       try {
         const current = latest.current;
         const session = current.sessions.find((candidate) => candidate.id === call.sessionId);
@@ -612,6 +754,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
           respond(call.callId, false, NO_SESSION);
           return;
         }
+        if (handleBrowserCall(session, call)) return;
         if (call.tool === 'list_agents') {
           const agents = current.agents.map((agent) => ({
             id: agent.id,
@@ -648,11 +791,21 @@ export function useAgentTools(deps: AgentToolsDeps): {
         }
         if (call.tool === 'artifact_guide') {
           const kind = (call.args as Record<string, unknown> | null)?.kind;
-          respond(call.callId, true, kind === 'canvas' ? CANVAS_GUIDE : ARTIFACT_GUIDE);
+          void guideAnswer(kind, () => invoke('design_systems_list', { sessionId: session.id, cwd: session.cwd })).then((text) =>
+            respond(call.callId, true, text),
+          );
           return;
         }
         if (call.tool === 'show_artifact') {
           void handleShowArtifact(session, call);
+          return;
+        }
+        if (call.tool === 'show_visual') {
+          void handleShowVisual(session, call);
+          return;
+        }
+        if (call.tool === 'wrap_up') {
+          handleWrapUp(session, call);
           return;
         }
         respond(call.callId, false, FAILED);
@@ -660,7 +813,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
         respond(call.callId, false, FAILED);
       }
     },
-    [latest, handleDone, handleStartWorker, handleSend, handleStartSession, handleOwned, handleShowArtifact],
+    [latest, handleDone, handleStartWorker, handleSend, handleStartSession, handleOwned, handleShowArtifact, handleShowVisual, handleWrapUp, handleBrowserCall],
   );
 
   /** A call ended without our answer (timeout, cancel, session stop): it no longer waits. */
@@ -668,6 +821,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
     (payload: unknown) => {
       const callId = (payload as { callId?: unknown } | null)?.callId;
       if (typeof callId !== 'string') return;
+      handleBrowserEnded(callId);
       // An allowed call is on no card any more: it is skipped, or told through its request.
       if (approved.current.has(callId)) {
         endedApproved.current.add(callId);
@@ -696,7 +850,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
         return;
       }
     },
-    [latest, showCard, bump],
+    [latest, showCard, bump, handleBrowserEnded],
   );
 
   useEffect(() => {
@@ -732,6 +886,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
   }, [sessions, bump]);
 
   const chooseCard = (sessionId: string, cardId: string, optionId: string): boolean => {
+    if (browser.chooseCard(sessionId, cardId, optionId)) return true;
     const folder = folderCards.current.get(cardId);
     if (folder !== undefined && folder.sessionId === sessionId) {
       folderCards.current.delete(cardId);
@@ -783,8 +938,10 @@ export function useAgentTools(deps: AgentToolsDeps): {
     chooseCard,
     hasGrant: (sessionId) => grants.current.has(sessionId),
     revokeGrant,
+    hasBrowserGrant: browser.hasGrant,
+    revokeBrowserGrant: browser.revokeGrant,
     isWaiting: (sessionId) =>
-      waiting.current.has(sessionId) ||
+      browser.isWaiting(sessionId) || waiting.current.has(sessionId) ||
       [...folderCards.current.values()].some((folder) => folder.sessionId === sessionId),
   };
 }

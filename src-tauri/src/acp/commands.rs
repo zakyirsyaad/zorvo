@@ -143,9 +143,7 @@ fn resolved_profile(
     profile_id: &str,
     versions: &BTreeMap<String, String>,
 ) -> Result<AgentProfile, String> {
-    with_system_tools(|catalog, tools| {
-        profile_to_launch(catalog, tools, profile_id, versions, registry::unix_now())
-    })
+    with_system_tools(|catalog, tools| profile_to_launch(catalog, tools, profile_id, versions))
 }
 
 /// How to launch `profile` with the user's environment and the registry's variables.
@@ -165,17 +163,16 @@ fn launch_of(profile: AgentProfile) -> Result<AcpLaunch, String> {
 }
 
 /// The profile that launches `profile_id` (a legacy id is mapped first) from
-/// `catalog` and `tools` at time `now`.
+/// `catalog` and `tools`.
 fn profile_to_launch(
     catalog: &registry::Catalog,
     tools: &SystemTools,
     profile_id: &str,
     versions: &BTreeMap<String, String>,
-    now: u64,
 ) -> Result<AgentProfile, String> {
     let id = canonical_agent_id(profile_id);
-    agent_profile_from(catalog, tools, id, versions, now).ok_or_else(|| {
-        match catalog.unsupported_agent_name(id, versions, now) {
+    agent_profile_from(catalog, tools, id, versions).ok_or_else(|| {
+        match catalog.unsupported_agent_name(id, versions) {
             Some(name) => format!("{name} is not available for this Mac"),
             None => format!("Unknown agent profile '{profile_id}'"),
         }
@@ -893,6 +890,16 @@ pub fn acp_context_usage(
     session_id: String,
 ) -> Result<crate::acp::context_usage::ContextBreakdown, String> {
     manager.context_usage(&session_id)
+}
+
+/// The agents Qwen Code runs in the background for the session. Only Qwen
+/// Code answers; the webview sends nothing but the session id.
+#[tauri::command(async)]
+pub fn acp_agent_tasks(
+    manager: State<'_, AcpManager>,
+    session_id: String,
+) -> Result<crate::acp::agent_tasks::AgentTasks, String> {
+    manager.agent_tasks(&session_id)
 }
 
 /// The newest API error Qwen Code logged for the session since `since` (Unix

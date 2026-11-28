@@ -16,10 +16,20 @@ const folder: FolderControl = {
 };
 
 describe("the draft's column", () => {
-  it("has no title of its own: the room above the card matches the room under it, so the card sits in the middle", () => {
+  it("has no title of its own: the room over the lockup matches the room under the card, so both sit in the middle", () => {
     const { container } = render(<NewSessionAbove />);
     expect(screen.queryByRole("heading")).toBeNull();
-    expect(container.firstElementChild).toHaveClass("flex-1", "justify-end");
+    // It grows from the lockup's height, the room under the card from nothing: their empty parts match.
+    expect(container.firstElementChild).toHaveClass("flex-auto", "justify-end");
+  });
+
+  it("shows the Zorvo lockup and the welcome screen's line over the card, centred, as a paragraph", () => {
+    render(<NewSessionAbove />);
+    const logo = screen.getByRole("img", { name: "Zorvo" });
+    const line = screen.getByText("Every coding agent. One desktop.");
+    expect(line.tagName).toBe("P");
+    expect(logo.parentElement).toBe(line.parentElement);
+    expect(logo.parentElement).toHaveClass("mx-auto", "max-w-draft", "items-center");
   });
 
   it("says why nothing can start right above the card, in the card's column", () => {

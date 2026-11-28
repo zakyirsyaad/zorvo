@@ -13,16 +13,29 @@ vi.mock("@tauri-apps/api/event", () => ({
   emit: () => Promise.resolve(),
 }));
 
-const notifications = vi.hoisted(() => ({ sent: [] as { title: string; body?: string }[] }));
+type ActionCallback = (event: { actionId: string; inputValue: string | null; notification: { extra?: Record<string, unknown> } | null }) => void;
+const notifications = vi.hoisted(() => ({
+  sent: [] as { title: string; body?: string; extra?: Record<string, unknown> }[],
+  actionListeners: new Set<ActionCallback>(),
+}));
 vi.mock("@tauri-apps/plugin-notification", () => ({
   isPermissionGranted: () => Promise.resolve(true),
   requestPermission: () => Promise.resolve("granted"),
-  sendNotification: (options: { title: string; body?: string }) => notifications.sent.push(options),
+  sendNotification: (options: { title: string; body?: string; extra?: Record<string, unknown> }) => notifications.sent.push(options),
+  onAction: (cb: ActionCallback) => {
+    notifications.actionListeners.add(cb);
+    return Promise.resolve({ unregister: () => Promise.resolve(notifications.actionListeners.delete(cb)) });
+  },
 }));
 
-const windows = vi.hoisted(() => ({ focused: [] as boolean[] }));
+const windows = vi.hoisted(() => ({
+  focused: [] as boolean[],
+  setFocus: vi.fn(() => Promise.resolve()),
+  unminimize: vi.fn(() => Promise.resolve()),
+}));
 vi.mock("@tauri-apps/api/window", () => ({
   getAllWindows: () => Promise.resolve(windows.focused.map((focused) => ({ isFocused: () => Promise.resolve(focused) }))),
+  getCurrentWindow: () => ({ unminimize: windows.unminimize, setFocus: windows.setFocus }),
 }));
 
 import App from "../App";
@@ -56,7 +69,10 @@ async function acpEvent(payload: Record<string, unknown>) {
 describe("Notifications", () => {
   beforeEach(() => {
     notifications.sent.length = 0;
+    notifications.actionListeners.clear();
     windows.focused = [false, false];
+    windows.setFocus.mockClear();
+    windows.unminimize.mockClear();
   });
   afterEach(() => {
     vi.restoreAllMocks();
@@ -77,8 +93,47 @@ describe("Notifications", () => {
     await acpEvent({ sessionId, kind: "turn-end", stopReason: "end_turn" });
 
     await waitFor(() => expect(notifications.sent).toHaveLength(2));
-    expect(notifications.sent[0]).toMatchObject({ title: "clean up the build", body: expect.stringMatching(/needs your answer/i) });
-    expect(notifications.sent[1]).toMatchObject({ body: expect.stringMatching(/finished/i) });
+    expect(notifications.sent[0]).toMatchObject({
+      title: "clean up the build",
+      body: expect.stringMatching(/needs your answer/i),
+      extra: { sessionId },
+    });
+    expect(notifications.sent[1]).toMatchObject({
+      body: expect.stringMatching(/finished/i),
+      extra: { sessionId },
+    });
+  });
+
+  it("opens the session from a clicked notification even after switching away", async () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(false);
+    const sessionId = await startQwenAndSend("clean up the build");
+
+    // Switch away to a new draft so the session is no longer active.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "New session" }));
+    });
+    expect(screen.queryByText("clean up the build", { selector: "h1, [data-testid='session-title']" })).toBeNull();
+
+    await acpEvent({ sessionId, kind: "turn-end", stopReason: "end_turn" });
+    await waitFor(() => expect(notifications.sent).toHaveLength(1));
+
+    // Simulate clicking the OS notification.
+    await act(async () => {
+      for (const cb of notifications.actionListeners) {
+        cb({ actionId: "tap", inputValue: null, notification: notifications.sent[0] });
+      }
+    });
+
+    await waitFor(() => expect(windows.setFocus).toHaveBeenCalledTimes(1));
+    expect(windows.unminimize).toHaveBeenCalledTimes(1);
+    expect(screen.getByPlaceholderText("Reply to Qwen Code")).toBeTruthy();
+    // Clicking a notification for a deleted/unknown session is a safe no-op.
+    await act(async () => {
+      for (const cb of notifications.actionListeners) {
+        cb({ actionId: "tap", inputValue: null, notification: { extra: { sessionId: "non-existent" } } });
+      }
+    });
+    expect(screen.getByPlaceholderText("Reply to Qwen Code")).toBeTruthy();
   });
 
   it("stays quiet while the user is looking at the app", async () => {

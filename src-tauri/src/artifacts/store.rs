@@ -216,7 +216,7 @@ impl ArtifactStore {
         }
     }
 
-    fn session_dir(&self, session_id: &str) -> PathBuf {
+    pub(super) fn session_dir(&self, session_id: &str) -> PathBuf {
         self.root.join(session_id)
     }
 
@@ -226,7 +226,7 @@ impl ArtifactStore {
             .join(format!("{version}.html"))
     }
 
-    fn lock_for(&self, session_id: &str) -> Arc<Mutex<()>> {
+    pub(super) fn lock_for(&self, session_id: &str) -> Arc<Mutex<()>> {
         let mut locks = self.locks.lock().unwrap_or_else(|e| e.into_inner());
         Arc::clone(locks.entry(session_id.to_string()).or_default())
     }

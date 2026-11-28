@@ -1,0 +1,68 @@
+{
+  "_note": "The empty answer is recorded from Qwen Code 0.27.3 (qwen/status/session/tasks, a fresh session). The filled answer is written from Qwen Code's source, not recorded: three agent tasks, one shell task and one malformed entry.",
+  "empty": { "v": 1, "sessionId": "fake-1", "now": 1795325390347, "tasks": [] },
+  "answer": {
+    "v": 1,
+    "sessionId": "fake-1",
+    "now": 1795325400000,
+    "tasks": [
+      {
+        "kind": "agent",
+        "id": "agent-aaa111",
+        "label": "Explore the auth flow",
+        "description": "Find where sessions are created",
+        "status": "running",
+        "startTime": 1795325300000,
+        "runtimeMs": 100000,
+        "outputFile": "/tmp/qwen/agent-aaa111.jsonl",
+        "isBackgrounded": true,
+        "subagentType": "Explore",
+        "toolUseId": "call_1",
+        "prompt": "SECRET PROMPT TEXT",
+        "stats": { "totalTokens": 1234 },
+        "recentActivities": [
+          { "name": "read_file", "description": "src/auth.ts", "at": 1795325350000 },
+          { "name": "grep", "description": "createSession", "at": 1795325390000 }
+        ]
+      },
+      {
+        "kind": "agent",
+        "id": "agent-bbb222",
+        "label": "Check the tests",
+        "description": "Run the unit tests",
+        "status": "completed",
+        "startTime": 1795325100000,
+        "endTime": 1795325200000,
+        "runtimeMs": 100000,
+        "outputFile": "/tmp/qwen/agent-bbb222.jsonl",
+        "isBackgrounded": true,
+        "subagentType": "general-purpose",
+        "toolUseId": "call_2"
+      },
+      {
+        "kind": "agent",
+        "id": "agent-ccc333",
+        "label": "Update the docs",
+        "description": "Write the changelog",
+        "status": "failed",
+        "startTime": 1795325000000,
+        "endTime": 1795325050000,
+        "runtimeMs": 50000,
+        "outputFile": "/tmp/qwen/agent-ccc333.jsonl",
+        "isBackgrounded": true,
+        "error": "ENOENT: /Users/someone/secret/path"
+      },
+      {
+        "kind": "shell",
+        "id": "shell-ddd444",
+        "label": "pnpm dev",
+        "description": "pnpm dev",
+        "status": "running",
+        "startTime": 1795325000000,
+        "runtimeMs": 400000,
+        "outputFile": "/tmp/qwen/shell-ddd444.out"
+      },
+      "not a task"
+    ]
+  }
+}

@@ -537,6 +537,22 @@ describe("loadTranscript", () => {
     expect(messages.map((m) => m.content)).toEqual(["a", "b", "c", "d", "e"]);
   });
 
+  it("keeps a well-formed visual part and drops a list that holds a malformed one", async () => {
+    const visual = { kind: "visual", id: "v-0123456789abcdef", title: "Flow", visualKind: "svg" };
+    store().transcripts["s-1"] = [
+      { id: "a", role: "agent", content: "a", timestamp: 1, parts: [{ kind: "text", text: "a" }, visual] },
+      { id: "b", role: "agent", content: "b", timestamp: 2, parts: [{ ...visual, id: "nope" }] },
+      { id: "c", role: "agent", content: "c", timestamp: 3, parts: [{ ...visual, visualKind: "png" }] },
+      { id: "d", role: "agent", content: "d", timestamp: 4, parts: [{ ...visual, title: 3 }] },
+    ];
+
+    const messages = await loadTranscript("s-1");
+
+    expect(messages[0].parts).toEqual([{ kind: "text", text: "a" }, visual]);
+    expect(messages.slice(1).map((m) => m.parts)).toEqual([undefined, undefined, undefined]);
+    expect(messages.map((m) => m.content)).toEqual(["a", "b", "c", "d"]);
+  });
+
   it("drops an entry that is not a message", async () => {
     store().transcripts["s-1"] = [
       null,
@@ -865,5 +881,32 @@ describe("normalizeTranscript - tool diffs", () => {
     const [message] = normalizeTranscript(withDiff({ kind: "diff", path: "/r/x.ts", rows: "nope" }));
 
     expect(message.tools?.[0].details).toEqual([]);
+  });
+});
+
+describe("a saved continued-from mark", () => {
+  const first = { id: "u", role: "user", content: "Fix it", timestamp: 1_000 };
+
+  it("keeps a well-formed continuedFrom mark", () => {
+    const [message] = normalizeTranscript([{ ...first, continuedFrom: { sessionId: "s-1", agentId: "qwen-code" } }]);
+    expect(message.continuedFrom).toEqual({ sessionId: "s-1", agentId: "qwen-code" });
+  });
+
+  it("drops a continuedFrom mark with an empty or missing id", () => {
+    for (const mark of [{ sessionId: "", agentId: "x" }, { agentId: "x" }, "s-1"]) {
+      const [message] = normalizeTranscript([{ ...first, continuedFrom: mark }]);
+      expect(message.content).toBe("Fix it");
+      expect("continuedFrom" in message).toBe(false);
+    }
+  });
+});
+
+describe("a continued-from mark's taking agent", () => {
+  it("keeps toAgentId when it is a string and drops it otherwise", () => {
+    const first = { id: "u", role: "user", content: "Fix it", timestamp: 1_000 };
+    const [kept] = normalizeTranscript([{ ...first, continuedFrom: { sessionId: "s-1", agentId: "qwen-code", toAgentId: "claude-acp" } }]);
+    expect(kept.continuedFrom).toEqual({ sessionId: "s-1", agentId: "qwen-code", toAgentId: "claude-acp" });
+    const [dropped] = normalizeTranscript([{ ...first, continuedFrom: { sessionId: "s-1", agentId: "qwen-code", toAgentId: 3 } }]);
+    expect(dropped.continuedFrom).toEqual({ sessionId: "s-1", agentId: "qwen-code" });
   });
 });

@@ -14,7 +14,7 @@ const second: BrowserTab = { ...first, id: "two", title: "Second page", url: "ht
 function toolbarProps(overrides: Partial<ComponentProps<typeof BrowserToolbar>> = {}): ComponentProps<typeof BrowserToolbar> {
   return {
     tabs: [first], active: first, engine: "webkit", panel: "page", busy: false, overlay: null,
-    onOverlay: vi.fn(), onNavigate: vi.fn(), onAction: vi.fn(), onEngine: vi.fn(), onPanel: vi.fn(), onRevoke: vi.fn(),
+    onOverlay: vi.fn(), onNavigate: vi.fn(), onAction: vi.fn(), onPanel: vi.fn(),
     site: null, siteBusy: false, onClearSite: vi.fn(), onNewTab: vi.fn(),
     zoomFactor: 1, onZoom: vi.fn(), onCopyLink: vi.fn(), onOpenExternal: vi.fn(), onClearHistory: vi.fn(), hasHistory: true,
     ...overrides,
@@ -27,6 +27,20 @@ function Toolbar({ options = {} }: { options?: Partial<ComponentProps<typeof Bro
 }
 
 describe("browser page chrome", () => {
+  it("expands the browser over the chat and shrinks it back", () => {
+    const onToggleExpanded = vi.fn();
+    const { rerender } = render(<BrowserToolbar {...toolbarProps({ onToggleExpanded })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Expand browser" }));
+    expect(onToggleExpanded).toHaveBeenCalledTimes(1);
+    rerender(<BrowserToolbar {...toolbarProps({ onToggleExpanded, isExpanded: true })} />);
+    expect(screen.getByRole("button", { name: "Shrink browser" })).toBeInTheDocument();
+  });
+
+  it("offers no Expand where nothing can expand it", () => {
+    render(<BrowserToolbar {...toolbarProps()} />);
+    expect(screen.queryByRole("button", { name: "Expand browser" })).toBeNull();
+  });
+
   it("puts page actions in the six-item menu and closes it after an action", () => {
     const onZoom = vi.fn();
     const onCopyLink = vi.fn();
@@ -53,12 +67,12 @@ describe("browser page chrome", () => {
     }
   });
 
-  it("keeps diagnostics and engine choices in their own tools menu", () => {
+  it("keeps the WebKit console and debug views in their own tools menu", () => {
     const onPanel = vi.fn();
     render(<Toolbar options={{ onPanel }} />);
     expect(screen.getByRole("tablist", { name: "Browser tabs" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Browser tools" }));
-    for (const name of ["Page", "Console", "Network", "Files", "Performance", "Debug", "WebKit", "Chromium debug"]) {
+    for (const name of ["Page", "Console", "Debug"]) {
       expect(screen.getByRole("menuitemradio", { name })).toBeInTheDocument();
     }
     expect(screen.queryByRole("menuitem", { name: "Copy link" })).toBeNull();
@@ -77,16 +91,16 @@ describe("browser page chrome", () => {
     expect(screen.getByRole("menuitem", { name: "Zoom in" })).toBeDisabled();
     expect(screen.getByRole("menuitem", { name: "Zoom out" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Browser options" }));
-    rerender(<Toolbar options={{ zoomFactor: 0.25, engine: "chromium" }} />);
+    rerender(<Toolbar options={{ zoomFactor: 0.25 }} />);
     fireEvent.click(screen.getByRole("button", { name: "Browser options" }));
-    expect(screen.getByRole("menuitem", { name: "Zoom in" })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: "Zoom in" })).toBeEnabled();
     expect(screen.getByRole("menuitem", { name: "Zoom out" })).toBeDisabled();
   });
 
   it("focuses the address of a blank tab and disables actions needing a page", () => {
     render(<Toolbar options={{ active: { ...first, url: "about:blank", title: "" }, hasHistory: false }} />);
-    expect(screen.getByRole("textbox", { name: "Address or search" })).toHaveFocus();
-    expect(screen.getByRole("textbox", { name: "Address or search" })).toHaveValue("");
+    expect(screen.getByRole("textbox", { name: "Web address" })).toHaveFocus();
+    expect(screen.getByRole("textbox", { name: "Web address" })).toHaveValue("");
     expect(screen.getByRole("button", { name: "Site information" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Browser options" }));
     for (const name of ["Zoom in", "Zoom out", "Reset zoom", "Copy link", "Open in browser", "Clear history"]) {

@@ -4,7 +4,11 @@
 
 use serde_json::{json, Map, Value};
 
-pub const TOOL_NAMES: [&str; 10] = [
+use crate::artifacts::visuals::{
+    MAX_VISUAL_BYTES, NEEDS_TITLE_VISUAL, VISUAL_EMPTY, VISUAL_ONE_SOURCE, VISUAL_TOO_LARGE,
+};
+
+pub const TOOL_NAMES: [&str; 14] = [
     "list_agents",
     "start_worker",
     "send",
@@ -13,15 +17,38 @@ pub const TOOL_NAMES: [&str; 10] = [
     "stop_session",
     "show_artifact",
     "artifact_guide",
+    "show_visual",
     "browser",
     "browser_guide",
+    "wrap_up",
+    "render_motion",
+    "render_status",
 ];
+/// The tools answered in the backend by the motion renderer, never by the webview.
+pub const MOTION_TOOL_NAMES: [&str; 2] = ["render_motion", "render_status"];
+/// The most stills one `render_motion` call asks for, and the longest `render_status` waits.
+pub const MAX_STILL_TIMES: usize = 12;
+pub const MAX_STATUS_WAIT: u64 = 120;
 /// The only tool a worker's token lists or calls. Not in `TOOL_NAMES`: a coordinator never sees it.
 pub const WORKER_TOOL_NAMES: [&str; 1] = ["done"];
 pub const MAX_TEXT_CHARS: usize = 20_000;
 pub const MAX_TITLE_CHARS: usize = 60;
 pub const MAX_SUMMARY_CHARS: usize = 2_000;
 pub const MAX_FILES: usize = 50;
+/// `wrap_up`'s limits, in characters, and the actions an agent may pick.
+pub const MAX_RECAP_CHARS: usize = 300;
+pub const MAX_ASK_CHARS: usize = 100;
+pub const MAX_REPLIES: usize = 3;
+pub const MAX_REPLY_CHARS: usize = 40;
+pub const WRAP_UP_ACTIONS: [&str; 7] = [
+    "commit",
+    "push",
+    "create_pr",
+    "merge",
+    "auto_merge",
+    "open_preview",
+    "open_pr",
+];
 const MAX_NAME_CHARS: usize = 200;
 const MAX_FOLDER_CHARS: usize = 4096;
 const MAX_PATH_CHARS: usize = 4096;
@@ -40,7 +67,7 @@ pub fn tool_list() -> Value {
         },
         {
             "name": "start_worker",
-            "description": "Start another agent as a worker on a task. It returns at once. End your turn after starting your workers: each result arrives later as a message. Use worktree new when workers would edit the same files; a new worktree starts from the last commit, so changes that are not committed are not in it.",
+            "description": "Start another agent, or another session of your own agent, as a worker on a task. Use it when the user asks to split work, to run parts in parallel, or for workers or subagents, in place of a subagent or background task of your own: the user sees a worker as a session and can answer it. It returns at once. End your turn after starting your workers: each result arrives later as a message. Use worktree new when workers would edit the same files; a new worktree starts from the last commit, so changes that are not committed are not in it.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -109,12 +136,12 @@ pub fn tool_list() -> Value {
         },
         {
             "name": "show_artifact",
-            "description": "Show the user a web page you wrote, beside the chat. Use it without being asked whenever your answer is better seen than read: a report, a summary of what changed, a comparison, a chart, a diagram, a dashboard, a mockup of a screen, or something the user can click through. Do not use it for an answer that is short text or code. Write one self-contained .html file in this folder or the temporary folder, then call this with its path. Calling it again for the same path shows a new version. Scripts may come only from cdnjs.cloudflare.com, cdn.jsdelivr.net/npm/, unpkg.com, cdn.tailwindcss.com and code.jquery.com, with an exact version; fonts from Google Fonts; images as data URIs. The page cannot fetch anything or keep data. Call artifact_guide before your first page. For several screens, a flow or variants, make a canvas: call artifact_guide with kind canvas first.",
+            "description": "Show the user a web page you wrote, beside the chat. Use it without being asked whenever your answer is better seen than read: a report, a summary of what changed, a comparison, a chart, a diagram, a dashboard, a mockup of a screen, or something the user can click through. Do not use it for an answer that is short text or code. Write one self-contained .html file in this folder or the temporary folder, then call this with its path. Calling it again for the same path shows a new version. Scripts may come only from cdnjs.cloudflare.com, cdn.jsdelivr.net/npm/, unpkg.com, cdn.tailwindcss.com and code.jquery.com, with an exact version; fonts from Google Fonts; images as data URIs. The page cannot fetch anything or keep data. Call artifact_guide before your first page. For several screens, a flow or variants, make a canvas: call artifact_guide with kind canvas first. For a video or motion graphics, make a motion composition and show it with kind motion (call artifact_guide with kind motion first); to show a video file you made some other way, use kind video. To make or update a design system, call artifact_guide with kind design-system.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "path": { "type": "string", "maxLength": MAX_PATH_CHARS, "description": "The .html file, absolute or relative to this folder. For a canvas, the folder or its canvas.json." },
-                    "kind": { "type": "string", "enum": ["page", "canvas"], "description": "page (default): one .html file. canvas: a folder with canvas.json and one .html file per artboard; path names the folder or its canvas.json." },
+                    "kind": { "type": "string", "enum": ["page", "canvas", "motion", "video", "design-system"], "description": "page (default): one .html file. canvas: a folder with canvas.json and one .html file per artboard; path names the folder or its canvas.json. motion: a folder with motion.json and its page; path names the folder or its motion.json. video: an .mp4, .mov or .m4v file in this folder. design-system: a folder holding design-system.json; path names the folder or that file." },
                     "title": { "type": "string", "maxLength": MAX_TITLE_CHARS, "description": "A short name for the page. Needed the first time a path is shown; later it renames." }
                 },
                 "required": ["path"],
@@ -123,20 +150,76 @@ pub fn tool_list() -> Value {
         },
         {
             "name": "artifact_guide",
-            "description": "How to design a page for show_artifact: colours for light and dark, layout, charts. Read it once before your first page. With kind canvas, how to lay out several screens.",
+            "description": "How to design a page for show_artifact: colours for light and dark, layout, charts. Read it once before your first page. With kind canvas, how to lay out several screens. With kind visual, how to draw a picture for show_visual. With kind motion, how to make a video Zorvo renders. With kind design-system, how to make a project's design system. To make or update a design system, call artifact_guide with kind design-system.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "kind": { "type": "string", "enum": ["page", "canvas"], "description": "page (default) or canvas." }
+                    "kind": { "type": "string", "enum": ["page", "canvas", "visual", "motion", "design-system"], "description": "page (default), canvas, visual, motion or design-system." }
                 },
+                "additionalProperties": false
+            }
+        },
+        {
+            "name": "show_visual",
+            "description": "Show the user a picture inside your reply: a flow or architecture diagram, or a mockup of a card or screen. Use it without being asked when a picture explains the answer better than a list. Pass an SVG document or an HTML fragment with its CSS as code, or write a .svg or .html file in this folder or the temporary folder and pass its path. No script runs and nothing loads from the network. For a page the user keeps and reopens, use show_artifact. Call artifact_guide with kind visual before your first visual.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "title": { "type": "string", "maxLength": MAX_TITLE_CHARS, "description": "A short name for the picture." },
+                    "code": { "type": "string", "description": "An SVG document, or an HTML fragment with its CSS, at most 256 KB. Give this or path." },
+                    "path": { "type": "string", "maxLength": MAX_PATH_CHARS, "description": "A .svg or .html file, absolute or relative to this folder. Give this or code." }
+                },
+                "required": ["title"],
                 "additionalProperties": false
             }
         }
     ]);
     tools.as_array_mut().unwrap().extend([
-        json!({"name":"browser", "description":"Operate Zorvo's browser. Open a page with operation tabs.open and url. Scroll the current WebKit page with operation scroll and deltaY (positive is down), without listing tabs first. Omit tabID to use the active WebKit tab; Chromium requires tabID from tabs.open or tabs.list. WebKit is the native in-app view; engine chromium opens an isolated installed Chromium window for advanced diagnostics. Requires the user's session browser grant. File transfers need separate approval. Read browser_guide for advanced operation details.",
+        json!({"name":"browser", "description":"Operate Zorvo's browser. Open a page with operation tabs.open and url. Scroll the current WebKit page with operation scroll and deltaY (positive is down), without listing tabs first. Omit tabID to use the active WebKit tab; WebKit is the native in-app view. Requires the user's session browser grant. files.upload fills a file input after a separate one-time approval of the files. Read browser_guide for the supported operations.",
             "inputSchema":browser_input_schema()}),
         json!({"name":"browser_guide","description":"List browser operations, parameters, engine limits and permission rules.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}),
+        json!({
+            "name": "wrap_up",
+            "description": "Call once at the end of a turn that changed files or leaves the user a decision. recap: two or three short sentences on what is now true and what is not done. ask: the one decision that is the user's, as a question. pick: the action you recommend, if Zorvo offers it. replies: up to three short answers the user may give. Then end your turn.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "recap": { "type": "string", "maxLength": MAX_RECAP_CHARS },
+                    "ask": { "type": "string", "maxLength": MAX_ASK_CHARS },
+                    "pick": { "type": "string", "enum": WRAP_UP_ACTIONS },
+                    "replies": { "type": "array", "maxItems": MAX_REPLIES, "items": { "type": "string", "maxLength": MAX_REPLY_CHARS } }
+                },
+                "required": ["recap"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "render_motion",
+            "description": "Render a motion you showed with show_artifact (kind motion). With frames (seconds), Zorvo draws those stills now, motion blur included, writes them to out/frames/ in the motion's folder and answers with a contact sheet: look at it and fix the page before a full render. Without frames, Zorvo starts rendering the MP4 of each format (all when formats is left out) to out/<format>.mp4 and answers with a job id for render_status.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "motion": { "type": "string", "maxLength": MAX_PATH_CHARS, "description": "The motion's key from show_artifact, or the folder you showed." },
+                    "formats": { "type": "array", "maxItems": 4, "items": { "type": "string", "maxLength": 64 }, "description": "Format ids from motion.json; all when left out." },
+                    "frames": { "type": "array", "minItems": 1, "maxItems": MAX_STILL_TIMES, "items": { "type": "number", "minimum": 0 }, "description": "Times in seconds for stills. Leave out to render the MP4." }
+                },
+                "required": ["motion"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": "render_status",
+            "description": "How a render_motion job stands: progress per format, then the MP4 paths once done. wait (seconds, at most 120) waits for the job to end first.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "job": { "type": "string", "maxLength": 64 },
+                    "wait": { "type": "number", "minimum": 0, "maximum": MAX_STATUS_WAIT }
+                },
+                "required": ["job"],
+                "additionalProperties": false
+            }
+        }),
     ]);
     tools
 }
@@ -145,9 +228,8 @@ pub fn tool_list() -> Value {
 /// `additionalProperties`. Publish every public parameter so they can pass a
 /// URL, tab id or scroll distance without first fetching the whole guide.
 fn browser_input_schema() -> Value {
-    let catalog: Value =
-        serde_json::from_str(include_str!("../../resources/browser-cdp/catalog.json"))
-            .expect("bundled browser catalog");
+    let catalog: Value = serde_json::from_str(include_str!("../browser/catalog.json"))
+        .expect("bundled browser catalog");
     let mut properties = Map::new();
     for tool in catalog.as_object().expect("browser operations").values() {
         for (name, schema) in tool["inputSchema"]["properties"]
@@ -165,23 +247,20 @@ fn browser_input_schema() -> Value {
     );
     properties.insert(
         "engine".into(),
-        json!({"type":"string", "enum":["webkit","chromium"], "default":"webkit"}),
+        json!({"type":"string", "enum":["webkit"], "default":"webkit"}),
     );
-    properties.insert(
-        "title".into(),
-        json!({"type":"string", "description":"Title when previewing a local HTML file."}),
-    );
-    // Some model adapters reject an array branch without an items schema.
-    properties.get_mut("fields").expect("form fields")["items"]["properties"]["value"] = json!({
-        "anyOf":[{"type":"string"},{"type":"boolean"},{"type":"array","items":{"type":"string"}}]
-    });
     for (name, description) in [
         ("url", "HTTP or HTTPS URL for tabs.open or navigate."),
-        ("tabID", "Tab id from tabs.open or tabs.list. Omit for the active WebKit tab; required for Chromium tab operations."),
-        ("frameID", "Optional frame id returned by frames."),
+        (
+            "tabID",
+            "Tab id from tabs.open or tabs.list. Omit for the active WebKit tab.",
+        ),
         ("ref", "Element reference returned by snapshot."),
         ("deltaX", "Horizontal scroll distance in pixels."),
-        ("deltaY", "Vertical scroll distance in pixels; positive scrolls down."),
+        (
+            "deltaY",
+            "Vertical scroll distance in pixels; positive scrolls down.",
+        ),
     ] {
         properties.get_mut(name).expect("browser parameter")["description"] = json!(description);
     }
@@ -221,12 +300,16 @@ pub fn validate(tool: &str, args: &Value) -> Result<Value, String> {
         "list_agents" | "browser_guide" => &[],
         "artifact_guide" => &["kind"],
         "show_artifact" => &["path", "title", "kind"],
+        "show_visual" => &["title", "code", "path"],
         "start_worker" => &["agent", "task", "title", "worktree"],
         "send" => &["handle", "message"],
         "start_session" => &["agent", "brief", "title", "worktree", "folder"],
         "read_session" => &["handle", "max_chars"],
         "stop_session" => &["handle"],
         "done" => &["outcome", "summary", "files"],
+        "wrap_up" => &["recap", "ask", "pick", "replies"],
+        "render_motion" => &["motion", "formats", "frames"],
+        "render_status" => &["job", "wait"],
         _ => return Err("That tool does not exist.".to_string()),
     };
     if object.keys().any(|key| !allowed.contains(&key.as_str())) {
@@ -271,9 +354,31 @@ pub fn validate(tool: &str, args: &Value) -> Result<Value, String> {
         "show_artifact" => {
             put_path(&mut clean, object)?;
             put_title(&mut clean, object)?;
-            put_kind(&mut clean, object)?;
+            put_kind(&mut clean, object, false)?;
         }
-        "artifact_guide" => put_kind(&mut clean, object)?,
+        "artifact_guide" => put_kind(&mut clean, object, true)?,
+        "wrap_up" => {
+            put_bounded(&mut clean, object, "recap", MAX_RECAP_CHARS, true)?;
+            put_bounded(&mut clean, object, "ask", MAX_ASK_CHARS, false)?;
+            put_pick(&mut clean, object)?;
+            put_replies(&mut clean, object)?;
+        }
+        "render_motion" => {
+            put_path_named(&mut clean, object, "motion")?;
+            put_format_ids(&mut clean, object)?;
+            put_frames(&mut clean, object)?;
+        }
+        "render_status" => {
+            put_name(&mut clean, object, "job", true)?;
+            put_wait(&mut clean, object)?;
+        }
+        "show_visual" => {
+            put_visual_source(&mut clean, object)?;
+            put_title(&mut clean, object)?;
+            if !clean.contains_key("title") {
+                return Err(NEEDS_TITLE_VISUAL.to_string());
+            }
+        }
         _ => {}
     }
     Ok(Value::Object(clean))
@@ -380,6 +485,69 @@ fn put_summary(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Res
     Ok(())
 }
 
+/// A trimmed string of at most `max` characters; an empty one counts as missing.
+fn put_bounded(
+    out: &mut Map<String, Value>,
+    object: &Map<String, Value>,
+    key: &str,
+    max: usize,
+    required: bool,
+) -> Result<(), String> {
+    let text = string_of(object, key, required)?.map_or("", str::trim);
+    if text.is_empty() {
+        return if required {
+            Err(format!("{key} must not be empty."))
+        } else {
+            Ok(())
+        };
+    }
+    if text.chars().count() > max {
+        return Err(format!("{key} is over {max} characters."));
+    }
+    out.insert(key.to_string(), json!(text));
+    Ok(())
+}
+
+fn put_pick(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Result<(), String> {
+    let Some(pick) = string_of(object, "pick", false)? else {
+        return Ok(());
+    };
+    if !WRAP_UP_ACTIONS.contains(&pick) {
+        return Err(format!(
+            "pick must be one of: {}.",
+            WRAP_UP_ACTIONS.join(", ")
+        ));
+    }
+    out.insert("pick".to_string(), json!(pick));
+    Ok(())
+}
+
+fn put_replies(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Result<(), String> {
+    let list = match object.get("replies") {
+        None | Some(Value::Null) => return Ok(()),
+        Some(Value::Array(list)) => list,
+        Some(_) => return Err("replies must be a list of short answers.".to_string()),
+    };
+    if list.len() > MAX_REPLIES {
+        return Err(format!("replies has more than {MAX_REPLIES} answers."));
+    }
+    let mut replies = Vec::with_capacity(list.len());
+    for reply in list {
+        let text = reply.as_str().map(str::trim).unwrap_or("");
+        if text.is_empty() {
+            return Err("Each reply must be a non-empty string.".to_string());
+        }
+        if text.chars().count() > MAX_REPLY_CHARS {
+            return Err(format!(
+                "Each reply is at most {MAX_REPLY_CHARS} characters."
+            ));
+        }
+        replies.push(text.to_string());
+    }
+    out.insert("replies".to_string(), json!(replies));
+    Ok(())
+}
+
 fn put_files(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Result<(), String> {
     let list = match object.get("files") {
         None | Some(Value::Null) => return Ok(()),
@@ -410,14 +578,54 @@ fn put_files(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Resul
     Ok(())
 }
 
-fn put_kind(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Result<(), String> {
+/// `visual` is a kind of guide only: a visual is shown with `show_visual`, not `show_artifact`.
+fn put_kind(
+    out: &mut Map<String, Value>,
+    object: &Map<String, Value>,
+    allow_visual: bool,
+) -> Result<(), String> {
     match object.get("kind") {
         None | Some(Value::Null) => Ok(()),
-        Some(Value::String(kind)) if kind == "page" || kind == "canvas" => {
+        Some(Value::String(kind))
+            if kind == "page"
+                || kind == "canvas"
+                || kind == "motion"
+                || kind == "design-system"
+                || (allow_visual && kind == "visual")
+                || (!allow_visual && kind == "video") =>
+        {
             out.insert("kind".to_string(), json!(kind));
             Ok(())
         }
-        Some(_) => Err("kind must be page or canvas.".to_string()),
+        Some(_) if allow_visual => {
+            Err("kind must be page, canvas, visual, motion or design-system.".to_string())
+        }
+        Some(_) => Err("kind must be page, canvas, motion, video or design-system.".to_string()),
+    }
+}
+
+/// Exactly one of `code` (markup, capped by bytes) and `path`. No error repeats the markup.
+fn put_visual_source(
+    out: &mut Map<String, Value>,
+    object: &Map<String, Value>,
+) -> Result<(), String> {
+    let has = |key: &str| !matches!(object.get(key), None | Some(Value::Null));
+    match (has("code"), has("path")) {
+        (true, false) => {
+            let Some(Value::String(code)) = object.get("code") else {
+                return Err("code must be text.".to_string());
+            };
+            if code.len() > MAX_VISUAL_BYTES {
+                return Err(VISUAL_TOO_LARGE.to_string());
+            }
+            if code.trim().is_empty() {
+                return Err(VISUAL_EMPTY.to_string());
+            }
+            out.insert("code".to_string(), json!(code));
+            Ok(())
+        }
+        (false, true) => put_path(out, object),
+        _ => Err(VISUAL_ONE_SOURCE.to_string()),
     }
 }
 
@@ -479,6 +687,90 @@ fn put_path(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Result
     }
     out.insert("path".to_string(), json!(text));
     Ok(())
+}
+
+/// A required path-like string under `key` (a motion's key or folder).
+fn put_path_named(
+    out: &mut Map<String, Value>,
+    object: &Map<String, Value>,
+    key: &str,
+) -> Result<(), String> {
+    let Some(text) = string_of(object, key, true)? else {
+        return Ok(());
+    };
+    let text = text.trim();
+    if text.is_empty() {
+        return Err(format!("{key} must not be empty."));
+    }
+    if text.chars().count() > MAX_PATH_CHARS {
+        return Err(format!("{key} is too long."));
+    }
+    if text.chars().any(char::is_control) {
+        return Err(format!("{key} must not contain control characters."));
+    }
+    out.insert(key.to_string(), json!(text));
+    Ok(())
+}
+
+/// Up to four format ids of `a-z0-9-`.
+fn put_format_ids(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Result<(), String> {
+    let list = match object.get("formats") {
+        None | Some(Value::Null) => return Ok(()),
+        Some(Value::Array(list)) => list,
+        Some(_) => return Err("formats must be a list of format ids.".to_string()),
+    };
+    if list.len() > 4 {
+        return Err("formats holds at most 4 ids.".to_string());
+    }
+    let ids = list
+        .iter()
+        .map(|id| {
+            id.as_str()
+                .filter(|id| crate::artifacts::motion_protocol::is_format_id(id))
+                .map(str::to_string)
+                .ok_or_else(|| {
+                    "every format id must be 1 to 64 characters of a-z, 0-9 and -.".to_string()
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    out.insert("formats".to_string(), json!(ids));
+    Ok(())
+}
+
+/// One to `MAX_STILL_TIMES` times in seconds, each a finite number from 0.
+fn put_frames(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Result<(), String> {
+    let list = match object.get("frames") {
+        None | Some(Value::Null) => return Ok(()),
+        Some(Value::Array(list)) => list,
+        Some(_) => return Err("frames must be a list of times in seconds.".to_string()),
+    };
+    if list.is_empty() || list.len() > MAX_STILL_TIMES {
+        return Err(format!("frames holds 1 to {MAX_STILL_TIMES} times."));
+    }
+    let times = list
+        .iter()
+        .map(|t| {
+            t.as_f64()
+                .filter(|t| t.is_finite() && *t >= 0.0)
+                .ok_or_else(|| "every frame time must be a number of seconds from 0.".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    out.insert("frames".to_string(), json!(times));
+    Ok(())
+}
+
+fn put_wait(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Result<(), String> {
+    match object.get("wait") {
+        None | Some(Value::Null) => Ok(()),
+        Some(value) => {
+            let wait = value
+                .as_f64()
+                .filter(|w| w.is_finite() && (0.0..=MAX_STATUS_WAIT as f64).contains(w))
+                .ok_or_else(|| format!("wait must be 0 to {MAX_STATUS_WAIT} seconds."))?;
+            out.insert("wait".to_string(), json!(wait));
+            Ok(())
+        }
+    }
 }
 
 fn put_max_chars(out: &mut Map<String, Value>, object: &Map<String, Value>) -> Result<(), String> {
@@ -568,6 +860,36 @@ mod tests {
     }
 
     #[test]
+    fn render_motion_takes_a_motion_formats_and_frames() {
+        let ok = validate(
+            "render_motion",
+            &json!({"motion": " promo ", "formats": ["wide"], "frames": [0, 4.5]}),
+        )
+        .unwrap();
+        assert_eq!(
+            ok,
+            json!({"motion": "promo", "formats": ["wide"], "frames": [0.0, 4.5]})
+        );
+        assert!(validate("render_motion", &json!({})).is_err());
+        assert!(validate("render_motion", &json!({"motion": "p", "frames": []})).is_err());
+        assert!(validate("render_motion", &json!({"motion": "p", "frames": [-1]})).is_err());
+        let thirteen: Vec<u32> = (0..13).collect();
+        assert!(validate("render_motion", &json!({"motion": "p", "frames": thirteen})).is_err());
+        assert!(validate(
+            "render_motion",
+            &json!({"motion": "p", "formats": ["Wide!"]})
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn render_status_caps_its_wait() {
+        assert!(validate("render_status", &json!({"job": "r-1", "wait": 120})).is_ok());
+        assert!(validate("render_status", &json!({"job": "r-1", "wait": 121})).is_err());
+        assert!(validate("render_status", &json!({"wait": 5})).is_err());
+    }
+
+    #[test]
     fn artifact_guide_takes_a_kind() {
         assert_eq!(validate("artifact_guide", &json!({})).unwrap(), json!({}));
         assert_eq!(
@@ -576,8 +898,13 @@ mod tests {
         );
         assert_eq!(
             validate("artifact_guide", &json!({"kind": "sheet"})).unwrap_err(),
-            "kind must be page or canvas."
+            "kind must be page, canvas, visual, motion or design-system."
         );
+        assert_eq!(
+            validate("artifact_guide", &json!({"kind": "motion"})).unwrap(),
+            json!({"kind": "motion"})
+        );
+        assert!(validate("artifact_guide", &json!({"kind": "video"})).is_err());
         assert!(validate("artifact_guide", &json!({"topic": "charts"})).is_err());
     }
 
@@ -587,8 +914,12 @@ mod tests {
         assert_eq!(ok, json!({"path": "d", "kind": "canvas"}));
         assert_eq!(
             validate("show_artifact", &json!({"path": "d", "kind": "sheet"})).unwrap_err(),
-            "kind must be page or canvas."
+            "kind must be page, canvas, motion, video or design-system."
         );
+        for kind in ["motion", "video", "design-system"] {
+            assert!(validate("show_artifact", &json!({"path": "d", "kind": kind})).is_ok());
+        }
+        assert!(validate("show_artifact", &json!({"path": "d", "kind": "visual"})).is_err());
         assert!(validate("show_artifact", &json!({"path": "d", "kind": 3})).is_err());
         let description = description_of("show_artifact");
         assert!(description.contains("call artifact_guide with kind canvas first"));
@@ -636,8 +967,12 @@ mod tests {
                 "stop_session",
                 "show_artifact",
                 "artifact_guide",
+                "show_visual",
                 "browser",
-                "browser_guide"
+                "browser_guide",
+                "wrap_up",
+                "render_motion",
+                "render_status"
             ]
         );
         for tool in tools {
@@ -651,8 +986,7 @@ mod tests {
     fn browser_signature_exposes_the_public_operation_parameters() {
         let schema = browser_input_schema();
         let properties = schema["properties"].as_object().unwrap();
-        let catalog: Value =
-            serde_json::from_str(include_str!("../../resources/browser-cdp/catalog.json")).unwrap();
+        let catalog: Value = serde_json::from_str(include_str!("../browser/catalog.json")).unwrap();
         for (operation, tool) in catalog.as_object().unwrap() {
             for (name, source) in tool["inputSchema"]["properties"].as_object().unwrap() {
                 let mut expected = source.clone();
@@ -676,7 +1010,8 @@ mod tests {
             json!(crate::browser_commands::OPERATIONS)
         );
         assert_eq!(properties["engine"]["default"], "webkit");
-        assert_eq!(properties["title"]["type"], "string");
+        assert!(!properties.contains_key("title"));
+        assert_eq!(crate::browser_commands::OPERATIONS.len(), 20);
         for internal in ["approval", "_zorvoCallId", "_zorvoGrant"] {
             assert!(!properties.contains_key(internal), "{internal}");
         }
@@ -939,5 +1274,127 @@ mod tests {
     fn the_summary_limits_exist() {
         assert_eq!(MAX_SUMMARY_CHARS, 2_000);
         assert_eq!(MAX_FILES, 50);
+    }
+
+    #[test]
+    fn there_are_twelve_tools_and_wrap_up_is_one() {
+        assert_eq!(TOOL_NAMES.len(), 14);
+        assert!(TOOL_NAMES.contains(&"show_visual"));
+        assert!(TOOL_NAMES.contains(&"wrap_up"));
+        let listed: Vec<String> = tool_list()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap().to_string())
+            .collect();
+        assert!(listed.contains(&"wrap_up".to_string()));
+        assert!(worker_tool_list()
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|tool| tool["name"] != "wrap_up"));
+    }
+
+    #[test]
+    fn wrap_up_needs_a_recap() {
+        assert!(validate("wrap_up", &json!({})).is_err());
+        assert!(validate("wrap_up", &json!({"recap": "  "})).is_err());
+    }
+
+    #[test]
+    fn wrap_up_caps_each_field() {
+        let cases = [
+            json!({"recap": "r".repeat(301)}),
+            json!({"recap": "Done.", "ask": "a".repeat(101)}),
+            json!({"recap": "Done.", "replies": ["a", "b", "c", "d"]}),
+            json!({"recap": "Done.", "replies": ["x".repeat(41)]}),
+            json!({"recap": "Done.", "pick": "deploy"}),
+        ];
+        for case in cases {
+            let error = validate("wrap_up", &case).unwrap_err();
+            assert!(
+                !error.contains("rrrr")
+                    && !error.contains("aaaa")
+                    && !error.contains("xxxx")
+                    && !error.contains("deploy"),
+                "{error}"
+            );
+        }
+    }
+
+    #[test]
+    fn wrap_up_trims_and_keeps_its_fields() {
+        let clean = validate(
+            "wrap_up",
+            &json!({"recap": " Done. ", "ask": "Push?", "pick": "push", "replies": ["Not yet", "Open PR instead", "Keep local"]}),
+        )
+        .unwrap();
+        assert_eq!(clean["recap"], "Done.");
+        assert_eq!(clean["ask"], "Push?");
+        assert_eq!(clean["pick"], "push");
+        assert_eq!(
+            clean["replies"],
+            json!(["Not yet", "Open PR instead", "Keep local"])
+        );
+    }
+    #[test]
+    fn show_visual_takes_exactly_one_source() {
+        assert!(validate("show_visual", &json!({"title": "A", "code": "<p>a</p>"})).is_ok());
+        assert!(validate("show_visual", &json!({"title": "A", "path": "a.svg"})).is_ok());
+        assert_eq!(
+            validate("show_visual", &json!({"title": "A"})).unwrap_err(),
+            VISUAL_ONE_SOURCE
+        );
+        assert_eq!(
+            validate(
+                "show_visual",
+                &json!({"title": "A", "code": "<p>", "path": "a.svg"})
+            )
+            .unwrap_err(),
+            VISUAL_ONE_SOURCE
+        );
+        assert!(validate("show_visual", &json!({"code": "<p>a</p>"})).is_err());
+    }
+    #[test]
+    fn show_visual_caps_code_by_bytes_without_repeating_it() {
+        let big = "a".repeat(256 * 1024 + 1);
+        let refused = validate("show_visual", &json!({"title": "A", "code": big})).unwrap_err();
+        assert_eq!(refused, "The visual is over 256 KB.");
+    }
+    #[test]
+    fn artifact_guide_takes_kind_visual_and_show_artifact_does_not() {
+        assert_eq!(
+            validate("artifact_guide", &json!({"kind": "visual"})).unwrap(),
+            json!({"kind": "visual"})
+        );
+        assert!(validate("show_artifact", &json!({"path": "d", "kind": "visual"})).is_err());
+    }
+    #[test]
+    fn show_visual_says_nothing_runs_and_names_the_guide() {
+        let d = description_of("show_visual");
+        for part in [
+            "inside your reply",
+            "No script runs",
+            "artifact_guide with kind visual",
+        ] {
+            assert!(d.contains(part), "{part}");
+        }
+    }
+
+    #[test]
+    fn artifact_guide_takes_kind_design_system() {
+        assert_eq!(
+            validate("artifact_guide", &json!({"kind": "design-system"})).unwrap(),
+            json!({"kind": "design-system"})
+        );
+    }
+
+    #[test]
+    fn both_descriptions_say_how_to_make_a_design_system() {
+        let listed = tool_list();
+        let text = serde_json::to_string(&listed).unwrap();
+        let sentence =
+            "To make or update a design system, call artifact_guide with kind design-system.";
+        assert_eq!(text.matches(sentence).count(), 2);
     }
 }

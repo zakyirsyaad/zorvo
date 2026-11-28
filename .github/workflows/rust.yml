@@ -14,6 +14,8 @@ on:
       - "package.json"
       - "pnpm-lock.yaml"
       - ".nvmrc"
+      # The design-system tests read this folder as a fixture.
+      - "docs/design-system/**"
       - ".github/workflows/rust.yml"
 
 permissions:
@@ -26,7 +28,7 @@ concurrency:
 
 jobs:
   rust:
-    name: Rust (clippy, test)
+    name: Rust (fmt, clippy, test)
     # The app targets macOS; its runner also needs no webkit packages for Tauri.
     runs-on: macos-latest
     timeout-minutes: 30
@@ -47,10 +49,13 @@ jobs:
       - run: pnpm build
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
-          components: clippy
+          components: clippy, rustfmt
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: src-tauri
+      - name: Format
+        working-directory: src-tauri
+        run: cargo fmt --check
       - name: Clippy
         working-directory: src-tauri
         run: cargo clippy --all-targets -- -D warnings

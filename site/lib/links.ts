@@ -8,6 +8,8 @@ const REPOSITORY = "https://github.com/zakyirsyaad/zorvo";
 export const LINKS = {
   repository: REPOSITORY,
   issues: `${REPOSITORY}/issues`,
+  /** Opens the Feedback issue form (`.github/ISSUE_TEMPLATE/feedback.yml`). */
+  feedback: `${REPOSITORY}/issues/new?template=feedback.yml`,
   releases: `${REPOSITORY}/releases`,
   license: `${REPOSITORY}/blob/main/LICENSE`,
   download: `${REPOSITORY}/releases/latest/download/Zorvo-mac.dmg`,

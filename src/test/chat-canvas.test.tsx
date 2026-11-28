@@ -873,6 +873,84 @@ describe("ACP chat content", () => {
     expect(container.scrollTop).toBe(2000);
   });
 
+  it("offers a jump to the newest message once the user scrolled away, and follows again after it", () => {
+    const first = [{ id: "u-1", role: "user" as const, content: "go", timestamp: 1 }];
+    const { rerender } = render(<ChatCanvas messages={first} isWorking />);
+    const container = screen.getByTestId("chat-canvas-container");
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 2000 });
+    Object.defineProperty(container, "clientHeight", { configurable: true, value: 400 });
+    expect(screen.queryByRole("button", { name: "Jump to the newest message" })).toBeNull();
+
+    container.scrollTop = 300;
+    fireEvent.scroll(container);
+    fireEvent.click(screen.getByRole("button", { name: "Jump to the newest message" }));
+
+    expect(container.scrollTop).toBe(2000);
+    expect(screen.queryByRole("button", { name: "Jump to the newest message" })).toBeNull();
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 2400 });
+    rerender(<ChatCanvas messages={[...first, { id: "a-1", role: "agent", content: "hi", timestamp: 2 }]} isWorking />);
+    expect(container.scrollTop).toBe(2400);
+  });
+
+  it("keeps following when content shrinks and the browser pulls the view up", () => {
+    const first = [{ id: "u-1", role: "user" as const, content: "go", timestamp: 1 }];
+    const { rerender } = render(<ChatCanvas messages={first} isWorking />);
+    const container = screen.getByTestId("chat-canvas-container");
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(container, "clientHeight", { configurable: true, value: 400 });
+    rerender(<ChatCanvas messages={[...first, { id: "a-1", role: "agent", content: "a", timestamp: 2 }]} isWorking />);
+    expect(container.scrollTop).toBe(1000);
+
+    // A notice leaves or a tool folds: 100px go, and the browser clamps the view, which fires a scroll.
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 900 });
+    container.scrollTop = 500;
+    fireEvent.scroll(container);
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 1300 });
+    rerender(<ChatCanvas messages={[...first, { id: "a-1", role: "agent", content: "a b", timestamp: 2 }]} isWorking />);
+
+    expect(container.scrollTop).toBe(1300);
+  });
+
+  it("follows content that grows without a new message, like a box under the reply", () => {
+    const resized: Array<() => void> = [];
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: ResizeObserverCallback) {
+          resized.push(() => callback([], this as unknown as ResizeObserver));
+        }
+        observe = () => {};
+        unobserve = () => {};
+        disconnect = () => {};
+      },
+    );
+    try {
+      render(<ChatCanvas messages={[{ id: "a-1", role: "agent", content: "a", timestamp: 1 }]} />);
+      const container = screen.getByTestId("chat-canvas-container");
+      Object.defineProperty(container, "scrollHeight", { configurable: true, value: 1000 });
+      Object.defineProperty(container, "clientHeight", { configurable: true, value: 400 });
+
+      Object.defineProperty(container, "scrollHeight", { configurable: true, value: 1400 });
+      act(() => resized.forEach((report) => report()));
+
+      expect(container.scrollTop).toBe(1400);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("offers no jump while the view is near the bottom", () => {
+    render(<ChatCanvas messages={[{ id: "a-1", role: "agent", content: "hi", timestamp: 1 }]} />);
+    const container = screen.getByTestId("chat-canvas-container");
+    Object.defineProperty(container, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(container, "clientHeight", { configurable: true, value: 400 });
+
+    container.scrollTop = 560;
+    fireEvent.scroll(container);
+
+    expect(screen.queryByRole("button", { name: "Jump to the newest message" })).toBeNull();
+  });
+
   it("stops following on a small upward wheel, even while still near the bottom", () => {
     const first = [{ id: "u-1", role: "user" as const, content: "go", timestamp: 1 }];
     const { rerender } = render(<ChatCanvas messages={first} />);

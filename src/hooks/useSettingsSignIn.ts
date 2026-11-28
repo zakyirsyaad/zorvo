@@ -5,7 +5,7 @@ import type { AgentSignInStatus } from './useAgentSignInStatus';
 import type { AuthRequest } from './useAgentAuth';
 import type { useAgentSignIn } from './useAgentSignIn';
 import { useLatest } from './useLatest';
-import { parseAuthRequired, type AuthMethod } from '../lib/acp-auth';
+import { parseAuthRequired, toAuthMethods, type AuthMethod } from '../lib/acp-auth';
 import { refreshLoginEnv } from '../lib/sign-in-check';
 import { hasReportedOptions, type AgentOptions, type ProbedOptions } from '../lib/acp-draft';
 import { unconfirmedMessage, type SignInState } from '../lib/agent-sign-in';
@@ -27,6 +27,9 @@ export interface AgentCheck {
 
 const IDLE: AgentCheck = { phase: 'idle' };
 
+/** Where an agent's Sign in again list stands: put away, reading which methods the agent offers, or shown. */
+export type AgainPhase = 'closed' | 'reading' | 'open';
+
 /** What Settings → Agents shows and does about each agent's sign-in; the app builds one. */
 export interface SettingsSignIn {
   /** The folder agents are asked in; undefined until the user opened one. */
@@ -37,6 +40,12 @@ export interface SettingsSignIn {
   reportsStatusOf: (profileId: string) => boolean | undefined;
   /** The sign-in methods the agent last offered. */
   methodsOf: (profileId: string) => readonly AuthMethod[];
+  /** Where the agent's Sign in again list stands. Memory only; the agent's own state is not touched by it. */
+  againOf: (profileId: string) => AgainPhase;
+  /** Shows the agent's sign-in methods under its row, asking the agent for them (no session) when none are known. */
+  openAgain: (profileId: string) => void;
+  /** Puts the list away without signing in. */
+  closeAgain: (profileId: string) => void;
   /** The agent's sign-in as it runs now (from a row or the new-session draft), or null. */
   requestOf: (profileId: string) => AuthRequest | null;
   /** The user's Check sign-in. */
@@ -47,9 +56,14 @@ export interface SettingsSignIn {
   sweep: (profileIds: readonly string[]) => void;
   /** The agent whose sign-in is running now, if any: another row's sign-in waits for it. */
   busyAgentId: string | null;
+  /** That agent's name, for the line that says whose sign-in runs. */
+  busyAgentName?: string | null;
   /** The agent login's terminal, for a dialog drawn above Settings. */
   terminal: ReturnType<typeof useAgentSignIn>['terminal'];
+  /** The login dialog's Cancel, X or Escape: ends the login and checks nothing. */
   cancelSignIn: () => void;
+  /** The login dialog's done button: the login may be finished, so the agent is checked. */
+  finishSignIn: () => void;
   retrySignIn: () => void;
 }
 
@@ -66,6 +80,7 @@ export interface SettingsSignInDeps {
 interface SignInProbeAnswer {
   reportsStatus?: unknown;
   signInChecked?: unknown;
+  authMethods?: unknown;
 }
 
 /**
@@ -79,6 +94,10 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
   const [checks, setChecks] = useState<Readonly<Record<string, AgentCheck>>>({});
   const [reports, setReports] = useState<Readonly<Record<string, boolean>>>({});
   const [methods, setMethods] = useState<Readonly<Record<string, readonly AuthMethod[]>>>({});
+  const [again, setAgain] = useState<Readonly<Record<string, AgainPhase>>>({});
+  const againRef = useRef<Readonly<Record<string, AgainPhase>>>({});
+  // Agents whose sign-in began from the Sign in again list: only their end closes it, never an older one left in the slot.
+  const startedFromListRef = useRef(new Set<string>());
   const depsRef = useLatest(deps);
   const inFlightRef = useRef(new Set<string>());
   const lastSweepRef = useRef(new Map<string, number>());
@@ -88,13 +107,17 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
   // Agents a sweep was asked for while another ran: the running one asks them when it ends.
   const queuedRef = useRef<readonly string[] | null>(null);
   const sweepRef = useRef<(profileIds: readonly string[]) => void>(() => {});
-  // The agent whose sign-in was started from a row, so a Cancel there clears its request.
-  const startedHereRef = useRef<string | null>(null);
 
   const setCheck = useCallback(
     (profileId: string, next: AgentCheck) => setChecks((prev) => ({ ...prev, [profileId]: next })),
     [],
   );
+  const setAgainPhase = useCallback((profileId: string, phase: AgainPhase) => {
+    const { [profileId]: _gone, ...rest } = againRef.current;
+    againRef.current = phase === 'closed' ? rest : { ...rest, [profileId]: phase };
+    setAgain(againRef.current);
+    if (phase === 'closed') startedFromListRef.current.delete(profileId);
+  }, []);
   const reportsRef = useRef<Readonly<Record<string, boolean>>>({});
   const learnReports = useCallback(
     (profileId: string, reportsStatus: boolean) => {
@@ -217,6 +240,74 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
     [depsRef, setCheck, learnReports, learnMethods, isSigningIn, hasNewerSignIn],
   );
 
+  const authRequest = signIn.auth.authRequest;
+  const methodsOf = useCallback(
+    (profileId: string): readonly AuthMethod[] =>
+      authRequest?.profileId === profileId ? authRequest.methods : (methods[profileId] ?? []),
+    [authRequest, methods],
+  );
+  const methodsRef = useLatest(methodsOf);
+
+  const closeAgain = useCallback((profileId: string) => setAgainPhase(profileId, 'closed'), [setAgainPhase]);
+
+  /**
+   * Sign in again: shows the methods the agent offers under a row that reads Ready. Methods already known
+   * are used as they are; otherwise the agent is asked through `acp_probe_sign_in`, which opens no session.
+   */
+  const openAgain = useCallback(
+    (profileId: string) => {
+      const { cwd: folder, agents, status: store } = depsRef.current;
+      const name = agents.find((a) => a.id === profileId)?.name ?? profileId;
+      const request = depsRef.current.signIn.auth.authRequest;
+      // Another agent's sign-in, or this one's own check, is not cut off.
+      const isRunning = request !== null && (request.status === 'signing-in' || request.status === 'checking');
+      if (isRunning || inFlightRef.current.has(profileId) || againRef.current[profileId] !== undefined) return;
+      // Every sign-in runs in a folder: without one the list's buttons could do nothing.
+      if (!folder) {
+        setCheck(profileId, { phase: 'done', message: `Open a folder first, then check ${name}.`, isFailure: true });
+        return;
+      }
+      if (methodsRef.current(profileId).length > 0) {
+        setAgainPhase(profileId, 'open');
+        return;
+      }
+      inFlightRef.current.add(profileId);
+      setAgainPhase(profileId, 'reading');
+      // A hide while the agent is asked leaves the list closed when the answer comes.
+      const isStillWanted = () => againRef.current[profileId] === 'reading';
+      void (async () => {
+        try {
+          const raw = (await invoke('acp_probe_sign_in', { profileId, cwd: folder })) as SignInProbeAnswer | null;
+          learnReports(profileId, raw?.reportsStatus === true);
+          if (raw?.reportsStatus !== true) cannotReportRef.current.add(profileId);
+          learnMethods(profileId, toAuthMethods(raw?.authMethods));
+          if (isStillWanted()) setAgainPhase(profileId, 'open');
+        } catch (error) {
+          const offered = parseAuthRequired(error);
+          if (offered) {
+            // Signed out after all: the row's own list takes over.
+            learnReports(profileId, true);
+            learnMethods(profileId, offered);
+            const request = depsRef.current.signIn.auth.authRequest;
+            const hasNewer = request?.profileId === profileId && (request.status === 'signing-in' || request.status === 'checking' || request.status === 'signed-in');
+            if (!hasNewer) store.markNeeded(profileId);
+            setAgainPhase(profileId, 'closed');
+          } else if (isStillWanted()) {
+            setAgainPhase(profileId, 'closed');
+            setCheck(profileId, {
+              phase: 'done',
+              message: `Could not check ${name}. Make sure it is installed and starts, then try again.`,
+              isFailure: true,
+            });
+          }
+        } finally {
+          inFlightRef.current.delete(profileId);
+        }
+      })();
+    },
+    [depsRef, methodsRef, inFlightRef, setAgainPhase, setCheck, learnReports, learnMethods],
+  );
+
   const sweep = useCallback(
     (profileIds: readonly string[]) => {
       const { cwd: folder, agentOptions } = depsRef.current;
@@ -255,27 +346,59 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
     sweepRef.current = sweep;
   }, [sweep]);
 
-  const authRequest = signIn.auth.authRequest;
-  const methodsOf = useCallback(
-    (profileId: string): readonly AuthMethod[] =>
-      authRequest?.profileId === profileId ? authRequest.methods : (methods[profileId] ?? []),
-    [authRequest, methods],
-  );
-
   const signInWith = useCallback(
     (profileId: string, methodId: string) => {
       const { cwd: folder, signIn: login } = depsRef.current;
       const offered = methodsOf(profileId);
       if (!folder || offered.length === 0) return;
-      if (login.startSignIn({ profileId, cwd: folder, methods: [...offered] }, methodId)) startedHereRef.current = profileId;
+      if (login.startSignIn({ profileId, cwd: folder, methods: [...offered] }, methodId)) {
+        if (againRef.current[profileId] === 'open') startedFromListRef.current.add(profileId);
+      }
     },
     [depsRef, methodsOf],
   );
 
+  // A sign-in that began from the Sign in again list and ended with the agent Ready ends the list too.
+  const { stateOf } = status;
+  useEffect(() => {
+    if (authRequest?.status !== 'signed-in') return;
+    const id = authRequest.profileId;
+    if (startedFromListRef.current.has(id) && stateOf(id) === 'ready') closeAgain(id);
+  }, [authRequest, stateOf, closeAgain]);
+
+  // Once the agent asks for a sign-in the row's own list takes over, so the Sign in again list is put away:
+  // left open, it would come back by itself when the agent is Ready again.
+  useEffect(() => {
+    for (const [id, phase] of Object.entries(again)) {
+      if (phase === 'open' && stateOf(id) === 'needed') closeAgain(id);
+    }
+  }, [again, stateOf, closeAgain]);
+
   /** The login dialog's Cancel. A request left idle by a cancel would make a new session of that agent wait on its panel. */
   const { cancel, auth } = signIn;
+  /** The agent of the request in the slot when a row or the Agents menu started it; the draft's own is not this hook's. */
+  const startedOutside = useCallback((): string | null => {
+    const request = depsRef.current.signIn.auth.authRequest;
+    return request?.isOutside ? request.profileId : null;
+  }, [depsRef]);
+
   const cancelSignIn = useCallback(() => {
-    const startedHere = startedHereRef.current;
+    const startedHere = startedOutside();
+    const login = depsRef.current.signIn;
+    // A check under way finishes on its own: only the dialog goes.
+    if (login.terminal.dialog?.phase === 'checking') {
+      login.terminal.close();
+      return;
+    }
+    cancel();
+    // The draft's login, and one carrying a refused message, keep their request: the panel shows it again.
+    if (startedHere === null || login.auth.authRequest?.pending) return;
+    auth.dismiss();
+  }, [cancel, auth, depsRef, startedOutside]);
+
+  /** The login dialog's done button: as Cancel, then the agent is asked whether the login took. */
+  const finishSignIn = useCallback(() => {
+    const startedHere = startedOutside();
     const login = depsRef.current.signIn;
     const phase = login.terminal.dialog?.phase;
     // A check under way finishes on its own: only the dialog goes.
@@ -283,20 +406,27 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
       login.terminal.close();
       return;
     }
-    // A login that still runs may be done: the dialog's line says Zorvo checks again on Close.
+    // A login that still runs may be done: the done button asks Zorvo to check.
     const wasRunning = phase === 'running';
     if (startedHere === null) {
-      // The draft's login, drawn here while Settings is open: its own Close checks the draft's request.
+      // The draft's login, drawn here while Settings is open: its own done button checks the draft's request.
+      if (wasRunning) login.closeDialog();
+      else cancel();
+      return;
+    }
+    // A refused message waits on this request: the draft's own check sends it once signed in.
+    if (login.auth.authRequest?.pending) {
       if (wasRunning) login.closeDialog();
       else cancel();
       return;
     }
     cancel();
     auth.dismiss();
-    startedHereRef.current = null;
     if (wasRunning) check(startedHere);
-  }, [cancel, auth, depsRef, check]);
+  }, [cancel, auth, depsRef, check, startedOutside]);
 
+  const busyId = authRequest && (authRequest.status === 'signing-in' || authRequest.status === 'checking') ? authRequest.profileId : null;
+  const { agents } = deps;
   return useMemo<SettingsSignIn>(
     () => ({
       cwd,
@@ -304,15 +434,20 @@ export function useSettingsSignIn(deps: SettingsSignInDeps): SettingsSignIn {
       checkOf: (profileId) => checks[profileId] ?? IDLE,
       reportsStatusOf: (profileId) => reports[profileId],
       methodsOf,
+      againOf: (profileId) => again[profileId] ?? 'closed',
+      openAgain,
+      closeAgain,
       requestOf: (profileId) => (authRequest?.profileId === profileId ? authRequest : null),
       check,
       signInWith,
       sweep,
-      busyAgentId: authRequest && (authRequest.status === 'signing-in' || authRequest.status === 'checking') ? authRequest.profileId : null,
+      busyAgentId: busyId,
+      busyAgentName: busyId === null ? null : (agents.find((a) => a.id === busyId)?.name ?? busyId),
       terminal: signIn.terminal,
       cancelSignIn,
+      finishSignIn,
       retrySignIn: signIn.retryStart,
     }),
-    [cwd, status.stateOf, checks, reports, methodsOf, authRequest, check, signInWith, sweep, signIn.terminal, cancelSignIn, signIn.retryStart],
+    [cwd, status.stateOf, checks, reports, methodsOf, again, openAgain, closeAgain, authRequest, busyId, agents, check, signInWith, sweep, signIn.terminal, cancelSignIn, finishSignIn, signIn.retryStart],
   );
 }

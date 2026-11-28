@@ -1,9 +1,0 @@
-{
-  "name": "zorvo-browser-lighthouse-runtime",
-  "private": true,
-  "version": "1.0.0",
-  "description": "Optional pinned Lighthouse runtime, installed in app data only.",
-  "dependencies": {
-    "lighthouse": "13.6.0"
-  }
-}

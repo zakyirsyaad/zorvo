@@ -3,12 +3,12 @@ import { render, screen, fireEvent, within } from "@testing-library/react";
 import { ContextMeter } from "../components/composer/ContextMeter";
 
 describe("ContextMeter", () => {
-  it("says how much of the context is used, in words", () => {
+  it("shows the share of context used compactly", () => {
     render(<ContextMeter used={38} size={100} />);
 
     const meter = screen.getByRole("meter", { name: "Context used" });
     expect(meter.getAttribute("aria-valuenow")).toBe("38");
-    expect(meter.textContent).toBe("38% of context");
+    expect(meter.textContent).toBe("38%");
   });
 
   it("shows the tokens in use when the window's size is unknown", () => {

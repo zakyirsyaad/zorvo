@@ -42,6 +42,19 @@ export function Community() {
               </li>
             ))}
           </ul>
+          <p className="text-[15px] leading-6 text-fg-muted" data-r="">
+            Tried Zorvo and stopped? Tell us what got in your way in the{" "}
+            <a
+              className="focus-ring text-fg underline underline-offset-4"
+              href={LINKS.feedback}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              feedback form on GitHub
+              <span className="sr-only">, opens in a new tab</span>
+            </a>
+            .
+          </p>
         </div>
         <div className="lp-col basis-110 items-center" data-reveal="">
           <div className="w-full flex justify-center" data-r="">

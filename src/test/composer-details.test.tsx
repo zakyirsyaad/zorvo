@@ -18,11 +18,11 @@ describe("the composer's placeholder", () => {
 });
 
 describe("the context meter", () => {
-  it("is a 14px ring before subtle words, its arc as long as the share in use", () => {
+  it("is a 14px ring before a compact percentage, its arc as long as the share in use", () => {
     render(<ContextMeter used={38} size={100} />);
     const button = screen.getByRole("button", { name: "Context details" });
     expect(button).toHaveClass("mr-1.5", "text-caption", "text-fg-subtle");
-    expect(button.textContent).toBe("38% of context");
+    expect(button.textContent).toBe("38%");
     const ring = button.querySelector("svg") as SVGElement;
     expect(ring.getAttribute("class")).toContain("size-3.5");
     expect(ring).toHaveAttribute("aria-hidden", "true");

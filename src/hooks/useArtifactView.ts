@@ -8,15 +8,23 @@ import { useLatest } from './useLatest';
  */
 export type ArtifactViewTarget =
   | { kind?: 'page'; sessionId: string; artifactId: string; version: number; reload: number }
-  | { kind: 'canvas'; sessionId: string; key: string; reload?: number };
+  | { kind: 'canvas'; sessionId: string; key: string; reload?: number }
+  | { kind: 'motion'; sessionId: string; key: string; format: string; reload?: number }
+  | { kind: 'design-system'; sessionId: string; key: string; reload?: number };
 
 /** What the view holds, whatever its reload number: Expand and Shrink keep one view for it. */
 function viewKeyOf(target: ArtifactViewTarget): string {
+  if (target.kind === 'motion') return `motion/${target.sessionId}/${target.key}/${target.format}`;
+  if (target.kind === 'design-system') return `ds/${target.sessionId}/${target.key}`;
   return target.kind === 'canvas' ? `canvas/${target.sessionId}/${target.key}` : `${target.sessionId}/${target.artifactId}/${target.version}`;
 }
 
 function showCall(target: ArtifactViewTarget, { x, y, width, height }: Rect): Promise<unknown> {
   if (target.kind === 'canvas') return invoke('canvas_view_show', { sessionId: target.sessionId, key: target.key, x, y, width, height });
+  if (target.kind === 'design-system') return invoke('ds_view_show', { sessionId: target.sessionId, key: target.key, x, y, width, height });
+  if (target.kind === 'motion') {
+    return invoke('motion_view_show', { sessionId: target.sessionId, key: target.key, format: target.format, x, y, width, height });
+  }
   return invoke('artifact_view_show', { sessionId: target.sessionId, artifactId: target.artifactId, version: target.version, x, y, width, height });
 }
 

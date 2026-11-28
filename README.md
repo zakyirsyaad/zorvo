@@ -34,10 +34,13 @@
   <img src="docs/assets/zorvo-reel.gif" alt="A short tour of Zorvo: one prompt sent to four agents, keeping the best result, handing a task to another agent, and reviewing a diff line by line." width="600">
 </p>
 
-**New in 0.14:** a calmer look. A new session starts from one card, a card
-beside the chat says what the session is doing and what it changed, and a
-Context tab shows what fills the agent's context. From 0.14.1, Zorvo is signed
-and notarized by Apple, so macOS opens it like any other app you download. The
+**New in 0.21:** agents can make videos. Ask for motion graphics and the agent
+writes a composition, previews it beside the chat and renders MP4s on your Mac.
+Rewind can put back the files the agent changed, and each file in the Changes
+tab has its own Discard. 0.20 let the Browser tab take the whole window, and
+0.19 added a box under a finished turn with the agent's recap and buttons for
+the next step, such as Commit or Create PR. From 0.14.1, Zorvo is signed and
+notarized by Apple, so macOS opens it like any other app you download. The
 [changelog](CHANGELOG.md) has the rest.
 
 > **NEAR hackathon judges:** start with [docs/hackathon/README.md](docs/hackathon/README.md). The
@@ -88,11 +91,15 @@ and notarized by Apple, so macOS opens it like any other app you download. The
 - **An agent catalog.** Settings → Agents lists every agent in the ACP
   registry. Add, install, update and remove agents there.
 - **Sign in without leaving the app.** An agent's own login, or its own setup
-  (Qwen Code: **Set up Qwen Code**), runs in a terminal inside Zorvo. The
-  **Agents** button next to Settings and each row in Settings → Agents say
-  whether an agent is ready, needs a sign-in or was not checked yet. An agent
-  that needs a sign-in lists its methods under its name, **Check sign-in** is
-  in the row's ⋯ menu, and a new session shows a sign-in card before you send.
+  (Qwen Code: **Open setup in terminal**), runs in a terminal inside Zorvo.
+  Press **I've signed in** (or **I'm done** after a setup) and Zorvo checks;
+  **Cancel** stops it without checking. A sign-in card leads with one button
+  and folds the other ways under it, and a way that needs an API key shows the
+  `export` line to add to your shell, with **Copy**. The **Agents** button next
+  to Settings and each row in Settings → Agents say whether an agent is
+  **Ready**, **Needs sign-in** or **Not checked yet**, and you can sign in or
+  check from either without leaving your session. A new session shows the
+  sign-in card before you send.
 - **Answer the agent's questions.** When an agent needs an answer from you, it
   can show a form or a question card in the chat, or send you to a web page.
 - **Pick up where you left off.** Continue a session you started in an agent's
@@ -120,8 +127,9 @@ and notarized by Apple, so macOS opens it like any other app you download. The
   **Deny** ends the request.
 - **Agents can open sessions.** An agent can open a new session from a brief
   it writes: in the same folder, in a worktree of its own, or in another
-  folder Zorvo knows, which asks every time. At most three sessions an agent
-  opened work at once, and you stay in the session you are in.
+  folder Zorvo knows, which asks every time. At most four sessions and
+  helpers an agent started work at once, and you stay in the session you are
+  in.
 - **Follow subagents and commands.** A subagent or a shell command an agent
   started opens as a tab beside the chat. With Claude Code and Qwen Code you
   see a subagent's steps as they arrive.
@@ -157,31 +165,74 @@ Private mode is off until you turn it on, and works with Qwen Code.
 - **See what the agent made, as a page.** An agent can show you a report, a
   diagram or a small dashboard as a web page beside the chat. Ask for a change
   and you get a new version; older versions stay, **Export** saves the page as
-  one HTML file, and **Output** in the sidebar lists the pages of every
+  one HTML file, and **Artifacts** in the sidebar lists the pages of every
   session. Press **Comment** above a page to mark text or a part of it, write
   what should change, and add your comments to your next message.
+- **A picture inside the reply.** For something small, such as a flow, a
+  comparison or a rough layout, an agent can draw it right in its answer. The
+  picture follows the light and dark theme. Fold it, **Expand** it, or use its
+  menu to copy it as an image or save it as SVG, HTML or PNG. Nothing in it
+  runs and it has no links; for a page you can click through, the agent shows
+  a page instead.
 - **Several screens on one canvas.** For a flow or variants of a screen, an
   agent can lay out artboards in sections on a canvas you pan and zoom.
   Comment on an artboard, **Pick** a variant, ask the agent to **Build this**
   screen in your repository, or **Export** artboards as PNG or PDF. The canvas
   is a folder in your project (`canvas.json` and one HTML file per artboard),
   so git keeps it and deleting the session keeps it.
+- **Videos made on your Mac.** Ask an agent for a video or motion graphics and
+  it writes a composition (a page that moves, with a `motion.json`) in your
+  project. Zorvo previews it beside the chat with a play head, and renders an
+  MP4 of each format you asked for, with sound only when you ask. **Export**
+  saves one format or all of them. A video an agent shows, such as a Remotion
+  render, plays in the chat's card and the Artifacts tab, and the Files tab
+  plays the videos in your project.
+- **Your project's design system, read first.** A folder with a
+  `design-system.json` (a brand book, tokens and components, as Claude Design
+  lays them out) is a design system. Before an agent designs a page, a canvas
+  or a motion, Zorvo tells it which systems the session's folder holds and
+  which is the default. Zorvo looks only in that folder and below it, never
+  above it, so a session in a subfolder does not see a system at the
+  repository's root. An agent can also make one for you, from your code or
+  from brand files you give it, and Zorvo shows it beside the chat: its brand
+  book, colours and type in each theme, and every component's live preview.
+  A canvas that names the system loads its tokens, and **Theme** switches
+  every artboard. Comment on a token, a component or a passage of the brand
+  book, and when the system was made from your code Zorvo says when that code
+  changed; **Sync again** puts a message for the agent in your composer.
 - **Reply to part of a reply.** Select text in the chat to copy it, or press
   **Reply** to quote it in your next message.
-- **A session overview beside the chat.** A card at the top right of the chat
+- **Read back without losing your place.** The chat follows the agent's reply
+  while you are at the bottom. Scroll up and it stays where you are; the round
+  arrow over the message box takes you back to the newest message.
+- **A next step when a turn ends.** Under the agent's last reply, a box shows
+  what changed in the repository, the agent's short recap and its question,
+  with buttons such as **Commit**, **Create PR** or **Merge**. A button sends
+  its words as your message, so the agent does the work with its own tools.
+- **A session overview beside the chat.** A panel on the right of the chat
   says where the session works (its changes, its folder, its branch), what is
-  running, the files you attached, and the pages and files the agent made. A
-  click opens the matching tab, and the card folds to a pill.
+  running, the files you attached, the pages and files the agent made, and the
+  pull requests it opened. A click opens the matching tab, and the panel folds
+  to a pill.
 - **One inspector beside the chat.** The top bar's **Inspector** button opens a
-  panel with five tabs: Changes, Activity, Files, Output and Terminal. Drag its
-  edge to resize it; Zorvo remembers the width.
+  panel with six tabs: Changes, Activity, Files, Artifacts, Browser and
+  Terminal. Drag its edge to resize it; Zorvo remembers the width.
+- **A browser in the session.** The **Browser** tab opens the pages you or the
+  agent choose, in a WebKit view of its own. **Expand** gives it the whole
+  window and **Shrink** brings the chat back, with the page as you left it;
+  its edge drags as wide as the window allows. **Choose File** on a page opens
+  the macOS file picker. An agent can upload a file from the session's folder
+  to a page you are signed in to: a card first names the files and the site,
+  and nothing is sent until you allow it.
 - **See what an agent did.** The Activity tab lists, turn by turn, the files it
   reported, the commands it ran and the permissions you answered, and shows
   files git says changed that it did not report. It is the agent's own report,
   and it says so.
 - **See every change.** The Changes tab shows each changed file with its counts
-  and diff, and lets you commit the files you choose. The full diff review opens
-  in the chat's place, with the files listed on the left.
+  and diff, and lets you commit the files you choose. **Discard** (or
+  **Delete**, for a new file) undoes one file, after a second click to confirm.
+  The full diff review opens in the chat's place, with the files listed on the
+  left.
 - **Comment on lines of a diff.** Leave comments on the lines an agent changed,
   in the Changes tab or the full review, add them to your message, read or edit
   it, and send it. The agent gets each comment with its file, its line and the
@@ -193,12 +244,14 @@ Private mode is off until you turn it on, and works with Qwen Code.
   </p>
 
 - **Know when an agent is stuck.** If an agent reports failed requests, or has
-  sent nothing for a minute, Zorvo says so under **Working…**, with a Stop
-  button. If the agent has not stopped ten seconds after **Stop**, **End
+  sent nothing for three minutes (five while a command or tool runs), Zorvo
+  says so under **Working…**, with a Stop button. If the agent has not stopped ten seconds after **Stop**, **End
   agent** ends its process.
-- **Follow your pull request.** The session's card and its row in the sidebar
-  show the branch's pull request and how its checks stand, read with your own
-  `gh`.
+- **Follow your pull requests.** The session's overview lists every pull
+  request the agent opened in it, newest first, with how its checks stand; the
+  session's row in the sidebar marks the newest one. A session whose agent
+  opened none shows the pull request of the branch it works on. All of it is
+  read with your own `gh`.
 - **Connect to GitHub.** **Settings → GitHub** shows whether your
   GitHub CLI is installed and signed in. If it is not signed in, **Connect**
   opens a terminal where `gh` signs you in through your browser; `gh` asks a few
@@ -213,7 +266,9 @@ Private mode is off until you turn it on, and works with Qwen Code.
   "Waiting for you", "Finished, unread"). Rename, pin and archive them, or open
   one in its own window. **Hide sidebar** gives the chat the whole window.
 - **Fork and rewind.** Fork any reply into a new session, or rewind to before
-  one of your messages and send it again, edited.
+  one of your messages and send it again, edited. **Rewind + files** also puts
+  back the files the agent reported changing since that message, from a git
+  snapshot Zorvo takes before each turn.
 - **Worktrees.** Run a session in its own git worktree on an `agent/<title>`
   branch, so agents in the same repository never edit the same files.
 - **A terminal where the agent works.** The inspector's **Terminal** tab opens
@@ -244,8 +299,8 @@ Every agent works the same way in Zorvo: its own models, effort and modes,
 approvals in the chat, fork and rewind. A session continues after a restart
 when its agent can resume or reload sessions; an agent that cannot says so.
 
-A new version of an agent is offered a week after it was published, never
-sooner, and never one the registry has withdrawn.
+A new version of an agent is offered as soon as the ACP registry lists it,
+and never one the registry has withdrawn.
 
 ## Requirements
 
@@ -368,7 +423,9 @@ in the other. macOS asks again for notification and folder permissions.
    - **Fork** under any reply starts a new session from there.
    - **Rewind** under one of your messages takes the conversation back to
      before it and puts the message in the composer to edit. Files the agent
-     changed stay as they are.
+     changed stay as they are, unless you choose **Rewind + files**, which
+     puts back the files it reported changing. Nothing else in the repository
+     is touched.
 
 Each session starts in the safest permission mode its agent offers (its
 **Default**, **Manual**, **Ask** or **Read-only** mode), so the agent asks
@@ -412,7 +469,7 @@ before it edits files or runs commands. Pick another mode in the composer.
   allowed once, never in advance. You can turn all of this off in
   **Settings → Agents**.
 - **A page an agent shows you is kept apart.** An agent can make a web page
-  and show it in the **Output** tab. The page runs in a part of the window
+  and show it in the **Artifacts** tab. The page runs in a part of the window
   of its own: it cannot call Zorvo, read your files, keep data, or open any
   address but its own. It may load scripts from `cdnjs.cloudflare.com`,
   `cdn.jsdelivr.net`, `unpkg.com`, `cdn.tailwindcss.com` and `code.jquery.com`
@@ -422,6 +479,12 @@ before it edits files or runs commands. Pick another mode in the composer.
   Zorvo's own interface still makes no request at all. Pages are stored on
   this Mac and deleted with their session. A page you **Export** is an
   ordinary HTML file: opened in a browser, it has none of these limits.
+- **A picture in a reply reaches no host.** Zorvo removes scripts and links from
+  a picture before it is shown, and draws it in a frame that cannot run code
+  or load anything from the network: an image in it must be part of the
+  picture itself. Pictures are stored on this Mac and deleted with their
+  session. A picture you save as HTML keeps these limits when opened in a
+  browser, and one you save as SVG has its outside addresses taken out.
 - **A canvas reaches no new host.** Each artboard of a canvas runs under the
   same limits as a page, and may load the same script and font hosts, plus
   the files in its own canvas folder. Zorvo's frame around the artboards
@@ -429,8 +492,24 @@ before it edits files or runs commands. Pick another mode in the composer.
   Zorvo keeps only a list of the canvases a session showed and pictures of
   the artboards on this Mac, and removes a picture no canvas has used for 30
   days.
+- **A design system reaches no new host, but may load fonts and React.**
+  Zorvo's own page around a design system loads nothing from the network by
+  itself. Opening one, like opening a page, may load the Google Fonts its
+  tokens name and React from `cdn.jsdelivr.net` for its component previews,
+  a system that came with a cloned repository included. Zorvo keeps only a
+  list of the systems a session showed, and checks whether the code a system
+  was made from changed with your own `git`, read-only.
+- **Videos are rendered on this Mac.** Zorvo draws each frame with WebKit and
+  encodes it with AVFoundation, so rendering downloads nothing. A composition
+  loads the same script and font hosts as a page, and the rendered files stay
+  in the composition's `out/` folder in your project.
+- **Rewind's snapshots stay in your repository.** Before each turn Zorvo
+  records the files git does not ignore (leaving out untracked files over
+  5 MB) in your repository's own git objects. Taking a snapshot leaves your
+  index, your branch and your stash alone; a restore writes only the files
+  the agent reported changing.
 - **No telemetry.** Zorvo sends nothing about you or your work anywhere.
-- **Browser pages.** The Browser inspector loads the HTTP(S) pages you or your agent choose, and their subresources, in a separate WebKit view. Submitted address-bar search text goes to Google. The chat's own webview keeps its network restrictions. Each session has an in-memory browser store; different sessions do not share it. Agents need a browser session grant, and file uploads need a separate destination/files approval. Chromium debug opens an isolated Chrome or Brave window; its tabs and cookies are separate from WebKit. Optional Lighthouse tools are installed from npm with a pinned integrity lockfile after you click Install audit tools; an audit uses a fresh Chromium profile and a temporary loopback debugging endpoint.
+- **Browser pages.** The Browser inspector loads the HTTP(S) pages you or your agent choose, and their subresources, in a separate WebKit view. Address-bar text must be a web address; no search provider is configured. The chat's own webview keeps its network restrictions. Each session has an in-memory browser store; different sessions do not share it. Agents need an explicit browser session grant on a chat card. An agent's WebKit file upload needs a separate one-time approval card that names the files and the receiving site; the files must be in the session's folder, and Zorvo sends a private copy of them, never more than 5 MB at once. Capture, downloads and automatic popups are blocked; permitted page-created tabs open in the background. Password and sensitive autocomplete values are omitted from snapshots. Agent exit revokes access while preserving the user's tabs; archiving or deleting the session closes its pages.
 - **Other connections, all named.** Outside the browser pages, Zorvo itself contacts only:
   - the ACP registry (`cdn.agentclientprotocol.com`), to list agents, their
     versions and their logos;
@@ -485,10 +564,10 @@ before it edits files or runs commands. Pick another mode in the composer.
 |---|---|
 | macOS blocks Zorvo on first open | Zorvo 0.14.1 and later only asks once, with **Open**. A copy macOS still blocks is an older version, or one that did not come from this repository's [releases](https://github.com/zakyirsyaad/zorvo/releases); see [Open Zorvo the first time](#open-zorvo-the-first-time). |
 | An agent shows as not installed | Click **Install** next to it in Settings → Agents, or pick it in a new session's agent list and click **Install**. Zorvo brings Node.js or `uv` when the agent needs them. Then click **Check again**. |
-| "Sign in to *agent*" | Use a sign-in method the panel offers, or sign in once in a terminal (see [Requirements](#requirements)). If you set a key outside Zorvo (for example in `~/.zshrc`), click **Check again** in the panel: Zorvo reads your shell's settings again, then asks the agent. Your refused message waits in the box and is sent once you are signed in. |
+| "Sign in to *agent*" | Use a sign-in method the panel offers, or sign in once in a terminal (see [Requirements](#requirements)). If you set a key outside Zorvo (for example in `~/.zshrc`), come back to Zorvo's window, or click **Check again** in the panel: Zorvo reads your shell's settings again, then asks the agent. Your refused message waits in the box and is sent once you are signed in. |
 | **Update & restart** fails with a read-only message | A copy that runs from the disk image cannot update itself: drag it into Applications and open it from there. Or download the newest DMG from [releases](https://github.com/zakyirsyaad/zorvo/releases) and replace Zorvo in Applications. |
 | The welcome screen says "Zorvo could not read your agents" | Press **Check again**. Zorvo reads your login shell's environment to find your agents, so if it keeps failing, check that a new terminal window opens without errors, then quit and reopen Zorvo. |
-| GLM Agent asks you to sign in, or reads **Not checked** | It needs `Z_AI_API_KEY` in your shell. Export it in `~/.zshrc` (or run the agent's own setup), then click **Check again**. Zorvo only checks that the variable is set, never its value. |
+| GLM Agent asks you to sign in, or reads **Not checked yet** | It needs `Z_AI_API_KEY` in your shell. Export it in `~/.zshrc` (or run the agent's own setup), then click **Check again**. Zorvo only checks that the variable is set, never its value. |
 | An agent's row says **Installing** after an update | Zorvo installs the package of each agent you have used, once, in the background. The agent can start a session when its row stops saying Installing. |
 | The agent keeps working after **Stop** | Stop asks the agent to end its turn. If it has not stopped after ten seconds, the chat offers **End agent**, which ends the agent's process. You can continue the session afterwards. |
 | The agent stays on **Working…** | If Zorvo shows that the agent's requests failed, the cause is usually the agent's account, such as a used-up quota. Check it in the agent's own CLI, then click **Stop** and send your message again. |
@@ -514,6 +593,10 @@ others.
 
 ## Feedback and security
 
+- **Tell us how Zorvo works for you.** The
+  [feedback form](https://github.com/zakyirsyaad/zorvo/issues/new?template=feedback.yml)
+  asks whether you still use Zorvo and what got in your way. Short answers are
+  fine.
 - **Found a problem or have an idea?**
   [Open an issue](https://github.com/zakyirsyaad/zorvo/issues/new/choose).
   Never paste API keys, tokens or other secrets into an issue.

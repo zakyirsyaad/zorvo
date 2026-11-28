@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Motion</title>
+<style>
+  /* The app's design tokens (src/styles/globals.css): dark values, then the light ones. */
+  :root {
+    --motion-ground: #0a0a0b;
+    --motion-text: #a1a1aa;
+    /* A motion page is a frame of video, drawn on white until it paints its own background. */
+    --motion-page: #ffffff;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --motion-ground: #f4f4f5;
+      --motion-text: #52525b;
+    }
+  }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--motion-ground); }
+  body { font: 13px/1.3 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; color: var(--motion-text); }
+  #stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  #frame { border: 0; background: var(--motion-page); transform-origin: center center; flex: none; }
+  #empty { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+</style>
+</head>
+<body>
+<div id="stage"><div id="empty">Loading the preview…</div></div>
+<script>
+// Zorvo's motion preview. Zorvo hands it the motion (`apply`) and its commands (`play`, `pause`,
+// `seek`, `mute`, `format`) through `evaluate_script`; it keeps the clock, seeks the page's frame
+// on every display frame and plays the audio tracks in step. Pinned by `motion_shell_is_pinned`.
+(() => {
+  const stage = document.getElementById('stage');
+  let state = null;
+  let frame = null;
+  let playing = false;
+  let startedAt = 0;
+  let offset = 0;
+  let muted = false;
+  let tracks = [];
+  let timers = [];
+
+  const now = () => (playing ? Math.min(offset + (performance.now() - startedAt) / 1000, state.duration) : offset);
+
+  const fit = () => {
+    if (!frame || !state) return;
+    const format = state.formats.find((f) => f.id === state.format) || state.formats[0];
+    const scale = Math.min(innerWidth / format.width, innerHeight / format.height);
+    frame.style.width = format.width + 'px';
+    frame.style.height = format.height + 'px';
+    frame.style.transform = 'scale(' + scale + ')';
+  };
+
+  const post = (t) => {
+    if (frame && frame.contentWindow) frame.contentWindow.postMessage({ zorvo: 'motion-seek', t }, '*');
+  };
+
+  const stopAudio = () => {
+    for (const timer of timers) clearTimeout(timer);
+    timers = [];
+    for (const track of tracks) track.audio.pause();
+  };
+
+  const startAudio = (t) => {
+    stopAudio();
+    if (muted) return;
+    for (const track of tracks) {
+      const local = t - track.start;
+      const begin = () => {
+        track.audio.currentTime = Math.max(0, now() - track.start);
+        track.audio.play().catch(() => {});
+      };
+      if (local >= 0) begin();
+      else timers.push(setTimeout(begin, -local * 1000));
+    }
+  };
+
+  const tick = () => {
+    if (!playing) return;
+    const t = now();
+    post(t);
+    if (t >= state.duration) {
+      playing = false;
+      offset = state.duration;
+      stopAudio();
+      return;
+    }
+    requestAnimationFrame(tick);
+  };
+
+  const load = () => {
+    stopAudio();
+    stage.textContent = '';
+    const format = state.formats.find((f) => f.id === state.format) || state.formats[0];
+    frame = document.createElement('iframe');
+    frame.id = 'frame';
+    frame.setAttribute('sandbox', 'allow-scripts');
+    frame.setAttribute('title', state.title);
+    frame.src = format.url;
+    frame.addEventListener('load', () => post(now()));
+    stage.appendChild(frame);
+    tracks = state.audio.map((track) => {
+      const audio = new Audio(track.url);
+      audio.preload = 'auto';
+      audio.volume = track.volume;
+      return { audio, start: track.start };
+    });
+    fit();
+  };
+
+  const shell = {
+    apply(next) {
+      const reload = !state || next.key !== state.key || next.version !== state.version || next.format !== state.format;
+      state = next;
+      if (reload) {
+        playing = false;
+        offset = Math.min(offset, state.duration);
+        load();
+      }
+    },
+    play() {
+      if (!state || playing) return;
+      if (offset >= state.duration) offset = 0;
+      playing = true;
+      startedAt = performance.now();
+      startAudio(offset);
+      requestAnimationFrame(tick);
+    },
+    pause() {
+      if (!state) return;
+      offset = now();
+      playing = false;
+      stopAudio();
+      post(offset);
+    },
+    seek(t) {
+      if (!state) return;
+      offset = Math.min(Math.max(t, 0), state.duration);
+      startedAt = performance.now();
+      post(offset);
+      if (playing) startAudio(offset);
+    },
+    mute(on) {
+      muted = on;
+      if (muted) stopAudio();
+      else if (playing) startAudio(now());
+    },
+  };
+  Object.defineProperty(window, '__zorvoMotionShell', { value: Object.freeze(shell), writable: false, configurable: false });
+  addEventListener('resize', fit);
+})();
+</script>
+</body>
+</html>

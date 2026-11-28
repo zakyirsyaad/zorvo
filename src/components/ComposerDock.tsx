@@ -1,5 +1,5 @@
 import { useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
-import { ArrowUp, KeyRound, Paperclip, ShieldAlert, Square } from "lucide-react";
+import { ArrowUp, KeyRound, Paperclip, Repeat, ShieldAlert, Square } from "lucide-react";
 import { CompareModelStatus } from "./composer/CompareModelStatus";
 import type { CompareModelControl } from "../lib/compare-models";
 import { AgentTile } from "./ui/AgentTile";
@@ -10,6 +10,7 @@ import { MoreControls } from "./composer/MoreControls";
 import { splitControls } from "../lib/composer-overflow";
 import { useAfter } from "../hooks/useAfter";
 import { AgentChipRow, type AgentChipRowProps } from "./composer/AgentChipRow";
+import { SessionAgentPicker, type SessionAgentPickerProps } from "./composer/SessionAgentPicker";
 import { JOINED_MODEL_CHIP } from "./composer/chip-style";
 import type { FolderControl } from "./composer/FolderPicker";
 import { DraftChips } from "./composer/DraftChips";
@@ -131,6 +132,11 @@ export interface ComposerDockProps {
   isThinking?: boolean;
   /** Interrupts the agent's current turn; shown in place of Send while it works. */
   onStop?: () => void;
+  /**
+   * While the agent works, Send stays beside Stop and hands the message to `onSendMessage` to queue (the
+   * parent holds it until the turn ends). Off: Stop alone, as in a popout or while review comments are held.
+   */
+  queueing?: boolean;
   placeholder?: string;
   disabled?: boolean;
   /** True when only sending must wait (e.g. for the agent's install): the prompt can still be written. */
@@ -182,6 +188,12 @@ export interface ComposerDockProps {
   helper?: string;
   /** A running session's agent, named first in the row; drafts show theirs as chips. */
   sessionAgent?: { profileId: string; name: string };
+  /** A running session's agent as a menu of the agents its conversation can continue with; replaces `sessionAgent`'s label. */
+  agentPicker?: Omit<SessionAgentPickerProps, "isOpen" | "onToggle" | "onClose">;
+  /** Above the card while another agent is picked: what Send will do, and the way back to the session's own agent. */
+  switchNote?: { text: string; keepLabel: string; onKeep: () => void };
+  /** The icon Send button's accessible name, when it does something other than send to this session's agent. */
+  sendName?: string;
   /**
    * Before a new session starts: the Private chip after the branch's and, while it is on, the private model menu
    * joined to Qwen Code's chip, the session limit chip, and the credits left under the card. The parent drops the
@@ -229,6 +241,7 @@ export function ComposerDock({
   controls = {},
   isThinking = false,
   onStop,
+  queueing = false,
   placeholder,
   disabled = false,
   sendDisabled = false,
@@ -249,6 +262,9 @@ export function ComposerDock({
   folder,
   agents,
   sessionAgent,
+  agentPicker,
+  switchNote,
+  sendName,
   privateDraft,
   privateSessionLine,
   compareModels,
@@ -320,8 +336,9 @@ export function ComposerDock({
     },
   });
 
-  // While the agent works, Stop takes Send's place; the draft waits for the turn to end.
-  const canSend = !disabled && !sendDisabled && !(isThinking && onStop);
+  // While the agent works, Stop takes Send's place, unless the parent queues what is sent meanwhile.
+  const isQueueing = isThinking && Boolean(onStop) && queueing;
+  const canSend = !disabled && !sendDisabled && (isQueueing || !(isThinking && onStop));
 
   // Counts the messages this composer has let go of (Send, clear, restore), so a pasted image still being
   // saved is not added to the next one.
@@ -628,6 +645,21 @@ export function ComposerDock({
 
   return (
     <footer ref={containerRef} className={`w-full ${isDraft ? "max-w-draft" : "max-w-chat"} flex flex-col items-center select-none`}>
+      {/* Mounted with the agent picker, before any pick: a live region inserted with its text is often not read out. */}
+      {agentPicker && (
+        <span role="status" data-switch-status="" className="sr-only">
+          {switchNote?.text ?? ""}
+        </span>
+      )}
+      {switchNote && (
+        <div className="mb-3 flex w-full items-center gap-2 rounded-panel border border-border bg-surface-2 py-2 pl-3 pr-2 text-ui-sm text-fg-secondary">
+          <Repeat size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
+          <span className="min-w-0 flex-1">{switchNote.text}</span>
+          <Button variant="ghost" tone="secondary" size="sm" onClick={switchNote.onKeep}>
+            {switchNote.keepLabel}
+          </Button>
+        </div>
+      )}
       {aboveCardSlots && (
         // Hidden while neither place holds a panel; `empty:` no longer applies, since the two places are always there.
         <div data-above-card="" className="mb-3 flex w-full flex-col gap-3 [&:not(:has(>:not(:empty)))]:hidden">
@@ -718,7 +750,7 @@ export function ComposerDock({
 
         {/* Wraps instead of overflowing: a draft can show folder, agent, mode, model and effort at once. */}
         <div data-composer-row="" className="flex flex-wrap items-center gap-1 text-ui-sm">
-          <div className="flex min-w-0 flex-wrap items-center gap-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-0.5">
             {onAttach && (
               <IconButton
                 label="Add attachment"
@@ -743,7 +775,15 @@ export function ComposerDock({
               </DraftChips>
             )}
 
-            {sessionAgent && !agents && (
+            {agentPicker && !agents && (
+              <SessionAgentPicker
+                {...agentPicker}
+                isOpen={openDropdown === "agent"}
+                onToggle={() => toggle("agent")}
+                onClose={() => closeDropdown("agent")}
+              />
+            )}
+            {sessionAgent && !agents && !agentPicker && (
               // A running session's agent, named first: a label, since a session cannot change its agent.
               <span data-agent-chip="" className="inline-flex h-6.5 min-w-0 items-center gap-1.5 pl-0.5 pr-1.5 text-ui-sm text-fg-secondary">
                 <AgentTile profileId={sessionAgent.profileId} name="" size={16} />
@@ -794,42 +834,65 @@ export function ComposerDock({
 
           </div>
 
-          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          <div className="ml-auto flex shrink-0 items-center justify-end gap-1.5">
             {contextUsage && <ContextMeter {...contextUsage} onOpen={onOpenContext} />}
             {privateSessionLine && (
               <span className="text-caption text-fg-subtle">{privateSessionLine}</span>
             )}
 
-            {isThinking && onStop ? (
-              <IconButton
-                variant="outline"
-                label="Stop agent"
-                title="Stop the agent's current turn"
-                onClick={onStop}
-              >
-                <Square size={11} />
-              </IconButton>
-            ) : sendLabel ? (
-              <Button
-                variant="primary"
-                aria-describedby={sendBlockedNoteId}
-                onClick={handleSend}
-                disabled={isSendEmpty || !canSend}
-              >
-                {sendLabel}
-                <ArrowUp size={12} aria-hidden="true" />
-              </Button>
-            ) : (
-              <IconButton
-                variant="primary"
-                label="Send message"
-                aria-describedby={sendBlockedNoteId}
-                onClick={handleSend}
-                disabled={isSendEmpty || !canSend}
-              >
-                <ArrowUp size={14} />
-              </IconButton>
-            )}
+            {(() => {
+              // One action slot: Stop while a turn runs and the box is empty; Queue once the user types or attaches.
+              if (isQueueing && !isSendEmpty) {
+                return (
+                  <IconButton
+                    variant="primary"
+                    label="Queue message"
+                    title={agentName ? `Sent when ${agentName} finishes.` : "Sent when the turn ends."}
+                    aria-describedby={sendBlockedNoteId}
+                    onClick={handleSend}
+                    disabled={!canSend}
+                  >
+                    <ArrowUp size={14} />
+                  </IconButton>
+                );
+              }
+              if (isThinking && onStop) {
+                return (
+                  <IconButton
+                    variant="outline"
+                    label="Stop agent"
+                    title="Stop the agent's current turn"
+                    onClick={onStop}
+                  >
+                    <Square size={11} />
+                  </IconButton>
+                );
+              }
+              if (sendLabel) {
+                return (
+                  <Button
+                    variant="primary"
+                    aria-describedby={sendBlockedNoteId}
+                    onClick={handleSend}
+                    disabled={isSendEmpty || !canSend}
+                  >
+                    {sendLabel}
+                    <ArrowUp size={12} aria-hidden="true" />
+                  </Button>
+                );
+              }
+              return (
+                <IconButton
+                  variant="primary"
+                  label={sendName ?? "Send message"}
+                  aria-describedby={sendBlockedNoteId}
+                  onClick={handleSend}
+                  disabled={isSendEmpty || !canSend}
+                >
+                  <ArrowUp size={14} />
+                </IconButton>
+              );
+            })()}
           </div>
         </div>
         {privateDraft?.paymentLine && (

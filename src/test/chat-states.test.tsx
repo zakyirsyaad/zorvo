@@ -33,12 +33,22 @@ describe("the failed turn, as drawn", () => {
 });
 
 describe("the working line, as drawn", () => {
-  it("is a ringed 6px dot, the words in fg-secondary and the time in fg-subtle", () => {
+  it("is the Zorvo symbol at work, the words in fg-secondary and the time in fg-subtle", () => {
     render(<WorkingIndicator agentName="Claude Code" since={Date.now() - 72_000} />);
     const line = screen.getByTestId("agent-working");
-    const dot = line.querySelector("[data-working-dot]") as HTMLElement;
-    expect(dot).toHaveClass("size-1.5", "rounded-full", "bg-status-running", "ring-4", "ring-chip");
-    expect(dot.parentElement).toHaveClass("gap-2.5");
+    const logo = line.querySelector("[data-working-logo]") as HTMLElement;
+    const svg = logo.querySelector("svg") as SVGElement;
+    expect(svg).toHaveAttribute("aria-hidden", "true");
+    expect(svg).toHaveClass("size-3.5");
+    // The chevrons light in turn and the cursor blinks, each only with motion allowed.
+    const paths = [...svg.querySelectorAll("path")].map((path) => path.getAttribute("class"));
+    expect(paths).toEqual([
+      "motion-safe:animate-working-chevron",
+      "motion-safe:animate-working-chevron-late",
+      "motion-safe:animate-working-cursor",
+    ]);
+    expect(logo.parentElement).toHaveClass("gap-2.5");
+    expect(line).toHaveTextContent(/^Claude Code is working/);
     expect(within(line).getByText("Claude Code is working")).toHaveClass("text-ui", "text-fg-secondary");
     const time = within(line).getByText("1m 12s");
     expect(time).toHaveClass("text-caption", "text-fg-subtle", "tabular-nums");

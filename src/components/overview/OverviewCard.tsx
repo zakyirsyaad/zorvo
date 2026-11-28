@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode, type Ref } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import {
   Check,
   ChevronDown,
@@ -16,21 +16,29 @@ import {
   GitPullRequestDraft,
   Image as ImageIcon,
   LoaderCircle,
-  PanelRight,
   PanelsTopLeft,
   Terminal,
   Users,
   X,
 } from "lucide-react";
+import type { PullRequestStatus } from "../../hooks/usePullRequest";
 import { useNow } from "../../hooks/useNow";
 import type { TaskTab } from "../../hooks/useTaskTabs";
 import { fileNameOf } from "../../lib/attachments";
 import { formatElapsed } from "../../lib/background-tasks";
 import { fileNameAndFolder, pathInFolder, type CreatedFile } from "../../lib/created-files";
-import { LOOK_STYLE, pullRequestLine, pullRequestLook, type PullRequestLook } from "../../lib/pull-request-look";
+import {
+  LOOK_STYLE,
+  pullRequestChecksSummary,
+  pullRequestLine,
+  pullRequestLook,
+  pullRequestStateWord,
+  type PullRequestChecksTone,
+  type PullRequestLook,
+} from "../../lib/pull-request-look";
 import { formatRelativeTime } from "../../lib/relative-time";
 import { newestVersion } from "../../lib/artifacts";
-import { pillParts, SECTION_CAP, type Overview, type OverviewTask } from "../../lib/session-overview";
+import { SECTION_CAP, type Overview, type OverviewTask } from "../../lib/session-overview";
 import { ImagePreviewDialog } from "../composer/ImagePreviewDialog";
 import { IconButton } from "../ui/IconButton";
 
@@ -44,7 +52,14 @@ export interface OverviewCardProps {
   /** The folder the file viewer shows: a file must be inside it to open there. */
   filesRoot?: string;
   isCollapsed: boolean;
+  /** True when the chat sheet is narrower than 900px, so the overview floats over the chat when opened. */
+  isNarrow?: boolean;
+  /** True when the floating overlay is open on a narrow sheet. */
+  isFloating?: boolean;
   onToggleCollapsed: () => void;
+  onCloseFloating?: () => void;
+  /** The top bar's overview toggle, which takes focus back when the card folds from its own button. */
+  returnFocusTo?: RefObject<HTMLButtonElement | null>;
   onShowTab: (tab: "changes" | "files") => void;
   onOpenTask: (tab: TaskTab) => void;
   onOpenPage: (artifactId: string) => void;
@@ -70,7 +85,7 @@ const ICON = "size-3.5 shrink-0 text-fg-muted";
 const META = "shrink-0 text-caption text-fg-subtle";
 
 /** A row's name and, under it, its second line. */
-function Label({ name, detail, isMono = false }: { name: string; detail?: string; isMono?: boolean }) {
+function Label({ name, detail, isMono = false }: { name: string; detail?: ReactNode; isMono?: boolean }) {
   return (
     <span className="flex min-w-0 flex-1 flex-col">
       <span className={`truncate font-medium text-fg ${isMono ? "font-mono text-ui-sm" : ""}`}>{name}</span>
@@ -108,6 +123,8 @@ const TASK_ICON = { subagent: Users, shell: Terminal } as const;
 
 /** The mark at a task's start: work in progress spins, a question waits, the end says how it went. */
 function TaskState({ task }: { task: OverviewTask }) {
+  // A quiet agent is not working as far as anyone can tell: no spinner, the same mark as a task that waits.
+  if (task.status === "Quiet") return <CircleAlert aria-hidden="true" className="size-3.5 shrink-0 text-status-attention" />;
   if (task.state === "running") return <LoaderCircle aria-hidden="true" className="size-3.5 shrink-0 text-status-running motion-safe:animate-spin" />;
   if (task.state === "needs-you") return <CircleAlert aria-hidden="true" className="size-3.5 shrink-0 text-status-attention" />;
   if (task.state === "failed") return <X aria-hidden="true" className="size-3.5 shrink-0 text-danger" />;
@@ -119,14 +136,9 @@ function TaskRowOf({ task, onOpen }: { task: OverviewTask; onOpen: (tab: TaskTab
   const now = useNow(1000, isLive && task.startedAt !== undefined);
   const elapsed = isLive && task.startedAt !== undefined ? formatElapsed(now - task.startedAt) : undefined;
   const Kind = TASK_ICON[task.kind];
-  const statusWord = task.state === "failed" ? "Failed" : task.state === "needs-you" ? "Needs you" : undefined;
-  return (
-    <button
-      type="button"
-      aria-label={`Open ${task.title}. ${task.kind === "subagent" ? "Subagent" : "Shell command"}, ${task.status.toLowerCase()}.`}
-      onClick={() => onOpen(task.tab)}
-      className={ROW}
-    >
+  const statusWord = task.state === "failed" ? "Failed" : task.state === "needs-you" ? "Needs you" : task.status === "Quiet" ? "Quiet" : undefined;
+  const label = (
+    <>
       <TaskState task={task} />
       <Label name={task.title} detail={task.detail} isMono={task.kind === "shell"} />
       {statusWord ? (
@@ -136,6 +148,27 @@ function TaskRowOf({ task, onOpen }: { task: OverviewTask; onOpen: (tab: TaskTab
       ) : (
         <Kind aria-hidden="true" className={ICON} />
       )}
+    </>
+  );
+  const { tab } = task;
+  // A background agent has no tab to open, so its row is plain text, not a control that does nothing.
+  if (tab === undefined) {
+    return (
+      <div className={STILL_ROW} title={task.detail ? `${task.title}: ${task.detail}` : task.title}>
+        {label}
+        <span className="sr-only">{`Subagent, ${task.status.toLowerCase()}.`}</span>
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      aria-label={`Open ${task.title}. ${task.kind === "subagent" ? "Subagent" : "Shell command"}, ${task.status.toLowerCase()}.`}
+      onClick={() => onOpen(tab)}
+      title={task.fullTitle}
+      className={ROW}
+    >
+      {label}
     </button>
   );
 }
@@ -253,7 +286,11 @@ export function OverviewCard({
   branch,
   filesRoot,
   isCollapsed,
+  isNarrow = false,
+  isFloating = false,
   onToggleCollapsed,
+  onCloseFloating,
+  returnFocusTo,
   onShowTab,
   onOpenTask,
   onOpenPage,
@@ -261,45 +298,32 @@ export function OverviewCard({
   onOpenUrl,
 }: OverviewCardProps) {
   const [previewPath, setPreviewPath] = useState<string | null>(null);
-  // On a sheet too narrow for the card, its pill opens it floating over the chat.
-  const [isFloating, setIsFloating] = useState(false);
-  // The control that replaces the one just pressed takes the focus, so the keyboard does not fall back to the page.
-  const pillRef = useRef<HTMLButtonElement>(null);
-  const collapseRef = useRef<HTMLButtonElement>(null);
-  const focusNextRef = useRef<"pill" | "collapse" | null>(null);
+  const cardRef = useRef<HTMLElement>(null);
+
   useEffect(() => {
-    if (!focusNextRef.current) return;
-    (focusNextRef.current === "pill" ? pillRef : collapseRef).current?.focus();
-    focusNextRef.current = null;
-  });
+    if (!isNarrow || !isFloating || !onCloseFloating) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (cardRef.current?.contains(target) || returnFocusTo?.current?.contains(target)) return;
+      onCloseFloating();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [isNarrow, isFloating, onCloseFloating, returnFocusTo]);
 
-  if (isCollapsed) {
-    return (
-      <OverviewPill
-        ref={pillRef}
-        overview={overview}
-        changes={changes}
-        onExpand={() => {
-          // Floating only takes effect on a narrow sheet; a wide one docks the card as before.
-          setIsFloating(true);
-          focusNextRef.current = "collapse";
-          onToggleCollapsed();
-        }}
-      />
-    );
-  }
+  const isVisible = isNarrow ? isFloating : !isCollapsed;
+  if (!isVisible) return null;
 
-  /** A floating card only closes, back to its pill; a docked one folds to the pill. */
-  const close = (card: Element | null) => {
-    const isOverChat = card !== null && getComputedStyle(card).position === "absolute";
-    setIsFloating(false);
-    focusNextRef.current = "pill";
-    if (!isOverChat) onToggleCollapsed();
+  const close = () => {
+    if (isNarrow) onCloseFloating?.();
+    else onToggleCollapsed();
+    returnFocusTo?.current?.focus();
   };
   const closeOnEscape = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.key !== "Escape" || getComputedStyle(event.currentTarget).position !== "absolute") return;
+    if (event.key !== "Escape" || !isNarrow) return;
     event.stopPropagation();
-    close(event.currentTarget);
+    close();
   };
 
   const environment = [
@@ -340,34 +364,21 @@ export function OverviewCard({
     ...overview.files.map((file) => <FileRow key={file.path} file={file} filesRoot={filesRoot} onOpenFile={onOpenFile} />),
   ];
 
-  const pullRequest = overview.pullRequest;
-  const look = pullRequest ? pullRequestLook(pullRequest) : null;
-  const PullRequestIcon = look ? PULL_REQUEST_ICON[look] : GitPullRequest;
+  const pullRequestRows = overview.pullRequests.map((pullRequest) => (
+    <PullRequestRow key={pullRequest.url} pullRequest={pullRequest} onOpenUrl={onOpenUrl} />
+  ));
 
   return (
     <>
-      {/* Below 900px of sheet the card gives way to its pill, which opens it over the chat. */}
-      {!isFloating && (
-        <span className="flex self-start @min-[900px]:hidden">
-          <OverviewPill
-            ref={pillRef}
-            overview={overview}
-            changes={changes}
-            onExpand={() => {
-              setIsFloating(true);
-              focusNextRef.current = "collapse";
-            }}
-          />
-        </span>
-      )}
       <section
+        ref={cardRef}
         aria-label="Session overview"
         onKeyDown={closeOnEscape}
-        className={`max-h-[calc(100%-2rem)] w-80 shrink-0 flex-col self-start overflow-y-auto rounded-xl border border-border bg-surface-2 ${
-          // Floating only while the sheet is narrow: widened again, the open card docks beside the chat.
-          isFloating
-            ? "flex @min-[900px]:mt-4 @min-[900px]:mr-4 @max-[900px]:absolute @max-[900px]:top-4 @max-[900px]:right-4 @max-[900px]:z-30 @max-[900px]:shadow-popover"
-            : "mt-4 mr-4 hidden @min-[900px]:flex"
+        className={`w-72 shrink-0 flex flex-col overflow-y-auto ${
+          // Docked on wide sheets; floating over the chat when opened on a narrow sheet (< 900px).
+          isNarrow
+            ? "absolute top-4 right-4 z-30 max-h-[calc(100%-2rem)] self-start rounded-xl border border-border bg-surface-2 shadow-popover"
+            : "self-stretch border-l border-border"
         }`}
       >
         <Section
@@ -375,11 +386,10 @@ export function OverviewCard({
           title="Environment"
           aside={
             <IconButton
-              ref={collapseRef}
               label="Collapse session overview"
               size="sm"
               className="-mt-1 mr-0.5"
-              onClick={(event) => close(event.currentTarget.closest("section[aria-label='Session overview']"))}
+              onClick={close}
             >
               <ChevronUp aria-hidden="true" className="size-3.5" />
             </IconButton>
@@ -395,7 +405,7 @@ export function OverviewCard({
             ))}
           </Section>
         )}
-        <Section id="overview-output" title="Output" count={outputRows.length}>
+        <Section id="overview-output" title="Artifacts" count={outputRows.length}>
           {outputRows.length > 0
             ? outputRows
             : [
@@ -404,21 +414,13 @@ export function OverviewCard({
                 </p>,
               ]}
         </Section>
-        {pullRequest && look && (
-          <Section id="overview-pull-request" title="Pull request">
-            {[
-              <button
-                key="pull-request"
-                type="button"
-                aria-label={`Open pull request ${pullRequest.number} in your browser. ${pullRequestLine(pullRequest)}.`}
-                onClick={() => onOpenUrl(pullRequest.url)}
-                className={ROW}
-              >
-                <PullRequestIcon aria-hidden="true" className={`size-3.5 shrink-0 ${LOOK_STYLE[look]}`} />
-                <Label name={pullRequest.title} detail={`#${pullRequest.number} · ${pullRequestLine(pullRequest)}`} />
-                <ExternalLink aria-hidden="true" className={ICON} />
-              </button>,
-            ]}
+        {pullRequestRows.length > 0 && (
+          <Section
+            id="overview-pull-request"
+            title={pullRequestRows.length > 1 ? "Pull requests" : "Pull request"}
+            count={pullRequestRows.length > 1 ? pullRequestRows.length : undefined}
+          >
+            {pullRequestRows}
           </Section>
         )}
       </section>
@@ -427,30 +429,50 @@ export function OverviewCard({
   );
 }
 
-/** The folded card: what runs and what changed, in one line; a click opens the card again. */
-function OverviewPill({ overview, changes, onExpand, ref }: {
-  overview: Overview;
-  changes: OverviewCardProps["changes"];
-  onExpand: () => void;
-  ref?: Ref<HTMLButtonElement>;
-}) {
-  const parts = pillParts(overview.runningCount, changes ?? null);
-  const hasChanges = parts.added > 0 || parts.removed > 0;
-  const said = [parts.running, hasChanges ? `${parts.added} lines added, ${parts.removed} removed` : null].filter(Boolean).join(", ");
+const CHECKS_TONE: Record<PullRequestChecksTone, string> = {
+  failing: "text-danger",
+  running: "text-status-attention",
+  passing: "text-status-running",
+};
+
+const CHECKS_DOT: Record<Exclude<PullRequestChecksTone, "passing">, string> = {
+  failing: "bg-danger",
+  running: "bg-status-attention",
+};
+
+/** One pull request of the session; a click opens it on GitHub. */
+function PullRequestRow({ pullRequest, onOpenUrl }: { pullRequest: PullRequestStatus; onOpenUrl: (url: string) => void }) {
+  const look = pullRequestLook(pullRequest);
+  const PullRequestIcon = PULL_REQUEST_ICON[look];
+  const checks = pullRequestChecksSummary(pullRequest);
+  const detail = (
+    <span className="inline-flex min-w-0 items-center gap-1">
+      <span className="shrink-0">{`#${pullRequest.number} · ${pullRequestStateWord(pullRequest)}`}</span>
+      {checks && (
+        <>
+          <span aria-hidden="true" className="shrink-0">·</span>
+          <span className={`inline-flex shrink-0 items-center gap-1 font-medium tabular-nums ${CHECKS_TONE[checks.tone]}`}>
+            {checks.tone === "passing" ? (
+              <Check size={11} aria-hidden="true" className="shrink-0" />
+            ) : (
+              <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${CHECKS_DOT[checks.tone]}`} />
+            )}
+            {checks.label}
+          </span>
+        </>
+      )}
+    </span>
+  );
   return (
     <button
-      ref={ref}
       type="button"
-      aria-label={said ? `Expand session overview: ${said}` : "Expand session overview"}
-      aria-expanded="false"
-      onClick={onExpand}
-      className="focus-ring mt-4 mr-4 flex h-8 shrink-0 items-center gap-2 self-start rounded-full border border-border bg-surface-2 pr-2 pl-2.5 text-ui-sm text-fg-secondary transition-colors hover:bg-surface-hover"
+      aria-label={`Open pull request ${pullRequest.number} in your browser. ${pullRequestLine(pullRequest)}.`}
+      onClick={() => onOpenUrl(pullRequest.url)}
+      className={ROW}
     >
-      <PanelRight aria-hidden="true" className="size-3.5 text-fg-muted" />
-      {parts.running ?? (hasChanges ? null : "Overview")}
-      {parts.running && hasChanges && <span aria-hidden="true" className="h-3.5 w-px bg-border" />}
-      {hasChanges && <ChangeCounts added={parts.added} removed={parts.removed} />}
-      <ChevronDown aria-hidden="true" className="size-3.5 text-fg-muted" />
+      <PullRequestIcon aria-hidden="true" className={`size-3.5 shrink-0 ${LOOK_STYLE[look]}`} />
+      <Label name={pullRequest.title} detail={detail} />
+      <ExternalLink aria-hidden="true" className={ICON} />
     </button>
   );
 }

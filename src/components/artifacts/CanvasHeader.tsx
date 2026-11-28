@@ -6,6 +6,7 @@ import { IconButton } from "../ui/IconButton";
 import { Popover, PopoverOption } from "../ui/Popover";
 import type { CanvasSection } from "../../lib/canvas";
 import { CanvasExportMenu, type CanvasExporting } from "./CanvasExportMenu";
+import { ThemeMenu, type ThemeMenuProps } from "./ThemeMenu";
 
 export interface CanvasHeaderProps {
   title: string;
@@ -15,7 +16,7 @@ export interface CanvasHeaderProps {
   zoom: number;
   /** The selected artboard's title, when one is selected. */
   selectedTitle: string | null;
-  /** Back to the Output list; absent when there is no list to go back to. */
+  /** Back to the Artifacts list; absent when there is no list to go back to. */
   onBack?: () => void;
   isExpanded: boolean;
   onToggleExpanded: () => void;
@@ -31,6 +32,8 @@ export interface CanvasHeaderProps {
   exporting?: CanvasExporting;
   /** Makes a new view of the canvas, which is how one that ended or hangs comes back; absent, no Reload. */
   onReload?: () => void;
+  /** The linked design system's Theme menu; absent when the canvas names none or it has one theme. */
+  theme?: Omit<ThemeMenuProps, 'onMenuOpen'>;
 }
 
 export interface CanvasHandoff {
@@ -50,6 +53,8 @@ export interface CanvasCommenting {
   onCommentOnArtboard: () => void;
 }
 
+/** Below this header width the zoom steps give way, so Reload, Comment and Expand stay on screen. */
+const NARROW_HIDDEN = "@max-[44rem]:hidden";
 const DIVIDER = <span aria-hidden="true" className="mx-1 h-5 w-px shrink-0 bg-border" />;
 
 /** What the selected artboard offers: its title, Focus, and the artboards before and after it. */
@@ -108,7 +113,7 @@ function SelectionTools({
  * with Focus, Previous and Next: in the header when expanded, else in a row of its own under it.
  * Export sits with the selection, or in the header when nothing is selected.
  */
-export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBack, isExpanded, onToggleExpanded, onCommand, onMenuOpen, commenting, handoff, exporting, onReload }: CanvasHeaderProps) {
+export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBack, isExpanded, onToggleExpanded, onCommand, onMenuOpen, commenting, handoff, exporting, onReload, theme }: CanvasHeaderProps) {
   const [isSectionsOpen, setIsSectionsOpen] = useState(false);
   const percent = `${Math.round(zoom * 100)}%`;
   const setSectionsOpen = (isOpen: boolean) => {
@@ -118,11 +123,11 @@ export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBa
 
   return (
     <>
-      <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border px-2">
+      <div className="@container flex h-11 shrink-0 items-center gap-1 border-b border-border px-2">
         {onBack && !isExpanded && (
-          <Button variant="ghost" size="sm" tone="secondary" aria-label="Back to output" onClick={onBack} className="gap-0.5 pl-1">
+          <Button variant="ghost" size="sm" tone="secondary" aria-label="Back to artifacts" onClick={onBack} className="gap-0.5 pl-1">
             <ChevronLeft size={14} aria-hidden="true" />
-            Output
+            Artifacts
           </Button>
         )}
         <h3 title={title} className="max-w-[40%] shrink-0 truncate pl-1 text-ui font-semibold text-fg">
@@ -132,16 +137,17 @@ export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBa
         <Button variant="ghost" size="sm" tone="secondary" onClick={() => onCommand("fit")}>
           Fit
         </Button>
-        <Button variant="ghost" size="sm" tone="secondary" onClick={() => onCommand("actual")}>
+        {/* A narrow header keeps Fit and leaves the zoom steps to the canvas's own pinch and scroll. */}
+        <Button variant="ghost" size="sm" tone="secondary" onClick={() => onCommand("actual")} className={NARROW_HIDDEN}>
           100%
         </Button>
-        <IconButton label="Zoom out" size="row" onClick={() => onCommand("out")}>
+        <IconButton label="Zoom out" size="row" onClick={() => onCommand("out")} className={NARROW_HIDDEN}>
           <Minus size={14} />
         </IconButton>
-        <span aria-label={`Zoom ${percent}`} className="min-w-10 shrink-0 text-center text-ui-sm text-fg-secondary tabular-nums">
+        <span aria-label={`Zoom ${percent}`} className="min-w-10 shrink-0 text-center @max-[44rem]:hidden text-ui-sm text-fg-secondary tabular-nums">
           {percent}
         </span>
-        <IconButton label="Zoom in" size="row" onClick={() => onCommand("in")}>
+        <IconButton label="Zoom in" size="row" onClick={() => onCommand("in")} className={NARROW_HIDDEN}>
           <Plus size={14} />
         </IconButton>
         <Popover
@@ -195,6 +201,7 @@ export function CanvasHeader({ title, count, sections, zoom, selectedTitle, onBa
           </>
         )}
         {exporting && selectedTitle === null && <CanvasExportMenu exporting={exporting} hasSelection={false} onMenuOpen={onMenuOpen} />}
+        {theme && <ThemeMenu {...theme} onMenuOpen={onMenuOpen} />}
         {DIVIDER}
         {onReload && (
           <IconButton label="Reload" size="row" onClick={onReload}>

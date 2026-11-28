@@ -15,7 +15,7 @@ use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 use std::time::Duration;
 
@@ -66,6 +66,8 @@ pub struct ScreenCall {
 
 /// What carries out computer-use calls (`computer_use::ScreenServer`).
 pub trait ScreenTools: Send + Sync {
+    /// Whether this server carries out `tool`.
+    fn offers(&self, tool: &str) -> bool;
     /// Starts `call` without blocking: this runs on the connection's reader.
     fn call(&self, call: ScreenCall);
     /// `call_id` ended without an answer from here: it timed out, the agent
@@ -122,6 +124,9 @@ struct CallPhase {
     ended_early: bool,
 }
 
+/// A pending call taken out of the table: its id, its state and the backend that carried it out.
+type Removed = (String, Arc<CallState>, Option<Arc<dyn ScreenTools>>);
+
 struct Pending {
     tool: String,
     args: Value,
@@ -129,8 +134,8 @@ struct Pending {
     state: Arc<CallState>,
     /// The JSON-RPC id the agent used, to answer it and to match a cancel.
     rpc_id: Value,
-    /// A computer-use call: its end is reported to `ScreenTools`, not the webview.
-    is_screen: bool,
+    /// A call a backend server carries out: its end is reported to it, not the webview.
+    backend: Option<Arc<dyn ScreenTools>>,
     /// Dropped with the entry, which wakes the timer thread so it exits.
     _timer_stop: mpsc::Sender<()>,
 }
@@ -146,8 +151,9 @@ pub struct AgentTools {
     ended: Ended,
     /// False for `disabled()`: no socket, and `servers_for` offers nothing.
     enabled: bool,
-    /// Carries out computer-use calls, once `set_screen_tools` gave one.
-    screen: OnceLock<Arc<dyn ScreenTools>>,
+    /// Servers that carry out calls in the backend (computer use, motion rendering), each
+    /// added once at start by `set_screen_tools`.
+    backends: Mutex<Vec<Arc<dyn ScreenTools>>>,
     /// Each session's agent, by registry id, for the name computer use shows.
     profiles: Mutex<HashMap<String, String>>,
 }
@@ -166,9 +172,6 @@ impl AgentTools {
             .then(|| (call.connection.caller.session.clone(), call.args.clone()))
     }
 
-    pub fn browser_owner(&self, call_id: &str) -> Option<String> {
-        self.browser_call(call_id).map(|(session, _)| session)
-    }
     /// How long a call may wait for the webview. Agents give up on a tool call
     /// on their own (Antigravity after 3 minutes, Qwen Code and Codex after 5),
     /// so Zorvo answers before the shortest of them.
@@ -206,7 +209,7 @@ impl AgentTools {
             emit: Arc::new(emit),
             ended: Arc::new(ended),
             enabled: true,
-            screen: OnceLock::new(),
+            backends: Mutex::new(Vec::new()),
             profiles: Mutex::new(HashMap::new()),
         });
         let accepting = Arc::clone(&service);
@@ -234,7 +237,7 @@ impl AgentTools {
             emit: Arc::new(|_| {}),
             ended: Arc::new(|_| {}),
             enabled: false,
-            screen: OnceLock::new(),
+            backends: Mutex::new(Vec::new()),
             profiles: Mutex::new(HashMap::new()),
         })
     }
@@ -352,9 +355,17 @@ impl AgentTools {
         lock(&self.pending).contains_key(call_id)
     }
 
-    /// Gives computer-use calls their handler. Set once, at start.
+    /// Adds a server that carries out the tools it `offers` in the backend. Called at start.
     pub fn set_screen_tools(&self, screen: Arc<dyn ScreenTools>) {
-        let _ = self.screen.set(screen);
+        lock(&self.backends).push(screen);
+    }
+
+    /// The backend server that carries out `tool`, if any.
+    fn backend_for(&self, tool: &str) -> Option<Arc<dyn ScreenTools>> {
+        lock(&self.backends)
+            .iter()
+            .find(|backend| backend.offers(tool))
+            .cloned()
     }
 
     /// The session runs this registry agent; computer use shows its name.
@@ -372,11 +383,14 @@ impl AgentTools {
 
     /// Reports a call as ended, now when its event already went out, else
     /// right after `emit` returns (see `start_call`).
-    fn report_ended(&self, call_id: String, state: &CallState, is_screen: bool) {
-        if is_screen {
-            if let Some(screen) = self.screen.get() {
-                screen.ended(&call_id);
-            }
+    fn report_ended(
+        &self,
+        call_id: String,
+        state: &CallState,
+        backend: Option<Arc<dyn ScreenTools>>,
+    ) {
+        if let Some(backend) = backend {
+            backend.ended(&call_id);
             return;
         }
         let now = {
@@ -413,8 +427,9 @@ impl AgentTools {
             connection.close();
         }
         self.end_pending(|p| p.connection.caller.session == app_session_id);
-        if let Some(screen) = self.screen.get() {
-            screen.forget(app_session_id);
+        let backends: Vec<Arc<dyn ScreenTools>> = lock(&self.backends).clone();
+        for backend in backends {
+            backend.forget(app_session_id);
         }
     }
 
@@ -432,7 +447,7 @@ impl AgentTools {
 
     /// Removes every pending call that matches and reports each as ended.
     fn end_pending(&self, matches: impl Fn(&Pending) -> bool) {
-        let removed: Vec<(String, Arc<CallState>, bool)> = {
+        let removed: Vec<Removed> = {
             let mut pending = lock(&self.pending);
             let ids: Vec<String> = pending
                 .iter()
@@ -440,11 +455,11 @@ impl AgentTools {
                 .map(|(id, _)| id.clone())
                 .collect();
             ids.into_iter()
-                .filter_map(|id| pending.remove(&id).map(|p| (id, p.state, p.is_screen)))
+                .filter_map(|id| pending.remove(&id).map(|p| (id, p.state, p.backend)))
                 .collect()
         };
-        for (id, state, is_screen) in removed {
-            self.report_ended(id, &state, is_screen);
+        for (id, state, backend) in removed {
+            self.report_ended(id, &state, backend);
         }
     }
 
@@ -506,9 +521,12 @@ impl AgentTools {
         tool: String,
         args: Value,
     ) {
-        let screen = is_screen_tool(&tool)
-            .then(|| self.screen.get().cloned())
-            .flatten();
+        let screen = self.backend_for(&tool);
+        if crate::agent_tools::tools::MOTION_TOOL_NAMES.contains(&tool.as_str()) && screen.is_none()
+        {
+            connection.send(&tool_result(&rpc_id, false, "Rendering is not available."));
+            return;
+        }
         if is_screen_tool(&tool) && screen.is_none() {
             connection.send(&tool_result(
                 &rpc_id,
@@ -541,7 +559,7 @@ impl AgentTools {
                     connection: Arc::clone(connection),
                     state: Arc::clone(&state),
                     rpc_id: rpc_id.clone(),
-                    is_screen: screen.is_some(),
+                    backend: screen.clone(),
                     _timer_stop: stop,
                 },
             );
@@ -595,7 +613,7 @@ impl AgentTools {
             entry
                 .connection
                 .send(&tool_result(&entry.rpc_id, false, TIMEOUT_TEXT));
-            self.report_ended(call_id.to_string(), &entry.state, entry.is_screen);
+            self.report_ended(call_id.to_string(), &entry.state, entry.backend);
         }
     }
 }

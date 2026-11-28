@@ -66,7 +66,7 @@ export function SubagentTaskPanel({ task, parts, tools, thinking, isTextCut, det
             <div key={index} className="text-ui text-fg-secondary">
               <MarkdownRenderer content={part.text} />
             </div>
-          ) : (
+          ) : part.kind === "tools" ? (
             <div key={index} data-tool-rail="" className="ml-[7px] border-l border-border">
               <ToolCallList
                 tools={part.toolIds.flatMap((id) => toolsById.get(id) ?? [])}
@@ -74,7 +74,7 @@ export function SubagentTaskPanel({ task, parts, tools, thinking, isTextCut, det
                 isTurnOver={!isLive}
               />
             </div>
-          ),
+          ) : null,
         )}
         {isTextCut && <TaskNote>The rest of its text was left out.</TaskNote>}
         {hasReport && (

@@ -38,7 +38,6 @@ export async function openPdf(bytes: Uint8Array): Promise<PdfDocument> {
   // pdf.js transfers the buffer to its worker; hand it a copy so the caller's bytes stay usable.
   const loadingTask = pdfjs.getDocument({
     data: bytes.slice(),
-    isEvalSupported: false,
     enableXfa: false,
     disableAutoFetch: true,
     disableStream: true,
@@ -88,7 +87,7 @@ export async function openPdf(bytes: Uint8Array): Promise<PdfDocument> {
       };
     },
     destroy() {
-      void pdf.destroy();
+      void loadingTask.destroy();
     },
   };
 }

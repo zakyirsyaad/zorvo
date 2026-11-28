@@ -12,6 +12,7 @@ import type { LineChange } from "../../lib/changed-lines";
 import { TOKEN_STYLE, tokenizeLines, type Token } from "../../lib/code-tokens";
 import { errorMessage, joinWorkspacePath, openWorkspacePath } from "../../lib/files";
 import { formatSize, languageOf, splitLines, type FileContent } from "../../lib/file-content";
+import { FileVideo } from "./FileVideo";
 import { FilePreview } from "./FilePreview";
 import { MARKER_LETTER, MARKER_WORD, type FileMarker } from "../../lib/file-markers";
 
@@ -315,6 +316,8 @@ export function FileViewer({
             selected={canInsertText ? range : null}
             overlay={addLines}
           />
+        ) : read.content.kind === "video" ? (
+          <FileVideo rootPath={rootPath} relativePath={relativePath} size={read.content.size} version={version} />
         ) : read.content.kind === "preview" ? (
           <FilePreview
             rootPath={rootPath}

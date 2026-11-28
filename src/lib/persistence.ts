@@ -1,3 +1,5 @@
+import { isVisualId, isVisualKind } from './visuals';
+import { parseNextStep } from './next-step';
 import { invoke } from '@tauri-apps/api/core';
 import {
   TRANSPORT_ACP,
@@ -371,6 +373,7 @@ export function saveAppState(state: PersistedState): Promise<void> {
 function isMessagePart(value: unknown): value is ChatMessagePart {
   if (!isObject(value)) return false;
   if (value.kind === 'text') return typeof value.text === 'string';
+  if (value.kind === 'visual') return isVisualId(value.id) && typeof value.title === 'string' && isVisualKind(value.visualKind);
   return (
     value.kind === 'tools' &&
     Array.isArray(value.toolIds) &&
@@ -443,6 +446,17 @@ function withValidAgentMark(message: ChatMessage, key: 'delegationReport' | 'del
   return { ...rest, [key]: kept } as ChatMessage;
 }
 
+/** A next step keeps the fields that fit (`parseNextStep`); the end mark only as `true`. */
+function withValidNextStep(message: ChatMessage): ChatMessage {
+  const { nextStep, endedNormally, ...rest } = message;
+  const step = nextStep === undefined ? null : parseNextStep(nextStep);
+  return {
+    ...(rest as ChatMessage),
+    ...(step ? { nextStep: step } : {}),
+    ...(endedNormally === true ? { endedNormally: true as const } : {}),
+  };
+}
+
 /** An artifact card keeps its three fields when they fit, else the message goes on without it. */
 function withValidArtifactCard(message: ChatMessage): ChatMessage {
   if (!('artifactCard' in message)) return message;
@@ -472,8 +486,23 @@ function withValidWorkerReport(message: ChatMessage): ChatMessage {
   return workers.length === 0 ? (rest as ChatMessage) : { ...rest, workerReport: { workers } };
 }
 
+/** A continued-from mark keeps both ids when they are non-empty strings, else the message goes on without it. */
+function withValidContinuedFrom(message: ChatMessage): ChatMessage {
+  if (!('continuedFrom' in message)) return message;
+  const { continuedFrom, ...rest } = message;
+  if (!isObject(continuedFrom)) return rest as ChatMessage;
+  const { sessionId, agentId, toAgentId } = continuedFrom as { sessionId?: unknown; agentId?: unknown; toAgentId?: unknown };
+  if (typeof sessionId !== 'string' || sessionId === '' || typeof agentId !== 'string' || agentId === '') {
+    return rest as ChatMessage;
+  }
+  const taker = typeof toAgentId === 'string' && toAgentId !== '' ? { toAgentId } : {};
+  return { ...rest, continuedFrom: { sessionId, agentId, ...taker } } as ChatMessage;
+}
+
 function withValidDelegationReport(message: ChatMessage): ChatMessage {
-  return withValidWorkerReport(withValidAgentMark(withValidAgentMark(message, 'delegationReport'), 'delegationTask'));
+  return withValidContinuedFrom(
+    withValidWorkerReport(withValidAgentMark(withValidAgentMark(message, 'delegationReport'), 'delegationTask')),
+  );
 }
 
 /**
@@ -584,9 +613,9 @@ export function normalizeTranscript(raw: unknown): ChatMessage[] {
   return raw.flatMap((entry): ChatMessage[] => {
     if (!isMessage(entry)) return [];
     const raw = withOnlyTools(entry);
-    const message = withValidArtifactCard(
+    const message = withValidNextStep(withValidArtifactCard(
       withValidSubagentFields(withValidVerification(withValidDelegationReport(withReadableDiffs(withValidEndTime(raw))))),
-    );
+    ));
     if (!('parts' in message)) return [message];
     const { parts, ...rest } = message;
     const isWellFormed = Array.isArray(parts) && parts.length > 0 && parts.every(isMessagePart);

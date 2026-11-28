@@ -72,6 +72,10 @@ function handleStoreCommand(cmd: string, args: StoreArgs | undefined): Promise<u
     case "delete_transcript":
       delete store.transcripts[args?.sessionId ?? ""];
       return Promise.resolve(undefined);
+    case "create_turn_checkpoint":
+      return Promise.resolve(null);
+    case "restore_turn_checkpoint":
+      return Promise.resolve(0);
     case "acp_start_session":
     case "acp_fork_session":
     case "acp_reopen_session":
@@ -144,6 +148,7 @@ function handleStoreCommand(cmd: string, args: StoreArgs | undefined): Promise<u
     case "end_orphaned_sessions":
     case "open_external_url":
     case "open_session_window":
+    case "reveal_file_in_finder":
     case "reveal_in_finder":
     case "terminate_session":
     case "send_input":
@@ -151,6 +156,7 @@ function handleStoreCommand(cmd: string, args: StoreArgs | undefined): Promise<u
     case "install_agent":
       return Promise.resolve(undefined);
     case "cancel_agent_install":
+    case "browser_permission_status":
       return Promise.resolve(false);
     default:
       return null;
@@ -203,6 +209,9 @@ export function fakeTauriInvoke(cmd: string, args?: unknown): Promise<unknown> {
   const privateResult = handlePrivateCommand(cmd, args);
   if (privateResult) {
     return privateResult;
+  }
+  if (cmd === "design_systems_list") {
+    return Promise.resolve({ systems: [], defaultProblem: null });
   }
   if (cmd === "list_workspaces") {
     return Promise.resolve([

@@ -53,8 +53,6 @@ export interface CatalogAgent {
   /** The newer version on offer, if any. */
   updateVersion: string | null;
   status: CatalogStatus;
-  /** Unix seconds; set while a new version waits out its seven days. */
-  availableFrom: number | null;
   /** Where a program installed outside Zorvo lives. */
   location: string | null;
 }
@@ -350,7 +348,7 @@ export interface ComputerUseRequest {
 
 /** What an agent asked Zorvo's tools for, as the approval card shows it. */
 export interface ZorvoToolRequest {
-  tool: 'delegate' | 'start_session';
+  tool: 'delegate' | 'start_session' | 'browser';
   /** The agent that asked. */
   callerName: string;
   /** The agent the task is for. */
@@ -443,7 +441,9 @@ export type ToolDetail =
 export type ChatMessagePart =
   | { kind: 'text'; text: string }
   /** Consecutive tool calls share one part. */
-  | { kind: 'tools'; toolIds: string[] };
+  | { kind: 'tools'; toolIds: string[] }
+  /** An inline visual the agent showed; its markup is kept by the backend under `id`. */
+  | { kind: 'visual'; id: string; title: string; visualKind: 'svg' | 'html' };
 
 /** One step of an agent's plan, as reported over ACP. */
 export interface PlanEntry {
@@ -497,12 +497,32 @@ export interface ChatMessage {
   workerReport?: { workers: Array<{ agentName: string; agentId?: string; handle: string; state: WorkerState }> };
   /** On the user message that carries a task into a delegate: the agent of the session that gave it. */
   delegationTask?: { agentName: string; agentId?: string };
+  /** On a session's first user message when it continued another agent's conversation: where it came from. */
+  continuedFrom?: { sessionId: string; agentId: string; toAgentId?: string };
   /** A question the agent asked the user (ACP elicitation); never holds the answer. */
   elicitation?: ElicitationCard;
   /** The NEAR AI signature state of a private reply's model calls. */
   verification?: MessageVerification;
   /** Marks where the agent showed a page: Zorvo's own row, with the version shown then. */
   artifactCard?: ArtifactCard;
+  /** The agent's `wrap_up` for this turn, and the user's answer from the box under it. */
+  nextStep?: NextStep;
+  /** Set on a turn's last reply when the turn ended with `end_turn`: only those get a next-step box. */
+  endedNormally?: true;
+  /** Git tree snapshot captured right before this user message's turn, for optional file restore on rewind. */
+  checkpoint?: string;
+}
+
+/** An action a next-step box can offer; the agent may pick one of them in `wrap_up`. */
+export type NextStepAction = 'commit' | 'push' | 'create_pr' | 'merge' | 'auto_merge' | 'open_preview' | 'open_pr';
+
+/** What an agent's `wrap_up` left on its reply, and what the user pressed in the box. */
+export interface NextStep {
+  recap?: string;
+  ask?: string;
+  pick?: NextStepAction;
+  replies?: string[];
+  answered?: { label: string; at: number };
 }
 
 /** One stored copy of an artifact's page. */
@@ -537,7 +557,18 @@ export type PageAnchor =
     };
 
 /** A page anchor, or (on a canvas artboard only) the whole artboard, which has no mark. */
-export type ArtifactAnchor = PageAnchor | { kind: 'artboard' };
+/** `system`: a design system comment on a whole token or component, which has no mark in a page. */
+export type ArtifactAnchor = PageAnchor | { kind: 'artboard' } | { kind: 'system' };
+
+/** What a design system comment is on: a token, a component, or a section of the brand book. */
+export type DesignSystemTarget = { kind: 'token'; name: string } | { kind: 'component'; name: string } | { kind: 'section'; file: string };
+
+/** Which part of a design system a comment is on, and the hash of what it was written on. */
+export interface DesignSystemCommentRef {
+  key: string;
+  target: DesignSystemTarget;
+  hash: string;
+}
 
 /** Which canvas artboard a comment is on, and the SHA-256 of its file when it was written. */
 export interface CanvasCommentRef {
@@ -559,6 +590,8 @@ export interface ArtifactComment {
   sentAt?: number;
   /** Set on a canvas comment: `artifactId` is then the canvas key and `version` is 0. */
   canvas?: CanvasCommentRef;
+  /** Set on a design system comment: `artifactId` is then the system key and `version` is 0. */
+  designSystem?: DesignSystemCommentRef;
 }
 
 /** One version of one artifact, as the page view shows it. */
@@ -592,7 +625,10 @@ export type PageMessage =
 /** Where the agent showed a page (with the version shown then) or a canvas (with its artboard count then). */
 export type ArtifactCard =
   | { kind?: undefined; artifactId: string; title: string; version: number }
-  | { kind: 'canvas'; canvasKey: string; title: string; artboards: number };
+  | { kind: 'canvas'; canvasKey: string; title: string; artboards: number }
+  | { kind: 'motion'; motionKey: string; title: string; duration: number; formats: number }
+  | { kind: 'video'; videoKey: string; title: string }
+  | { kind: 'design-system'; designSystemKey: string; title: string; tokens: number; components: number };
 
 export interface ElicitationChoice {
   value: string;

@@ -3,11 +3,14 @@ import type { PullRequestStatus } from "../hooks/usePullRequest";
 import {
   LOOK_STYLE,
   newestSessionInFolder,
+  pullRequestChecksSummary,
   pullRequestLabel,
   pullRequestLine,
   pullRequestLook,
   pullRequestOfWork,
+  pullRequestsOfWork,
   pullRequestOnBranch,
+  pullRequestStateWord,
   sessionBranchOf,
   sessionPullRequestOf,
   type FolderPullRequests,
@@ -63,6 +66,25 @@ describe("what the row says", () => {
     expect(pullRequestLine(pr({ isDraft: true }))).toBe("Draft");
     expect(pullRequestLine(pr({ state: "merged", checks: { passing: 4, failing: 0, pending: 0 } }))).toBe("Merged");
   });
+
+  it("summarizes open PR checks with a semantic tone and compact counts", () => {
+    expect(pullRequestStateWord(pr({ isDraft: true }))).toBe("Draft");
+    expect(pullRequestStateWord(pr())).toBe("Open");
+    expect(pullRequestChecksSummary(pr({ checks: { passing: 8, failing: 1, pending: 0 } }))).toEqual({
+      tone: "failing",
+      label: "1/9 failed",
+    });
+    expect(pullRequestChecksSummary(pr({ checks: { passing: 6, failing: 0, pending: 2 } }))).toEqual({
+      tone: "running",
+      label: "2/8 running",
+    });
+    expect(pullRequestChecksSummary(pr({ checks: { passing: 9, failing: 0, pending: 0 } }))).toEqual({
+      tone: "passing",
+      label: "9/9 passed",
+    });
+    expect(pullRequestChecksSummary(pr({ state: "merged", checks: { passing: 9, failing: 0, pending: 0 } }))).toBeNull();
+    expect(pullRequestChecksSummary(pr())).toBeNull();
+  });
 });
 
 describe("which pull request a session shows", () => {
@@ -110,6 +132,24 @@ describe("which pull request a session shows", () => {
     const newest = newestSessionInFolder([byUrl, byBranch]);
     expect(sessionPullRequestOf(byUrl, listed, newest)?.number).toBe(259);
     expect(sessionPullRequestOf(byBranch, listed, newest)?.number).toBe(257);
+  });
+
+  it("lists every pull request the agent made, newest first and each once", () => {
+    const listed: FolderPullRequests = {
+      branch: "feat/ibkr-flex-pipeline",
+      pullRequests: [
+        pr({ branch: "feat/ibkr-flex-pipeline", number: 273, url: "https://github.com/O/R/pull/273" }),
+        pr({ branch: "feat/ibkr-flex-xml-parser", number: 272, url: "https://github.com/O/R/pull/272" }),
+        pr({ branch: "fix/other", number: 271 }),
+      ],
+    };
+    const work = {
+      branches: ["feat/ibkr-flex-xml-parser", "feat/ibkr-flex-pipeline", "fix/unlisted"],
+      pullRequestUrls: ["https://github.com/O/R/pull/272"],
+    };
+    expect(pullRequestsOfWork(listed, work).map((found) => found.number)).toEqual([273, 272]);
+    expect(pullRequestOfWork(listed, work)?.number).toBe(273);
+    expect(pullRequestsOfWork(listed, undefined)).toEqual([]);
   });
 
   it("prefers a worktree session's own branch, and falls back to the folder's branch", () => {

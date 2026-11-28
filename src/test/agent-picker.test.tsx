@@ -52,7 +52,7 @@ describe("the agent menu", () => {
     const box = within(row).getByRole("checkbox").firstElementChild!;
     expect(box).toHaveClass("border-border-strong");
     expect(box).not.toHaveClass("bg-fg");
-    expect(within(row).getByText("Not checked")).toHaveClass("text-fg-subtle");
+    expect(within(row).getByText("Not checked yet")).toHaveClass("text-fg-subtle");
   });
 
   it("dims an agent that needs a sign-in, says so with an attention dot, and describes its checkbox with it", () => {

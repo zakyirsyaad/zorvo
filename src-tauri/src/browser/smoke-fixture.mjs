@@ -17,6 +17,37 @@ const server = http.createServer((request, response) => {
     response.end('<!doctype html><meta charset="utf-8"><title>Strict CSP browser smoke</title><h1 id="strict-ready">Strict CSP</h1><label>Strict input <input id="strict-input" aria-label="Strict input"></label>');
     return;
   }
+  if (request.url === '/delayed') {
+    setTimeout(() => {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+      response.end('<!doctype html><button id="delayed-ready" onclick="this.textContent=Number(this.textContent)+1">0</button>');
+    }, 400);
+    return;
+  }
+  if (request.url === '/pending-image') {
+    response.writeHead(200, { 'Content-Type': 'image/gif', 'Cache-Control': 'no-store' });
+    const timer = setTimeout(() => response.end(), 15000);
+    response.once('close', () => clearTimeout(timer));
+    return;
+  }
+  if (request.url === '/loading') {
+    response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    response.end('<!doctype html><button id="loading-ready" onclick="this.textContent=Number(this.textContent)+1">0</button><img src="/pending-image" alt="Pending fixture image">');
+    return;
+  }
+  if (request.url === '/upload') {
+    // A file input that reports what it received, for the native upload case.
+    response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+    response.end(`<!doctype html><meta charset="utf-8"><title>Upload browser smoke</title>
+      <label>Statement <input type="file" multiple aria-label="Statement file"></label>
+      <button type="button" aria-label="Plain button">Plain</button><output id="upload-ready">Ready</output>
+      <script>document.querySelector('input[type=file]').addEventListener('change', async event => {
+        window.changes = (window.changes || 0) + 1;
+        const files = [...event.target.files];
+        window.uploaded = await Promise.all(files.map(async file => ({ name: file.name, size: file.size, text: await file.text() })));
+      });</script>`);
+    return;
+  }
   if (request.url.split('?')[0] === '/responsive') {
     // Header data stays a string literal even if it contains HTML/script syntax.
     const info = JSON.stringify({ ua: request.headers['user-agent'] ?? '', document: randomUUID() }).replace(/</g, '\\u003c');
@@ -35,6 +66,12 @@ const server = http.createServer((request, response) => {
   <button id="increment" onclick="document.querySelector('#count').textContent=++window.smokeCount">Increment</button><output id="count">0</output>
   <label>Choice <select id="choice"><option value="a">Alpha</option><option value="b">Beta</option></select></label>
   <label>Check <input id="check" type="checkbox"></label>
+  <label>Password <input id="secret-password" type="password" value="synthetic-password-secret"></label>
+  <label>Code <input id="secret-code" autocomplete="one-time-code" value="synthetic-code-secret"></label>
+  <label>Card number <input id="secret-card" autocomplete="section-checkout billing cc-number" value="synthetic-card-secret"></label>
+  <textarea autocomplete="cc-number">synthetic-unlabeled-card-secret</textarea>
+  <label>Card code<textarea autocomplete="cc-csc">synthetic-wrapped-card-secret</textarea></label>
+  <a id="popup-link" href="/frame?popup=user" target="_blank" rel="opener">Open background popup</a>
   <div id="drag" draggable="true">Drag</div><div id="drop">Drop here</div>
   ${frame ? '' : `<iframe title="Same origin" src="/frame"></iframe><iframe title="Other origin" src="http://localhost:${server.address().port}/frame"></iframe>`}
   <div id="nested-scroll" style="height:120px;overflow:auto"><div style="height:800px">Nested scroll target</div></div>

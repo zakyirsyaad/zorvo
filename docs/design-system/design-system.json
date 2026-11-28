@@ -1,0 +1,74 @@
+{
+ "v": 3,
+ "layout": "files",
+ "createdOnFiles": {
+  "v": 1,
+  "at": "2026-10-18T08:45:00Z"
+ },
+ "title": "Zorvo Design System",
+ "namespace": "Zorvo",
+ "libraries": [],
+ "sections": {},
+ "groups": [
+  "Logos"
+ ],
+ "assetGroups": {
+  "Logos": {
+   "name": "Logos",
+   "tile": "m",
+   "order": [
+    "zorvo-symbol-ink.svg",
+    "zorvo-symbol-paper.svg",
+    "zorvo-symbol-small-ink.svg",
+    "zorvo-symbol-small-paper.svg",
+    "zorvo-app-icon.png"
+   ],
+   "files": {
+    "zorvo-symbol-ink.svg": {
+     "name": "zorvo-symbol-ink.svg",
+     "blob": "078a668590008b579846bdd524cc98c6",
+     "size": 316,
+     "type": "image/svg+xml"
+    },
+    "zorvo-symbol-paper.svg": {
+     "name": "zorvo-symbol-paper.svg",
+     "blob": "f2ee607e2af562a91739593417e5251b",
+     "size": 316,
+     "type": "image/svg+xml"
+    },
+    "zorvo-symbol-small-ink.svg": {
+     "name": "zorvo-symbol-small-ink.svg",
+     "blob": "712d4a283e5b1bb7fde43fd547b08471",
+     "size": 286,
+     "type": "image/svg+xml"
+    },
+    "zorvo-symbol-small-paper.svg": {
+     "name": "zorvo-symbol-small-paper.svg",
+     "blob": "4d9bb5a3a0d5f8804202b89827bc9317",
+     "size": 286,
+     "type": "image/svg+xml"
+    },
+    "zorvo-app-icon.png": {
+     "name": "zorvo-app-icon.png",
+     "blob": "92dc1c329a5edff1f6e3b8c832e866ea",
+     "size": 17560,
+     "type": "image/png"
+    }
+   }
+  }
+ },
+ "blobs": {},
+ "docs": {
+  "readme": "project/README.md",
+  "sections": []
+ },
+ "lastChange": {
+  "by": "zakyirsyaad",
+  "at": "2026-11-13T15:10:19Z",
+  "via": "Claude Code",
+  "note": "Synced from the repository's docs/design-system/ after redesign v2: the v2 surfaces (ground, sheet, chip), the agent tile, and every preview and guideline redrawn for the layered look. No page of this reference uses bg or surface-1 any more."
+ },
+ "zorvo": {
+  "default": true
+ }
+}

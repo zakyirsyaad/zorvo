@@ -30,7 +30,7 @@ export interface MentionMenuProps {
 
 const STATUS_TEXT: Readonly<Record<MentionAgentStatus, string>> = {
   ready: "Ready",
-  "not-checked": "Not checked",
+  "not-checked": "Not checked yet",
   "needs-sign-in": "Needs sign-in",
   "not-installed": "Not installed",
 };

@@ -99,6 +99,40 @@ pub fn read_source(
     Ok((canonical, bytes))
 }
 
+fn has_visual_name(path: &Path) -> bool {
+    has_html_name(path)
+        || path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"))
+}
+
+/// Reads an inline visual's file under the page rules: inside the session's folder or a
+/// temporary one, a regular `.html`, `.htm` or `.svg` file of valid UTF-8, within the visual cap.
+pub fn read_visual_source(
+    session_folder: &Path,
+    temp_roots: &[PathBuf],
+    path: &str,
+    max_bytes: usize,
+    too_large: &str,
+) -> Result<Vec<u8>, String> {
+    let refused = || NOT_ALLOWED.to_string();
+    if path.is_empty() || path.chars().count() > MAX_PATH_CHARS {
+        return Err(refused());
+    }
+    let canonical = fs::canonicalize(session_folder.join(path)).map_err(|_| refused())?;
+    let is_inside = canonical.starts_with(session_folder)
+        || temp_roots.iter().any(|root| canonical.starts_with(root));
+    if !is_inside || !has_visual_name(&canonical) {
+        return Err(refused());
+    }
+    let bytes = read_bytes_checked(&canonical)?;
+    if bytes.len() > max_bytes {
+        return Err(too_large.to_string());
+    }
+    Ok(bytes)
+}
+
 #[cfg(test)]
 #[allow(clippy::disallowed_methods)] // the tests make FIFOs with mkfifo directly
 mod tests {

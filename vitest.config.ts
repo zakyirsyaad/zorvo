@@ -14,11 +14,11 @@ export default mergeConfig(
       // At load ~95, 20 s still timed out app and diff tests, so the ceiling is 60 s. A passing
       // test still ends as soon as it is done; only a stuck one waits this long.
       testTimeout: 60_000,
-      // Agent worktrees under .claude/ hold copies of the tests; run only this checkout's.
+      // Agent worktrees under .claude/ and .qwen/ hold copies of the tests; run only this checkout's.
       // server/ is its own package with its own Vitest setup (Workers runtime).
       // src-tauri/resources/ tests run with Node's own `node --test`, not in jsdom.
       // experiments/ also keeps standalone Node tests outside the app's Vitest suite.
-      exclude: [...configDefaults.exclude, ".claude/**", "server/**", "src-tauri/**", "experiments/**"],
+      exclude: [...configDefaults.exclude, ".claude/**", ".qwen/**", "server/**", "src-tauri/**", "experiments/**"],
     },
   }),
 );

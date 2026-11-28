@@ -4,9 +4,11 @@ import { AgentTile } from "../ui/AgentTile";
 import { ElicitationCard } from "./ElicitationCard";
 import { MarkdownRenderer } from "../MarkdownRenderer";
 import { MessageActionBar } from "../MessageActionBar";
+import type { RewindOptions } from "../../hooks/useSessionRewind";
 import { UserMessageBar } from "./UserMessageBar";
 import { AttachmentChips } from "../composer/AttachmentChips";
 import { ToolsPart } from "./ToolsPart";
+import { VisualBlock } from "./VisualBlock";
 import { ToolDetails } from "./ToolDetails";
 import { shownTools, stepsOf } from "../../lib/task-view";
 import { PlanUpdatedRow, ThinkingBlock } from "./ReplyExtras";
@@ -26,6 +28,9 @@ function timeLabelOf(message: ChatMessage): string | undefined {
 import { ArtifactCardRow } from "./ArtifactCardRow";
 import type { ArtifactCard } from "../../types";
 import { cardIdOf } from "../../lib/artifacts";
+import { ContinuedFromLine, type ContinuedFromView } from "./ContinuedFromLine";
+import type { SwitchTarget } from "../../lib/agent-switch";
+import { NextStepBox, type NextStepView } from "./NextStepBox";
 
 /** A message or card that arrives on screen fades in once (the appear token); streamed text does not move. */
 const APPEAR = "motion-safe:animate-appear";
@@ -45,15 +50,20 @@ export interface MessageRowProps {
   speaking: boolean;
   readAloudSupported: boolean;
   onCopy: (messageId: string, content: string) => void;
-  onFork?: (messageId: string) => void;
-  onRewind?: (messageId: string) => void;
+  /** No agent id: the session's own agent. */
+  onFork?: (messageId: string, agentId?: string) => void;
+  /** The agents the Fork menu offers (the session's own first); empty or absent keeps Fork one click. */
+  forkAgents?: readonly SwitchTarget[];
+  /** Names the agent and the source session of a message marked continuedFrom; absent where nothing resolves it. */
+  continuedFromOf?: (mark: NonNullable<ChatMessage["continuedFrom"]>) => ContinuedFromView;
+  onRewind?: (messageId: string, options?: RewindOptions) => void;
   onToggleReadAloud: (messageId: string, content: string) => void;
   onChooseOption?: (cardId: string, optionId: string, answers?: Record<string, string>) => void;
   onAnswerElicitation?: (key: string, answer: ElicitationAnswer) => void;
   onReopenElicitationUrl?: (key: string) => void;
   /** The ids of the session's artifacts: a card whose artifact is not among them reads Removed. Absent where they are unknown. */
   artifactIds?: ReadonlySet<string>;
-  /** Shows an artifact card's version in the Output tab. */
+  /** Shows an artifact card's version in the Artifacts tab. */
   onOpenArtifact?: (card: ArtifactCard) => void;
   /** Opens NEAR AI's Verification Center from a private reply's badge. */
   onOpenUrl?: (url: string) => void;
@@ -64,9 +74,13 @@ export interface MessageRowProps {
   /** A window with no overview card (a popout) shows a subagent's steps under the reply's tools. */
   showSubagentSteps?: boolean;
   /** True when the message arrived while its chat was on screen: it fades in once. */
+  /** The session whose inline visuals this row may read. Absent in a popout, which shows their titles only. */
+  visualSessionId?: string;
   appears?: boolean;
   /** True when its permission or input card arrived on screen after the message itself: the card fades in once. */
   cardAppears?: boolean;
+  /** The active next-step box (drawn under the reply it names), null when none is active, undefined in a popout. */
+  nextStep?: NextStepView | null;
 }
 
 /** A subagent's steps in the reply itself, for a window that has no inspector to open them in. */
@@ -78,9 +92,9 @@ function SubagentSteps({ tool, message, isTurnOver }: { tool: ToolExecution; mes
       {parts.map((part, index) =>
         part.kind === "text" ? (
           <MarkdownRenderer key={index} content={part.text} />
-        ) : (
+        ) : part.kind === "tools" ? (
           <ToolsPart key={index} tools={part.toolIds.flatMap((id) => byId.get(id) ?? [])} isCurrentTurn={false} isTurnOver={isTurnOver} />
-        ),
+        ) : null,
       )}
       {/* What its own tool call returned, which the task tab shows as its result. */}
       {tool.details && tool.details.length > 0 && <ToolDetails details={tool.details} />}
@@ -106,6 +120,8 @@ export const MessageRow = memo(function MessageRow({
   readAloudSupported,
   onCopy,
   onFork,
+  forkAgents,
+  continuedFromOf,
   onRewind,
   onToggleReadAloud,
   onChooseOption,
@@ -117,8 +133,10 @@ export const MessageRow = memo(function MessageRow({
   privateModelId,
   privateModel,
   showSubagentSteps = false,
+  visualSessionId,
   appears = false,
   cardAppears = false,
+  nextStep,
 }: MessageRowProps) {
   const isUser = message.role === "user";
   const timeLabel = timeLabelOf(message);
@@ -155,6 +173,9 @@ export const MessageRow = memo(function MessageRow({
         <div className="space-y-4">
           {parts.map((part, index) => {
             if (part.kind === "text") return <MarkdownRenderer key={index} content={part.text} />;
+            if (part.kind === "visual") {
+              return <VisualBlock key={part.id} sessionId={visualSessionId} part={part} agentName={agentName} isArriving={isCurrentTurn && !message.isComplete} />;
+            }
             const listed = shownTools(part.toolIds.flatMap((id) => toolsById.get(id) ?? []));
             if (listed.length === 0) return null;
             // Every tool, a subagent included, is a plain row here, so what it returned can still be read in
@@ -214,6 +235,15 @@ export const MessageRow = memo(function MessageRow({
           onOpen={onOpenArtifact}
         />
       )}
+
+      {/* What happens next, under a turn that ended on its own */}
+      {message.role === "agent" && message.endedNormally && (nextStep?.messageId === message.id || message.nextStep) && (
+        <NextStepBox
+          step={message.nextStep}
+          agentName={agentName}
+          view={nextStep === undefined ? undefined : nextStep?.messageId === message.id ? nextStep : null}
+        />
+      )}
     </div>
   );
 
@@ -226,6 +256,11 @@ export const MessageRow = memo(function MessageRow({
     >
       {isUser ? (
         <>
+          {message.continuedFrom && continuedFromOf && (
+            <div className="mb-4 w-full">
+              <ContinuedFromLine {...continuedFromOf(message.continuedFrom)} />
+            </div>
+          )}
           {(message.delegationReport ?? message.delegationTask) && (
             // A report from a delegated session, or a task given to one, keeps its bubble,
             // headed like a reply, saying whose it is.
@@ -269,7 +304,8 @@ export const MessageRow = memo(function MessageRow({
           <UserMessageBar
             copied={copied}
             onCopy={() => onCopy(message.id, message.content)}
-            onRewind={onRewind ? () => onRewind(message.id) : undefined}
+            canRestoreFiles={Boolean(message.checkpoint)}
+            onRewind={onRewind ? (options) => (options ? onRewind(message.id, options) : onRewind(message.id)) : undefined}
           />
         </>
       ) : (
@@ -296,7 +332,14 @@ export const MessageRow = memo(function MessageRow({
             <MessageActionBar
               copied={copied}
               onCopy={() => onCopy(message.id, message.content)}
-              onFork={onFork ? () => onFork(message.id) : undefined}
+              fork={
+                onFork
+                  ? {
+                      agents: forkAgents ?? [],
+                      onFork: (agentId) => (agentId === undefined ? onFork(message.id) : onFork(message.id, agentId)),
+                    }
+                  : undefined
+              }
               readAloud={
                 readAloudSupported
                   ? { speaking, onToggle: () => onToggleReadAloud(message.id, message.content) }

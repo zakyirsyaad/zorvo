@@ -9,10 +9,10 @@
 
 import { randomBytes } from "node:crypto";
 import { realpathSync } from "node:fs";
-import { secp256k1 } from "@noble/curves/secp256k1";
-import { keccak_256 } from "@noble/hashes/sha3";
-import { sha256 } from "@noble/hashes/sha256";
-import { bytesToHex, hexToBytes } from "@noble/hashes/utils";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { keccak_256 } from "@noble/hashes/sha3.js";
+import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 
 const NEAR_AI_URL = "https://cloud-api.near.ai/v1";
 const MODEL = "Qwen/Qwen3.8-27B-abliterated";
@@ -76,9 +76,9 @@ export function recoverAddress(text, signatureHex) {
     if (bytes.length !== 65) return null;
     const recovery = bytes[64] >= 27 ? bytes[64] - 27 : bytes[64];
     if (recovery !== 0 && recovery !== 1) return null;
-    const signature = secp256k1.Signature.fromCompact(bytes.slice(0, 64)).addRecoveryBit(recovery);
+    const signature = secp256k1.Signature.fromBytes(bytes.slice(0, 64)).addRecoveryBit(recovery);
     const publicKey = signature.recoverPublicKey(eip191Digest(text));
-    const hash = keccak_256(publicKey.toRawBytes(false).slice(1));
+    const hash = keccak_256(publicKey.toBytes(false).slice(1));
     return `0x${bytesToHex(hash.slice(-20))}`;
   } catch {
     return null;

@@ -2,7 +2,7 @@ import { isArtifactId, newestVersion } from './artifacts';
 import { MAX_COMMENT_LENGTH } from './review-comments';
 import { escapeVisible } from './visible-text';
 import type { BoardState, Canvas, CanvasArtboard, CanvasEntry } from './canvas';
-import type { Artifact, ArtifactAnchor, ArtifactComment, CanvasCommentRef, PageAnchor, PageMark, PageMessage, PageRef } from '../types';
+import type { Artifact, ArtifactAnchor, ArtifactComment, CanvasCommentRef, PageAnchor, PageMark, PageMessage, PageRef, DesignSystemCommentRef } from '../types';
 
 /**
  * Comments on artifact pages: their status, their numbers, the message that
@@ -110,6 +110,7 @@ function anchorOf(raw: unknown): ArtifactAnchor | null {
   if (raw.kind === 'text') return textAnchorOf(raw);
   if (raw.kind === 'element') return elementAnchorOf(raw);
   if (raw.kind === 'artboard' && Object.keys(raw).length === 1) return { kind: 'artboard' };
+  if (raw.kind === 'system' && Object.keys(raw).length === 1) return { kind: 'system' };
   return null;
 }
 
@@ -122,7 +123,23 @@ function canvasRefOf(raw: unknown): CanvasCommentRef | null {
   return { key, artboardId, fileHash };
 }
 
-const isPageAnchor = (anchor: ArtifactAnchor): anchor is PageAnchor => anchor.kind !== 'artboard';
+const isPageAnchor = (anchor: ArtifactAnchor): anchor is PageAnchor => anchor.kind === 'text' || anchor.kind === 'element';
+
+const DS_KEY = /^d-[0-9a-f]{16}$/;
+const DS_NAME = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
+const DS_HASH = /^[0-9a-f]{8,64}$/;
+
+function designSystemRefOf(raw: unknown): DesignSystemCommentRef | null {
+  if (!isObject(raw) || !isObject(raw.target)) return null;
+  const { key, hash } = raw;
+  if (typeof key !== 'string' || !DS_KEY.test(key) || typeof hash !== 'string' || !DS_HASH.test(hash)) return null;
+  const { kind, name, file } = raw.target;
+  if ((kind === 'token' || kind === 'component') && typeof name === 'string' && DS_NAME.test(name)) return { key, target: { kind, name }, hash };
+  if (kind === 'section' && typeof file === 'string' && file.endsWith('.md') && file.length <= 256 && !file.split('/').includes('..') && !file.startsWith('/')) {
+    return { key, target: { kind, file }, hash };
+  }
+  return null;
+}
 
 function messageOf(raw: unknown): PageMessage | null {
   if (!isObject(raw)) return null;
@@ -225,6 +242,7 @@ function cut(text: string, limit: number): string {
 /** One line naming where a comment is, for the strip. */
 export function anchorSummary(anchor: ArtifactAnchor): string {
   if (anchor.kind === 'artboard') return WHOLE_ARTBOARD;
+  if (anchor.kind === 'system') return 'The whole item';
   if (anchor.kind === 'text') return `"${shown(cut(anchor.quote, SUMMARY_QUOTE))}"`;
   const name = TAG_WORDS[anchor.tag] ?? `<${anchor.tag}>`;
   const id = anchor.elementId ? ` #${shown(anchor.elementId)}` : '';
@@ -286,12 +304,14 @@ function contextLine(before: string, after: string): string | null {
 }
 
 /** One comment: where it is, then the user's text, verbatim but for the indent. */
-function block({ comment, number, status }: CheckedArtifactComment): string {
-  const changed = comment.canvas ? ' (written on an earlier file; it has changed since)' : ` (written on Version ${comment.version}; the page has changed since)`;
+export function block({ comment, number, status }: CheckedArtifactComment): string {
+  const changed = comment.canvas || comment.designSystem ? ' (written on an earlier file; it has changed since)' : ` (written on Version ${comment.version}; the page has changed since)`;
   const written = status === 'outdated' ? changed : '';
   const { anchor } = comment;
   const first =
-    anchor.kind === 'artboard'
+    anchor.kind === 'system'
+      ? `${number}. On all of it${written}:`
+      : anchor.kind === 'artboard'
       ? `${number}. On the whole artboard${written}:`
       : anchor.kind === 'text'
         ? `${number}. On the text${written}:`
@@ -356,8 +376,20 @@ export function isCountedArtifact(comment: ArtifactComment, status: ArtifactComm
 }
 
 /** Whether the place a comment names fits: a page's artifact and version, or a canvas key with version 0. */
-function isPlaceValid(artifactId: unknown, version: unknown, anchor: ArtifactAnchor | null, canvas: CanvasCommentRef | null | undefined): boolean {
-  if (anchor === null || canvas === null) return false;
+function isPlaceValid(
+  artifactId: unknown,
+  version: unknown,
+  anchor: ArtifactAnchor | null,
+  canvas: CanvasCommentRef | null | undefined,
+  designSystem: DesignSystemCommentRef | null | undefined = undefined,
+): boolean {
+  if (anchor === null || canvas === null || designSystem === null) return false;
+  if (canvas !== undefined && designSystem !== undefined) return false;
+  if (designSystem !== undefined) {
+    const fits = anchor.kind === 'system' || (designSystem.target.kind === 'component' && isPageAnchor(anchor)) || (designSystem.target.kind === 'section' && anchor.kind === 'text');
+    return artifactId === designSystem.key && version === CANVAS_VERSION && fits;
+  }
+  if (anchor.kind === 'system') return false;
   if (canvas === undefined) return isArtifactId(artifactId) && isCount(version) && isPageAnchor(anchor);
   return artifactId === canvas.key && version === CANVAS_VERSION;
 }
@@ -367,10 +399,11 @@ function toArtifactComment(raw: unknown): ArtifactComment | null {
   const { id, artifactId, version, body, createdAt, sentAt } = raw;
   const anchor = anchorOf(raw.anchor);
   const canvas = raw.canvas === undefined ? undefined : canvasRefOf(raw.canvas);
+  const designSystem = raw.designSystem === undefined ? undefined : designSystemRefOf(raw.designSystem);
   const isValid =
     typeof id === 'string' &&
     id !== '' &&
-    isPlaceValid(artifactId, version, anchor, canvas) &&
+    isPlaceValid(artifactId, version, anchor, canvas, designSystem) &&
     anchor !== null &&
     typeof body === 'string' &&
     typeof createdAt === 'number' &&
@@ -385,6 +418,7 @@ function toArtifactComment(raw: unknown): ArtifactComment | null {
     createdAt,
     ...(typeof sentAt === 'number' && Number.isInteger(sentAt) ? { sentAt } : {}),
     ...(canvas ? { canvas } : {}),
+    ...(designSystem ? { designSystem } : {}),
   };
 }
 
@@ -414,9 +448,14 @@ export function withoutMissingArtifacts(
   comments: ArtifactComment[],
   artifacts: readonly Artifact[],
   canvases: readonly CanvasEntry[],
+  designSystems: readonly { key: string }[] = [],
 ): ArtifactComment[] {
   const ids = new Set(artifacts.map((artifact) => artifact.id));
   const keys = new Set(canvases.map((canvas) => canvas.key));
-  const kept = comments.filter((comment) => (comment.canvas ? keys.has(comment.canvas.key) : ids.has(comment.artifactId)));
+  const systems = new Set(designSystems.map((system) => system.key));
+  const kept = comments.filter((comment) => {
+    if (comment.designSystem) return systems.has(comment.designSystem.key);
+    return comment.canvas ? keys.has(comment.canvas.key) : ids.has(comment.artifactId);
+  });
   return kept.length === comments.length ? comments : kept;
 }

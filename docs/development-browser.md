@@ -1,139 +1,111 @@
 # Browser development
 
-The native Browser inspector uses system WebKit. Chromium debug uses an installed
-Chrome, Brave or Chromium in a separate temporary profile and window. It does not
-inspect the same document as the WebKit panel. No CEF runtime, helper apps or new
-main-process entitlements are bundled.
+The Browser inspector uses the system WKWebView, outside Tauri's privileged
+webview. It adds no bundled browser, helper app, main-process entitlement,
+Node/CDP worker or browser-runtime installer. Chromium diagnostics are proposed
+separately and require a maintainer decision before integration.
 
-The standalone probe in PR #256 and canonical capture guidance in PR #270 are
-merged. The full browser integration is submitted separately for review. The
-engine note and probe remain the record of accepted direction and standalone
-observations; they do not certify older OS or Intel runtime behavior of this
-integration. Current-Mac integration observations are recorded below.
+The standalone probe in #256 and capture guidance in #270 are merged. The
+canonical engine note remains unchanged. Probe approval does not certify this
+feature on older macOS or Intel; those runtime limits remain explicit.
 
-## Entry points
+## Ownership and permissions
 
-- `src-tauri/src/browser/`: main-thread native views, per-session non-persistent
-  stores, guarded capture policy, named script world, document-scoped refs and
-  bounded operations. Every tab has its own configuration and shares only its
-  session's data store. Navigation accepts HTTP(S), with credentials and external
-  schemes refused. Script events are untrusted events; some sites ignore them.
-- `browser_commands.rs`: authenticated pending agent calls, session browser
-  grants, one-time file receipts and manual UI actions. The original request is
-  read from the backend's pending table; agent-supplied approvals are discarded.
-  The request and grant generation are checked again at engine dispatch.
-- `browser_debug.rs` and `resources/browser-cdp/`: JSONL process supervision and
-  the 45-operation Chromium adapter. A worker has its own process group. Close,
-  cancellation deadlines and app exit end its owned processes. The optional
-  Lighthouse installation has an exact version and npm integrity lockfile; only
-  an explicit install click downloads it. Audits use a fresh profile and a
-  temporary loopback endpoint; regular diagnostics use a CDP pipe.
-- `useBrowser*` and `components/browser/`: normal Inspector tab, retained view
-  placement, overlay hiding, address normalization, tools and permission dialogs.
-  Navigation from UI never starts an ACP agent or a loopback HTTP server. Address
-  search submits to Google. The compact toolbar shows navigation, the address,
-  element selection and its menu. A closable tab strip and blank new-tab action
-  sit above it. The page menu offers zoom, copy link, open in the system browser
-  and Clear history; the separate tools menu contains engine choices, diagnostic
-  views and browser-access revocation. The main Tauri CSP remains unchanged.
+Each session owns one non-persistent WebKit store, shared only by its own tabs.
+Every tab has a separate configuration and isolated script world. The page has
+no app initialization script or invoke key. Capture is disabled and denial
+delegates replace permissive defaults before the first remote request.
+Downloads are refused. JavaScript automatic windows remain disabled. The custom delegate additionally
+admits only hyperlink navigation with a matching, short-lived trusted click
+from its isolated world and current document. Navigation type alone also
+accepts synthetic clicks, so it is not sufficient. Script window.open calls
+are refused even if WebKit asks the delegate about them.
+Permitted hyperlink popups stay in the background and never replace the active tab.
+Page alerts complete silently; confirms return false and prompts return null.
 
-Native page zoom uses WebKit's public page-zoom API and stays with its tab. Its
-percentage in the address field resets to 100%. These controls are manual UI
-commands, separate from the agent operation catalog. Chromium debug uses its
-external window's own zoom controls.
+`browser_commands.rs` reads the original authenticated pending tool call and
+checks the backend's memory-only grant again at dispatch. Caller-provided
+approval/authorization fields are removed. The first call waits on a normal
+chat ActionCard with Allow for this session and Deny. `useAgentTools` owns the
+single tool-call listener; its focused browser-card helper groups waiting
+calls, withdraws ended requests and projects backend status for the session
+menu. Popouts forward ordinary card choices to the main window. Stop allowing
+browser access sits next to the delegation control in the session menu.
 
-Recent native pages are a device-local, deduplicated list of at most 30 entries
-in a private `browser-visits.json` file. Known credential-query URLs are excluded
-and fragments are omitted. Blank tabs show these visits as links. Clear history
-empties that list; open tabs, their back/forward stacks and site data are kept.
-Older browser-history files are not imported or changed.
+An agent exit revokes its grant and pending authorization without closing the
+user's WebKit tabs. Login cookies and unfinished forms survive an agent crash
+or End agent. Session deletion, startup orphan cleanup and app exit close the
+views. Navigation/close cancel outgoing-document replies; a late WebKit
+completion cannot answer them twice. Guarded termination/reset and close calls
+release retained page state, with the legacy termination call as a fallback.
+Behavior on other WebKit versions still requires runtime verification.
 
-The native browser preserves WebKit's user-agent prefix and appends the standard
-`Safari/605.1.15` compatibility token plus `Zorvo/<version>` before its first
-request. Raw WKWebView identification makes some sites serve a fixed-width
-fallback. This identifies the actual WebKit engine without borrowing a Chromium
-identity or inventing a Safari application version. The retained view still uses
-the panel's logical bounds; no page CSS, viewport meta tag or zoom is overridden.
+DOM operations wait for the document-start helper before dispatch. The wait
+pins the original tab, checks authorization and tab lifetime, and shares the
+operation's timeout. It runs outside the UI thread and never retries a click
+or another interaction. A delayed-response fixture verifies an immediate wait
+followed by exactly one click on the first document. A stalled-image fixture
+also verifies that helper readiness does not wait for all network loading.
 
-Site information reads the current native view's TLS properties and its session's
-cookie store; cookie names and values never cross IPC. Clear is a manual action
-bound to the displayed URL. It removes cookies applicable to the host on all
-paths (including shared parent-domain cookies), and clears that origin's local
-and session storage, IndexedDB, CacheStorage and service-worker registrations.
-Blocked deletion reports a partial result. Shared HTTP network caches are left
-alone because WebKit's grouped data records can include other hosts. Agent access
-reflects the existing session grant; the information panel grants no permissions.
+## Operations and page controls
 
-An overlapping browser menu captures one native PNG and decodes it before hiding
-the view beneath the HTML panel. Closing the menu restores the retained native
-view and releases that still image. No capture loop or per-scroll IPC is used.
+The Rust catalog in `browser/catalog.json` exposes exactly these 19 operations:
+`tabs.list`, `tabs.open`, `tabs.focus`, `tabs.close`, `navigate`, `back`,
+`forward`, `reload`, `wait`, `snapshot`, `find`, `evaluate`, `screenshot`,
+`click`, `fill`, `select`, `check`, `scroll` and `console`.
 
-The manual element picker uses the fixed named-world helper, with no messages on
-hover or scroll. A trusted main-frame click returns bounded, quoted page context
-to the composer without sending a message. Its native view, document token and
-arm nonce are checked before accepting the selection. Cancellation is bound to
-the requesting UI's ID, so a late cleanup cannot cancel a replacement picker.
-Navigation, leaving the page and Escape cancel selection. Iframe selection is
-not currently supported by this manual picker.
+Network inspection, file transfer, drag, page dialogs, traces, CPU, heap and
+Lighthouse are not included. Local HTML uses show_artifact and the existing
+Output flow. Manual browser controls include stop loading, blank tabs, native
+per-tab zoom, site information and recent pages. The compact tabs/address
+layout is retained; Console and Debug live in their own tools menu.
 
-## Operation groups
+Snapshots omit values of password inputs and autocomplete tokens naming a
+password, one-time code or card data. Their type/ref remain usable for filling.
+This protects the default snapshot read; explicit evaluate remains capable of
+reading page data after a session grant. Open shadow roots are traversed,
+closed roots remain opaque, and script-generated events are not trusted native
+input. Sites may reject those events. Manual picking handles trusted main-frame
+clicks and adds quoted context to the draft without sending it.
 
-Both engines support tabs/navigation, frames, wait, snapshot, find, evaluate,
-screenshot, click, hover, drag, fill, forms, select, check, key, scroll, dialogs and
-console. WebKit reads a bounded control snapshot and DOM text; it does not claim
-to expose closed shadow roots or trusted native input. Chromium adds full request
-inspection, approved workspace files, performance traces, CPU and heap operations,
-and Lighthouse. `browser_guide` returns the operation names and parameter schemas.
-Unsupported engine operations fail explicitly. Debug, Network, Console, Files
-and Performance views opened from the browser menu show actual operation results.
+Native evaluate accepts an expression or async IIFE and awaits promises. Wrap
+multiple statements in an IIFE with an explicit return. WebKit compiles the
+caller code only in the page world; it never enters the isolated helper or
+uses page eval. The legacy script alias executes a synchronous program and
+returns its completion value. A failure is never retried with different syntax,
+so side effects run once. Console/evaluate/DOM output remains page-controlled.
 
-Local HTML preview uses the existing artifact store and Review/Output flow.
-The Chromium adapter also has a bounded workspace image/text/PDF preview. Downloads
-and page device permissions are denied. Console and explicit evaluate output
-remain page-controlled data.
+The address bar accepts explicit HTTP(S) addresses, domains and local servers.
+Non-address text, including TODO: fix login, gets a local error and hint;
+it is never sent to a search provider. The WebKit UA prefix is retained with
+its Safari compatibility token and Zorvo identity before the first request.
+No remote CSS, viewport metadata or zoom is rewritten to force responsiveness.
 
-Native `evaluate` accepts a JavaScript expression, including an async IIFE, and
-awaits its promise. Wrap multiple statements in an IIFE with an explicit return.
-WebKit compiles this caller code only in the page world; it never enters the
-isolated helper or uses page `eval`, which strict site CSPs can block. The legacy
-`script` alias executes a synchronous program through WebKit and returns its
-completion value. A failed operation is never retried as a different syntax:
-side effects execute once. Console reads use the same native expression path.
+Site information reads real TLS properties, cookie counts and backend grant
+status. Clearing is bound to the displayed URL and session; it clears applicable
+cookies and origin storage, leaving shared HTTP cache alone. Overlapping menus
+capture and decode one PNG before hiding the native view, then restore the
+same view. There is no screenshot stream or per-scroll IPC.
 
-Navigating or closing a document cancels its outstanding operation replies.
-Late WebKit completions cannot replace those cancellations. A pending page
-dialog is dismissed before explicit navigate, reload, back or forward, since
-the dialog can prevent WebKit from starting the replacement document.
-Closing a view uses guarded WebKit termination/reset and close selectors. The
-reset clears process state in addition to requesting termination; the older
-termination selector remains a fallback where reset is unavailable. The debug
-lifecycle case checks actual owned process exit on the tested OS. Availability
-and termination behavior on other WebKit versions remain runtime checks.
+Recent pages are a private, atomic, device-local list of at most 30 entries.
+Known credential/signed-query URLs are excluded and fragments omitted. Clear
+history preserves open pages, their navigation stacks and site data.
 
 ## Checks
 
-```sh
-pnpm lint
-pnpm vitest run src/test/browser.test.ts src/test/browser-panel.test.tsx src/test/browser-picker.test.tsx src/test/browser-agent-tools.test.tsx
-node --test src-tauri/resources/browser-cdp/runtime.test.mjs
-cargo fmt --manifest-path src-tauri/Cargo.toml --check
-cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml
-```
+Run pnpm lint, the affected Vitest files, then pnpm build. Rust changes require
+cargo fmt --check, cargo clippy --all-targets -- -D warnings and cargo test from
+src-tauri. The probe's Node suites remain separate and unchanged.
 
-The explicit Chromium smoke command is documented in its README. It exercises
-the real installed browser, all operation families and optionally pinned
-Lighthouse against a synthetic loopback fixture; it uses no model API.
-
-Build a separate debug application with embedded frontend assets:
+For real native integration, build a separate debug app with embedded assets:
 
 ```sh
 pnpm tauri build --debug --bundles app --config '{"bundle":{"createUpdaterArtifacts":false}}'
 node src-tauri/src/browser/smoke-fixture.mjs
 ```
 
-Keep the fixture running, then launch the generated app through LaunchServices,
-using the printed loopback URL. Use a new output file for each run:
+Keep the synthetic loopback fixture running. Launch the generated app through
+LaunchServices with its printed URL and a new output file per run:
 
 ```sh
 open -W -n -a "$PWD/src-tauri/target/debug/bundle/macos/Zorvo.app" \
@@ -142,15 +114,15 @@ open -W -n -a "$PWD/src-tauri/target/debug/bundle/macos/Zorvo.app" \
   --env ZORVO_BROWSER_SMOKE_CASE=full
 ```
 
-The opt-in debug harness waits for frontend startup cleanup, closes its own
-test sessions and exits, with a 120-second overall deadline. It covers native
-snapshots, form events, hidden interaction, cross-origin frame access, session
-cookie isolation, stale same-document refs, alert/confirm/prompt accept/dismiss,
-and navigation or tab close while a dialog is pending. Navigation waits observe
-a new document identity and exact URL, rather than a selector in the old page.
-A successful synthetic smoke is not evidence of trackpad parity with OpenCode,
-the full real-site matrix or older-OS behavior. Debug state uses its own app data
-directory; the installed release app and its sessions need not be replaced.
+The opt-in harness waits for frontend startup cleanup, closes its test sessions
+and exits within a 120-second overall deadline. Cases are full, responsive,
+chrome (manual browser controls, not Chromium), forms, lifecycle, placement and
+sites. Forms bundle actual installed React in memory with no CDN. Lifecycle
+checks five retained tabs, native bounds/visibility, nested scrolling, grant
+revocation retention, session teardown, looping JavaScript and owned process
+exit. Placement alternates actual artifact/browser child views through a PNG
+menu-cover cycle. Sites checks public HTTPS snapshots/TLS/layout and records
+public HTTP as loaded or blocked/unavailable under the unchanged ATS policy.
 
 Set `ZORVO_BROWSER_SMOKE_CASE=responsive` for the focused first-request identity
 and viewport check. It resizes one retained native view to 360, 560 and 900 logical
@@ -162,6 +134,13 @@ zoom/reset while checking that form state survives and another tab stays at 100%
 
 Additional explicit cases:
 
+- `upload`: the ref check tells a file input from a button; an agent upload armed on a tab answers
+  the page's own file chooser after the helper clicks the input and reads `taken` (the page reads
+  back both files' names and contents); a click that opens no chooser reads `waiting`, then
+  `expired` once the arm's lifetime ends, never `taken`; withdrawing needs no call grant; and no
+  upload is armed for an origin other than the page's. A click with nothing armed opens the system
+  open panel (found among the app's windows, shown for 1.5 s, then cancelled), and cancelling it
+  leaves the input as it was.
 - `forms`: nested open-shadow refs, a strict-CSP page, awaited expressions,
   exactly-once runtime errors, the legacy script alias, and an actual React
   controlled long form. React is bundled from the checkout into an in-memory
@@ -180,16 +159,7 @@ Additional explicit cases:
   also records HTTP example.com as loaded or blocked/unavailable under the
   existing ATS policy. No certificate exception or ATS relaxation is added.
 
-The [2026-11-21 integration record](testing/browser-integration-2026-11-21.json)
-contains source digests and bounded observations: five complete native runs,
-two lifecycle runs, controlled React/strict-CSP forms, native artifact placement,
-public HTTPS sites, and Chromium diagnostics including pinned Lighthouse.
-The lifecycle runs observed all eight owned WebContent processes end after
-cleanup; they do not establish sustained leak-free behavior. Public HTTP was
-blocked or unavailable under the unchanged ATS policy.
-
 Current integration runs use macOS 27.0.1 on Apple Silicon. Capture-denial runs
 below macOS 27, Intel runtime behavior, sustained full-app resource cost and
-trackpad parity remain unverified. The original engine gate matrix continues
-to state those requirements; a review-ready feature is not a certification of
-every supported runtime.
+trackpad parity remain unverified. A review-ready feature is not a certification
+of every supported runtime.

@@ -23,12 +23,16 @@ use tauri::{Listener, Manager};
 
 use zorvo_lib::artifacts::canvas_view::{ShownCanvas, CANVAS_PICK, CANVAS_VIEW};
 use zorvo_lib::artifacts::commands::{show_canvas, CanvasRead};
-use zorvo_lib::artifacts::protocol::{canvas_file_url, Served};
+use zorvo_lib::artifacts::ds_commands::show_design_system;
+use zorvo_lib::artifacts::ds_protocol::ds_file_url;
+use zorvo_lib::artifacts::ds_view::{ds_apply_script, ShownDesignSystem, DS_VIEW};
+use zorvo_lib::artifacts::protocol::{canvas_file_url, canvas_themed_file_url, Served};
 use zorvo_lib::artifacts::render::{
-    join_pdfs, pdf_page_sizes, render_pdf, snapshot_png, RENDER_FAILED,
+    join_pdfs, pdf_page_sizes, render_pdf, snapshot_png, snapshot_visual_png, RENDER_FAILED,
 };
 use zorvo_lib::artifacts::store::ArtifactStore;
 use zorvo_lib::artifacts::view::{self, Bounds};
+use zorvo_lib::artifacts::visual_wrapper::Theme;
 
 const SESSION: &str = "session-1794800000000-k3x9a";
 /// The whole test, launch included; a hang fails it.
@@ -127,6 +131,46 @@ fn check(app: &tauri::AppHandle, folder: &Path) {
         "joined pdf: {} pages {joined_sizes:?}, {} bytes",
         joined_sizes.len(),
         joined.len()
+    );
+    // An inline visual: drawn through its own route, twice as many pixels wide as its block,
+    // and painted on the theme's sheet colour (a visual's own background is transparent).
+    let visual = served
+        .store
+        .put_visual(SESSION, "Flow", b"<svg viewBox=\"0 0 10 5\" width=\"600\"><rect width=\"10\" height=\"5\" fill=\"var(--chip)\"/></svg>", 1)
+        .expect("keep the visual");
+    let mut pictures = Vec::new();
+    for (theme, name) in [(Theme::Dark, "dark"), (Theme::Light, "light")] {
+        let png = snapshot_visual_png(
+            app,
+            Arc::clone(&served),
+            SESSION,
+            &visual.id,
+            theme,
+            600,
+            300,
+        )
+        .expect("draw the visual");
+        assert_eq!(png_size(&png), (1200, 600), "visual PNG, {name}");
+        println!("visual png {name}: {} bytes", png.len());
+        pictures.push(png);
+    }
+    assert_ne!(
+        pictures[0], pictures[1],
+        "the two themes draw different pictures"
+    );
+    let gone = snapshot_visual_png(
+        app,
+        Arc::clone(&served),
+        SESSION,
+        "v-0000000000000000",
+        Theme::Dark,
+        600,
+        300,
+    );
+    assert_eq!(
+        gone,
+        Err(RENDER_FAILED.to_string()),
+        "a visual that does not exist"
     );
     let refused = snapshot_png(app, served, "https://example.com/".into(), 1440, 900, 720);
     assert_eq!(
@@ -383,6 +427,123 @@ fn check_frames(app: &tauri::AppHandle, folder: &Path) {
     view::close(app);
 }
 
+/// The colour of the centre pixel of a PNG.
+fn centre(png: &[u8]) -> [u8; 3] {
+    let image = image::load_from_memory(png)
+        .expect("decode the PNG")
+        .to_rgb8();
+    let pixel = image.get_pixel(image.width() / 2, image.height() / 2);
+    [pixel[0], pixel[1], pixel[2]]
+}
+
+fn near(actual: [u8; 3], expected: [u8; 3]) -> bool {
+    actual
+        .iter()
+        .zip(expected)
+        .all(|(a, e)| (i16::from(*a) - i16::from(e)).abs() <= 6)
+}
+
+/// A design system with two themes and a component, and a canvas that names it: the artboard
+/// fills itself with `var(--accent)` from `_ds/tokens.css`, and the preview with the bundle's colour.
+fn check_design_system(app: &tauri::AppHandle, folder: &Path) {
+    let work = folder.join("ds-work");
+    let ds = work.join("ds");
+    std::fs::create_dir_all(ds.join("components/Swatch")).expect("system folder");
+    std::fs::create_dir_all(work.join("design")).expect("canvas folder");
+    std::fs::write(ds.join("design-system.json"), r#"{"title":"Probe"}"#).expect("index");
+    std::fs::write(ds.join("README.md"), "# Probe").expect("readme");
+    std::fs::write(
+        ds.join("tokens.json"),
+        r##"{"color":{"themes":[{"id":"dark","name":"Dark"},{"id":"light","name":"Light"}],
+        "tokens":[{"name":"accent","value":{"dark":"#1d4ed8","light":"#f97316"},"usage":"Fill."}]}}"##,
+    )
+    .expect("tokens");
+    std::fs::write(
+        ds.join("components/bundle.css"),
+        ".swatch{position:absolute;inset:0;background:#22c55e}",
+    )
+    .expect("bundle");
+    std::fs::write(
+        ds.join("components/Swatch/preview.html"),
+        "<!-- @dsCard group=\"Probe\" height=200 -->\n<!doctype html><html><head><meta charset=\"utf-8\"></head><body style=\"margin:0\"><div class=\"swatch\"></div></body></html>",
+    )
+    .expect("preview");
+    std::fs::write(
+        work.join("design/canvas.json"),
+        r#"{"version":1,"title":"Probe","designSystem":"../ds","sections":[{"id":"s","title":"S","artboards":[{"id":"a","title":"A","file":"a.html","width":400,"height":300}]}]}"#,
+    )
+    .expect("canvas.json");
+    std::fs::write(
+        work.join("design/a.html"),
+        r#"<!doctype html><html><head><link rel="stylesheet" href="_ds/tokens.css"></head><body style="margin:0;background:var(--accent)"></body></html>"#,
+    )
+    .expect("artboard");
+    let work = std::fs::canonicalize(work).expect("canonical work");
+    let cwd = work.to_str().expect("utf-8").to_string();
+    let store = Arc::new(ArtifactStore::new(folder.join("ds-artifacts")));
+    let canvas =
+        show_canvas(&store, |_| true, SESSION, &cwd, "design", 3).expect("show the canvas");
+    let system =
+        show_design_system(&store, |_| true, SESSION, &cwd, "ds", 3).expect("show the system");
+    let served = Arc::new(Served {
+        store,
+        thumbs: folder.join("ds-thumbs"),
+        is_known: Arc::new(|_| true),
+    });
+    let draw = |url: String, width: u32, height: u32| {
+        snapshot_png(app, Arc::clone(&served), url, width, height, width).expect("draw")
+    };
+    let key = &canvas.entry.key;
+    let dark = centre(&draw(
+        canvas_themed_file_url(SESSION, key, "dark", "a.html"),
+        400,
+        300,
+    ));
+    let light = centre(&draw(
+        canvas_themed_file_url(SESSION, key, "light", "a.html"),
+        400,
+        300,
+    ));
+    println!("design system artboard: dark {dark:?}, light {light:?}");
+    assert!(near(dark, [0x1d, 0x4e, 0xd8]), "dark artboard {dark:?}");
+    assert!(near(light, [0xf9, 0x73, 0x16]), "light artboard {light:?}");
+    // The system itself, through Zorvo's shell in the shared view: the live preview of its one
+    // component loads, and the shell reports it from the iframe's own load event.
+    let (sent, received) = channel();
+    app.listen_any(DS_VIEW, move |event| {
+        let payload = serde_json::from_str(event.payload()).unwrap_or(Value::Null);
+        let _ = sent.send(payload);
+    });
+    let shown = ShownDesignSystem {
+        session_id: SESSION.to_string(),
+        key: system.entry.key.clone(),
+    };
+    let preview = ds_file_url(
+        SESSION,
+        &shown.key,
+        "dark",
+        "components/Swatch/preview.html",
+    );
+    let state = json!({
+        "title": "Probe", "theme": "dark", "themes": [{"id": "dark", "name": "Dark"}, {"id": "light", "name": "Light"}],
+        "sections": [], "sectionsCut": false, "colours": [{"name": "accent", "value": "#1d4ed8"}],
+        "type": [], "spacing": [], "radius": [], "shadow": [],
+        "components": [{"name": "Swatch", "group": "Probe", "height": 200, "url": format!("{preview}?v=1&d=2")}],
+        "assets": [], "fonts": [], "fontCss": "", "googleFontsUrl": null, "notes": [],
+        "ownMarks": {"tokens": {}, "components": {}, "sections": {}},
+    });
+    let script = ds_apply_script(&state.to_string()).expect("a state the shell takes");
+    view::show_design_system(app, served, shown.clone(), CANVAS_BOUNDS).expect("show the system");
+    view::apply_design_system(app, shown, vec!["Swatch".to_string()], script);
+    let loaded = received
+        .recv_timeout(Duration::from_secs(20))
+        .expect("the shell never reported its preview as loaded");
+    println!("design system shell: {loaded}");
+    assert_eq!(loaded["kind"], "preview-loaded");
+    assert_eq!(loaded["component"], "Swatch");
+    view::close(app);
+}
+
 fn scratch_folder() -> PathBuf {
     let folder = std::env::temp_dir().join(format!("zorvo-canvas-render-{}", std::process::id()));
     std::fs::create_dir_all(&folder).expect("scratch folder");
@@ -413,6 +574,7 @@ fn main() {
                 let passed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     check(&handle, &checked);
                     check_frames(&handle, &checked);
+                    check_design_system(&handle, &checked);
                 }))
                 .is_ok();
                 let _ = std::fs::remove_dir_all(&checked);

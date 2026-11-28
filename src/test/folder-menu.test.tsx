@@ -34,7 +34,6 @@ describe("FolderMenu", () => {
     render(
       <FolderMenu
         folderName="agent-desktop"
-        folderPath="/tmp/agent-desktop"
         isFolded={false}
         onNewSession={onNewSession}
         onReveal={onReveal}
@@ -79,7 +78,6 @@ describe("FolderMenu", () => {
     render(
       <FolderMenu
         folderName="agent-desktop"
-        folderPath="/tmp/agent-desktop"
         isFolded={true}
         onToggle={vi.fn()}
       />,
@@ -97,7 +95,6 @@ describe("FolderMenu", () => {
     render(
       <FolderMenu
         folderName="agent-desktop"
-        folderPath="/tmp/agent-desktop"
         isFolded={false}
         onRemove={onRemove}
       />,
@@ -121,7 +118,6 @@ describe("FolderMenu", () => {
     render(
       <FolderMenu
         folderName="agent-desktop"
-        folderPath="/tmp/agent-desktop"
         isFolded={false}
         onRemove={onRemove}
       />,

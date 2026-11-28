@@ -7,7 +7,6 @@ const CONFIRM_MS = 4000;
 
 export interface FolderMenuProps {
   folderName: string;
-  folderPath?: string;
   isFolded: boolean;
   /** Opens or closes the menu from outside (e.g. right-click on the folder header). */
   isOpen?: boolean;

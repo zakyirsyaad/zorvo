@@ -134,7 +134,6 @@ export function FolderGroup({
             {hasMenu && (
               <FolderMenu
                 folderName={group.name}
-                folderPath={group.path}
                 isFolded={isFolded}
                 isOpen={menuOpen}
                 onOpenChange={setMenuOpen}

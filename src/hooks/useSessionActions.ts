@@ -4,7 +4,7 @@ import type { AcpEngine } from './session-engine/useAcpEngine';
 import type { NavigationHistory } from './useNavigationHistory';
 import { useLatest } from './useLatest';
 import { closeTurn } from '../lib/acp-events';
-import { isListed, mostRecentSessionId, removeSessionFrom } from '../lib/session-helpers';
+import { isArchived, isListed, mostRecentSessionId, removeSessionFrom, workspacePathOf } from '../lib/session-helpers';
 import { removeSessionWorktree } from '../lib/session-worktree';
 import type { ChatMessage, PersistedState, Session } from '../types';
 
@@ -24,10 +24,14 @@ export interface SessionActionsDeps {
 
 export interface SessionActions {
   deleteSession: (sessionId: string) => void;
+  /** Permanently deletes every session (active, pinned, archived) belonging to a workspace folder. */
+  deleteWorkspaceSessions: (workspacePath: string) => void;
   discardSession: (sessionId: string) => void;
   renameSession: (sessionId: string, name: string) => void;
   pinSession: (sessionId: string, isPinned: boolean) => void;
   archiveSession: (sessionId: string, isArchived: boolean) => Promise<void>;
+  /** Archives every unarchived, non-busy session belonging to a workspace folder. */
+  archiveWorkspaceSessions: (workspacePath: string, isBusy: (sessionId: string) => boolean) => Promise<void>;
 }
 
 /** What can be done to a session: the sidebar's delete, rename, pin and archive, and an import's discard. */
@@ -110,5 +114,58 @@ export function useSessionActions(deps: SessionActionsDeps): SessionActions {
     selectNextAfter(sessionId);
   };
 
-  return { deleteSession, discardSession, renameSession, pinSession, archiveSession };
+  const deleteWorkspaceSessions = (workspacePath: string) => {
+    const targets = sessions.filter((s) => workspacePathOf(s) === workspacePath);
+    if (targets.length === 0) return;
+    const targetIds = new Set(targets.map((s) => s.id));
+    const remaining = sessions.filter((s) => !targetIds.has(s.id));
+    const stoppedByWorktree = new Map<string, { session: Session; stopped: Promise<boolean>[] }>();
+
+    for (const session of targets) {
+      const stopped = stopAgent(session);
+      if (session.privateMode) void invoke('private_forget_session', { sessionId: session.id }).catch(() => {});
+      deps.navigation.remove(session.id);
+      deps.removeTranscript(session.id);
+      if (session.worktree?.path) {
+        const entry = stoppedByWorktree.get(session.worktree.path);
+        if (entry) entry.stopped.push(stopped);
+        else stoppedByWorktree.set(session.worktree.path, { session, stopped: [stopped] });
+      }
+    }
+
+    deps.updateState((prev) => targets.reduce((acc, s) => removeSessionFrom(acc, s.id), prev));
+
+    for (const { session, stopped } of stoppedByWorktree.values()) {
+      const allStopped = Promise.all(stopped).then((results) => results.every(Boolean));
+      void removeSessionWorktree(session, [session, ...remaining], allStopped, (path) => {
+        deps.closeTerminals?.(path);
+        if (session.cwd !== path) deps.closeTerminals?.(session.cwd);
+      }).then((kept) => kept && onNotice(kept));
+    }
+
+    setActiveSessionId((current) =>
+      targetIds.has(current)
+        ? mostRecentSessionId(sessionsRef.current.filter((s) => !targetIds.has(s.id) && isListed(s)))
+        : current,
+    );
+  };
+
+  const archiveWorkspaceSessions = async (workspacePath: string, isBusy: (sessionId: string) => boolean) => {
+    const targets = sessions.filter(
+      (s) => workspacePathOf(s) === workspacePath && !isArchived(s) && !isBusy(s.id),
+    );
+    for (const session of targets) {
+      await archiveSession(session.id, true);
+    }
+  };
+
+  return {
+    deleteSession,
+    deleteWorkspaceSessions,
+    discardSession,
+    renameSession,
+    pinSession,
+    archiveSession,
+    archiveWorkspaceSessions,
+  };
 }

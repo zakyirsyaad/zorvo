@@ -314,7 +314,7 @@ export function OptionDropdown({
         >
           {icon}
           {showLabel && <span className="text-fg-subtle">{label}</span>}
-          <span className="max-w-[140px] truncate">{chipLabelOf(valueLabel)}</span>
+          <span className="max-w-[116px] truncate">{chipLabelOf(valueLabel)}</span>
           {trailing}
           <ChevronDown size={12} aria-hidden="true" className="shrink-0 text-fg-muted" />
         </button>

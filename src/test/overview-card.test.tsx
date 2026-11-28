@@ -173,15 +173,14 @@ describe("OverviewCard", () => {
     expect(onOpenUrl).toHaveBeenCalledWith("https://github.com/o/r/pull/272");
   });
 
-  it("folds to a pill that says what runs and what changed", () => {
-    const onToggleCollapsed = vi.fn();
+  it("renders nothing when collapsed instead of a floating pill", () => {
     render(
       <OverviewCard
         overview={{ ...empty, runningCount: 3 }}
         agentName="Claude Code"
         changes={{ added: 42, removed: 11 }}
         isCollapsed
-        onToggleCollapsed={onToggleCollapsed}
+        onToggleCollapsed={vi.fn()}
         onShowTab={vi.fn()}
         onOpenTask={vi.fn()}
         onOpenPage={vi.fn()}
@@ -190,10 +189,28 @@ describe("OverviewCard", () => {
       />,
     );
     expect(screen.queryByRole("region", { name: "Session overview" })).toBeNull();
-    const pill = screen.getByRole("button", { name: "Expand session overview: 3 running" });
-    expect(pill.textContent).not.toMatch(/\+42|−11/);
-    fireEvent.click(pill);
-    expect(onToggleCollapsed).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: /Expand session overview/ })).toBeNull();
+  });
+
+  it("renders nothing on a narrow sheet when not floating", () => {
+    render(
+      <OverviewCard
+        overview={{ ...empty, runningCount: 2 }}
+        agentName="Claude Code"
+        changes={{ added: 5, removed: 1 }}
+        isCollapsed={false}
+        isNarrow
+        isFloating={false}
+        onToggleCollapsed={vi.fn()}
+        onShowTab={vi.fn()}
+        onOpenTask={vi.fn()}
+        onOpenPage={vi.fn()}
+        onOpenFile={vi.fn()}
+        onOpenUrl={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("region", { name: "Session overview" })).toBeNull();
+    expect(screen.queryByRole("button")).toBeNull();
   });
 
   it("collapses from the button beside the Environment heading", () => {
@@ -202,31 +219,42 @@ describe("OverviewCard", () => {
     expect(onToggleCollapsed).toHaveBeenCalledTimes(1);
   });
 
-  it("hands the focus to the pill when the card folds, and back to the collapse button when it opens", () => {
+  it("returns focus to the toggle button when the card folds", () => {
     function Folding() {
       const [isCollapsed, setIsCollapsed] = useState(false);
+      const toggleRef = { current: null as HTMLButtonElement | null };
       return (
-        <OverviewCard
-          overview={empty}
-          agentName="Claude Code"
-          changes={{ added: 1, removed: 0 }}
-          isCollapsed={isCollapsed}
-          onToggleCollapsed={() => setIsCollapsed((value) => !value)}
-          onShowTab={vi.fn()}
-          onOpenTask={vi.fn()}
-          onOpenPage={vi.fn()}
-          onOpenFile={vi.fn()}
-          onOpenUrl={vi.fn()}
-        />
+        <>
+          <button
+            ref={(node) => {
+              toggleRef.current = node;
+            }}
+            type="button"
+            onClick={() => setIsCollapsed((value) => !value)}
+          >
+            Toggle overview
+          </button>
+          <OverviewCard
+            overview={empty}
+            agentName="Claude Code"
+            changes={{ added: 1, removed: 0 }}
+            isCollapsed={isCollapsed}
+            onToggleCollapsed={() => setIsCollapsed((value) => !value)}
+            returnFocusTo={toggleRef}
+            onShowTab={vi.fn()}
+            onOpenTask={vi.fn()}
+            onOpenPage={vi.fn()}
+            onOpenFile={vi.fn()}
+            onOpenUrl={vi.fn()}
+          />
+        </>
       );
     }
     render(<Folding />);
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse session overview" }));
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: /^Expand session overview/ }));
-
-    fireEvent.click(screen.getByRole("button", { name: /^Expand session overview/ }));
-    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Collapse session overview" }));
+    expect(screen.queryByRole("region", { name: "Session overview" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Toggle overview" }));
   });
 
   it("says nothing of the changes while they are read", () => {

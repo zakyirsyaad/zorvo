@@ -2,7 +2,7 @@ import { useId } from "react";
 import { GitBranch, Reply } from "lucide-react";
 import { Button } from "../ui/Button";
 import { ZorvoSymbol } from "../ui/ZorvoSymbol";
-import { ACTION_LABELS, buttonsOf, type NextStepButton, type NextStepFacts } from "../../lib/next-step";
+import { buttonsOf, type NextStepButton, type NextStepFacts } from "../../lib/next-step";
 import type { NextStep } from "../../types";
 import { escapeVisible, escapeVisibleLines } from "../../lib/visible-text";
 
@@ -51,11 +51,6 @@ function factChips(facts: NextStepFacts): string[] {
   }
   if (facts.preview) chips.push(`localhost:${facts.preview.port}`);
   return chips;
-}
-
-/** The buttons an earlier turn's box or a popout shows: the agent's pick and replies, as words. */
-function inertButtons(step: NextStep | undefined): string[] {
-  return [...(step?.pick ? [ACTION_LABELS[step.pick]] : []), ...(step?.replies ?? [])];
 }
 
 /**
@@ -130,15 +125,8 @@ export function NextStepBox({ step, agentName, view }: NextStepBoxProps) {
           )}
         </div>
       )}
-      {view === null && (step?.answered || inertButtons(step).length > 0) && (
-        <div className="flex flex-wrap items-center gap-2">
-          {inertButtons(step).map((label) => (
-            <Button key={label} variant="outline" size="sm" disabled>
-              {escapeVisible(label)}
-            </Button>
-          ))}
-          {step?.answered && <span className="ml-auto text-ui-sm text-fg-subtle">You answered {escapeVisible(step.answered.label)}</span>}
-        </div>
+      {view === null && step?.answered && (
+        <p className="text-ui-sm text-fg-subtle">You answered {escapeVisible(step.answered.label)}</p>
       )}
       {isActive && view.blockedReason && <p className="text-ui-sm text-fg-muted">{view.blockedReason}</p>}
       {view === undefined && <p className="text-ui-sm text-fg-muted">Answer in the main window.</p>}

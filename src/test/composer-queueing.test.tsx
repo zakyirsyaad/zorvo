@@ -6,11 +6,19 @@ import { ComposerDock } from "../components/ComposerDock";
 const prompt = () => screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement;
 
 describe("ComposerDock while a turn runs", () => {
-  it("shows Stop and a Queue message control when queueing is on", () => {
+  it("shows only Stop while empty and switches to Queue message once text is typed", () => {
     render(<ComposerDock isThinking onStop={() => {}} queueing onSendMessage={() => {}} />);
     expect(screen.getByRole("button", { name: "Stop agent" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Queue message" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Queue message" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Send message" })).toBeNull();
+
+    fireEvent.change(prompt(), { target: { value: "next" } });
+    expect(screen.getByRole("button", { name: "Queue message" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stop agent" })).toBeNull();
+
+    fireEvent.change(prompt(), { target: { value: "" } });
+    expect(screen.getByRole("button", { name: "Stop agent" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Queue message" })).toBeNull();
   });
 
   it("queues with the button and with Enter, and empties the box", () => {
@@ -20,6 +28,7 @@ describe("ComposerDock while a turn runs", () => {
     fireEvent.click(screen.getByRole("button", { name: "Queue message" }));
     expect(onSend).toHaveBeenLastCalledWith("first");
     expect(prompt().value).toBe("");
+    expect(screen.getByRole("button", { name: "Stop agent" })).toBeInTheDocument();
     fireEvent.change(prompt(), { target: { value: "second" } });
     fireEvent.keyDown(prompt(), { key: "Enter" });
     expect(onSend).toHaveBeenLastCalledWith("second");
@@ -48,6 +57,7 @@ describe("ComposerDock while a turn runs", () => {
 
   it("titles the queue control with the agent's name, or says the turn", () => {
     const { rerender } = render(<ComposerDock isThinking onStop={() => {}} queueing agentName="Qwen Code" onSendMessage={() => {}} />);
+    fireEvent.change(prompt(), { target: { value: "follow up" } });
     expect(screen.getByRole("button", { name: "Queue message" })).toHaveAttribute("title", "Sent when Qwen Code finishes.");
     rerender(<ComposerDock isThinking onStop={() => {}} queueing onSendMessage={() => {}} />);
     expect(screen.getByRole("button", { name: "Queue message" })).toHaveAttribute("title", "Sent when the turn ends.");

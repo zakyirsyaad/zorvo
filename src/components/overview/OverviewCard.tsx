@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode, type Ref } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import {
   Check,
   ChevronDown,
@@ -16,7 +16,6 @@ import {
   GitPullRequestDraft,
   Image as ImageIcon,
   LoaderCircle,
-  PanelRight,
   PanelsTopLeft,
   Terminal,
   Users,
@@ -39,7 +38,7 @@ import {
 } from "../../lib/pull-request-look";
 import { formatRelativeTime } from "../../lib/relative-time";
 import { newestVersion } from "../../lib/artifacts";
-import { pillRunning, SECTION_CAP, type Overview, type OverviewTask } from "../../lib/session-overview";
+import { SECTION_CAP, type Overview, type OverviewTask } from "../../lib/session-overview";
 import { ImagePreviewDialog } from "../composer/ImagePreviewDialog";
 import { IconButton } from "../ui/IconButton";
 
@@ -53,7 +52,14 @@ export interface OverviewCardProps {
   /** The folder the file viewer shows: a file must be inside it to open there. */
   filesRoot?: string;
   isCollapsed: boolean;
+  /** True when the chat sheet is narrower than 900px, so the overview floats over the chat when opened. */
+  isNarrow?: boolean;
+  /** True when the floating overlay is open on a narrow sheet. */
+  isFloating?: boolean;
   onToggleCollapsed: () => void;
+  onCloseFloating?: () => void;
+  /** The top bar's overview toggle, which takes focus back when the card folds from its own button. */
+  returnFocusTo?: RefObject<HTMLButtonElement | null>;
   onShowTab: (tab: "changes" | "files") => void;
   onOpenTask: (tab: TaskTab) => void;
   onOpenPage: (artifactId: string) => void;
@@ -280,7 +286,11 @@ export function OverviewCard({
   branch,
   filesRoot,
   isCollapsed,
+  isNarrow = false,
+  isFloating = false,
   onToggleCollapsed,
+  onCloseFloating,
+  returnFocusTo,
   onShowTab,
   onOpenTask,
   onOpenPage,
@@ -288,44 +298,32 @@ export function OverviewCard({
   onOpenUrl,
 }: OverviewCardProps) {
   const [previewPath, setPreviewPath] = useState<string | null>(null);
-  // On a sheet too narrow for the card, its pill opens it floating over the chat.
-  const [isFloating, setIsFloating] = useState(false);
-  // The control that replaces the one just pressed takes the focus, so the keyboard does not fall back to the page.
-  const pillRef = useRef<HTMLButtonElement>(null);
-  const collapseRef = useRef<HTMLButtonElement>(null);
-  const focusNextRef = useRef<"pill" | "collapse" | null>(null);
+  const cardRef = useRef<HTMLElement>(null);
+
   useEffect(() => {
-    if (!focusNextRef.current) return;
-    (focusNextRef.current === "pill" ? pillRef : collapseRef).current?.focus();
-    focusNextRef.current = null;
-  });
+    if (!isNarrow || !isFloating || !onCloseFloating) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (cardRef.current?.contains(target) || returnFocusTo?.current?.contains(target)) return;
+      onCloseFloating();
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [isNarrow, isFloating, onCloseFloating, returnFocusTo]);
 
-  if (isCollapsed) {
-    return (
-      <OverviewPill
-        ref={pillRef}
-        overview={overview}
-        onExpand={() => {
-          // Floating only takes effect on a narrow sheet; a wide one docks the card as before.
-          setIsFloating(true);
-          focusNextRef.current = "collapse";
-          onToggleCollapsed();
-        }}
-      />
-    );
-  }
+  const isVisible = isNarrow ? isFloating : !isCollapsed;
+  if (!isVisible) return null;
 
-  /** A floating card only closes, back to its pill; a docked one folds to the pill. */
-  const close = (card: Element | null) => {
-    const isOverChat = card !== null && getComputedStyle(card).position === "absolute";
-    setIsFloating(false);
-    focusNextRef.current = "pill";
-    if (!isOverChat) onToggleCollapsed();
+  const close = () => {
+    if (isNarrow) onCloseFloating?.();
+    else onToggleCollapsed();
+    returnFocusTo?.current?.focus();
   };
   const closeOnEscape = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.key !== "Escape" || getComputedStyle(event.currentTarget).position !== "absolute") return;
+    if (event.key !== "Escape" || !isNarrow) return;
     event.stopPropagation();
-    close(event.currentTarget);
+    close();
   };
 
   const environment = [
@@ -372,28 +370,15 @@ export function OverviewCard({
 
   return (
     <>
-      {/* Below 900px of sheet the card gives way to its pill, which opens it over the chat. */}
-      {!isFloating && (
-        <span className="flex self-start @min-[900px]:hidden">
-          <OverviewPill
-            ref={pillRef}
-            overview={overview}
-            onExpand={() => {
-              setIsFloating(true);
-              focusNextRef.current = "collapse";
-            }}
-          />
-        </span>
-      )}
       <section
+        ref={cardRef}
         aria-label="Session overview"
         onKeyDown={closeOnEscape}
-        className={`w-72 shrink-0 flex-col overflow-y-auto @min-[900px]:self-stretch @min-[900px]:border-l @min-[900px]:border-border ${
-          // Docked, it is a full-height panel with a hairline beside the chat, so the chat sits centred in its own pane.
-          // Floating only while the sheet is narrow, as a card over the chat; widened again, it docks.
-          isFloating
-            ? "flex @max-[900px]:absolute @max-[900px]:top-4 @max-[900px]:right-4 @max-[900px]:z-30 @max-[900px]:max-h-[calc(100%-2rem)] @max-[900px]:self-start @max-[900px]:rounded-xl @max-[900px]:border @max-[900px]:border-border @max-[900px]:bg-surface-2 @max-[900px]:shadow-popover"
-            : "hidden @min-[900px]:flex"
+        className={`w-72 shrink-0 flex flex-col overflow-y-auto ${
+          // Docked on wide sheets; floating over the chat when opened on a narrow sheet (< 900px).
+          isNarrow
+            ? "absolute top-4 right-4 z-30 max-h-[calc(100%-2rem)] self-start rounded-xl border border-border bg-surface-2 shadow-popover"
+            : "self-stretch border-l border-border"
         }`}
       >
         <Section
@@ -401,11 +386,10 @@ export function OverviewCard({
           title="Environment"
           aside={
             <IconButton
-              ref={collapseRef}
               label="Collapse session overview"
               size="sm"
               className="-mt-1 mr-0.5"
-              onClick={(event) => close(event.currentTarget.closest("section[aria-label='Session overview']"))}
+              onClick={close}
             >
               <ChevronUp aria-hidden="true" className="size-3.5" />
             </IconButton>
@@ -489,29 +473,6 @@ function PullRequestRow({ pullRequest, onOpenUrl }: { pullRequest: PullRequestSt
       <PullRequestIcon aria-hidden="true" className={`size-3.5 shrink-0 ${LOOK_STYLE[look]}`} />
       <Label name={pullRequest.title} detail={detail} />
       <ExternalLink aria-hidden="true" className={ICON} />
-    </button>
-  );
-}
-
-/** The folded card: what runs, if anything, and nothing else; a click opens the card again. */
-function OverviewPill({ overview, onExpand, ref }: {
-  overview: Overview;
-  onExpand: () => void;
-  ref?: Ref<HTMLButtonElement>;
-}) {
-  const running = pillRunning(overview.runningCount);
-  return (
-    <button
-      ref={ref}
-      type="button"
-      aria-label={running ? `Expand session overview: ${running}` : "Expand session overview"}
-      aria-expanded="false"
-      onClick={onExpand}
-      className="focus-ring mt-4 mr-4 flex h-8 shrink-0 items-center gap-2 self-start rounded-full border border-border bg-surface-2 pr-2 pl-2.5 text-ui-sm text-fg-secondary transition-colors hover:bg-surface-hover"
-    >
-      <PanelRight aria-hidden="true" className="size-3.5 text-fg-muted" />
-      {running ?? "Overview"}
-      <ChevronDown aria-hidden="true" className="size-3.5 text-fg-muted" />
     </button>
   );
 }

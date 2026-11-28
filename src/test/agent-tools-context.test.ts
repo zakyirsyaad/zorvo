@@ -123,3 +123,14 @@ describe("the end of a turn", () => {
     }
   });
 });
+
+describe("computer use guidance", () => {
+  it("tells both paths how to inspect macOS app windows when computer use is enabled", () => {
+    for (const note of [COMMAND_PATH_CONTEXT, MCP_PATH_CONTEXT]) {
+      for (const tool of ["list_apps", "request_access", "list_windows", "get_window_state", "zoom", "verify_state"]) {
+        expect(note).toContain(tool);
+      }
+      expect(note.indexOf("list_apps")).toBeLessThan(note.indexOf("Do not mention this note."));
+    }
+  });
+});

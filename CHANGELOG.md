@@ -6,10 +6,28 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Added
 
+- Right-click context menu (and hover `⋯` menu) on project folders in the sidebar to start a new session, reveal in Finder, copy the folder path, collapse or expand, archive idle sessions, or permanently remove the project and its sessions from Zorvo (without deleting files on disk).
 - Continue a conversation with another agent: pick it from the agent menu in the composer, and your message starts its session with the conversation so far, or pick it from Fork from here under any reply. The new session marks where it continued.
 
 ### Changed
 
+- **WebKit-only Browser panel with chat permission cards.** Deferred Chromium/CDP debugging to a follow-up, moved agent browser grants and one-time WebKit file-upload approvals into ordinary chat cards, removed dead engine branches from `BrowserPanel`, and stopped sending non-URL address-bar text to Google.
+
+### Fixed
+
+- **Browser tools wait for a new page.** An operation issued immediately after opening a tab waits for its page helper, instead of failing before the document is ready. The wait keeps its original tab and timeout.
+- **Private browser form values.** Snapshots omit passwords, one-time codes and card autocomplete values. Automatic popups are blocked with a quiet one-line notice in the panel (and reported in agent click results), and permitted page-created tabs stay in the background.
+- **Browser tabs survive an agent exit and close on archive.** Ending or crashing an agent revokes its browser access without closing the user's pages; archiving or deleting a session closes its browser views, and hitting the 8-session browser limit names the sessions still holding tabs.
+- **The session overview toggle lives in the top bar.** Folding the overview no longer leaves a floating pill inside the chat sheet; the top bar button beside the inspector opens and closes it on both wide and narrow sheets, with a dot when tasks are running while it is closed.
+- **One Send / Stop button in the composer.** While a turn runs, the composer shows Stop when the box is empty and switches to Queue message once you type or attach files, instead of showing both buttons side by side; tighter chip spacing keeps the composer bar on one row.
+
+- **Next step buttons match the active branch and stay flexible.** Switching branches no longer carries over an earlier branch's pull request; `wrap_up` now supports `push` and up to three custom replies of 40 characters each, `Create PR` adapts its message when commits are already made, and earlier turn boxes no longer show disabled buttons.
+
+- **Pull requests in the overview update promptly.** Opening a new PR or branch in a session refreshes the folder's PR list immediately, and turn-end (5 s), focus (15 s) and active-session (30 s) refresh intervals are shorter so newly created PRs and CI check changes show up without waiting a full minute.
+- Narrowed the chat and composer column from 720px to 640px and shortened the context meter label to a compact percentage so the composer toolbar stays on one row.
+
+- Clicking a system notification now focuses Zorvo and opens the session that sent it.
+- Introduced Zorvo's computer use inspection tools (`list_apps`, `request_access`, `list_windows`, `get_window_state`, `zoom`, `verify_state`) in the session tools context so on-demand and command-path agents know when and how to use them automatically.
 - Styled pull request check counts in the session Overview with compact inline status indicators (`failed`, `running`, `passed`) and semantic colours so failing or running checks stand out at a glance.
 
 ## [0.22.1] - 2026-11-27
@@ -169,7 +187,6 @@ Tagged but never published; its changes shipped in 0.22.1.
 
 - A new session keeps the name from your first message. With Claude Agent it could be named after a note Zorvo sends the agent, which you never wrote.
 - **Browser tools on sites with a strict content policy.** Native JavaScript expressions and console reads use WebKit's page-world compiler, so a site's ban on `eval` does not block the tools. The site's policy remains unchanged.
-- **Navigation past a page dialog.** Navigating, reloading or going back/forward dismisses a pending page dialog before WebKit starts the new document, so the dialog cannot keep the navigation waiting.
 - **Closing browser pages releases their process state.** Closed views cancel pending operations and ask WebKit to end and reset the page process, including a page running a script that never yields.
 - **Browser tabs and page controls.** A tab strip, blank new tabs and the page menu now follow the compact browser layout, with native page zoom, copying/opening links and a clearable list of recent pages. Diagnostic tools have their own menu.
 - **Responsive pages in the browser.** WebKit now includes its Safari compatibility token and Zorvo identity, so sites such as Google serve a layout that follows the panel width.

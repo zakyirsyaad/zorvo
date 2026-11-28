@@ -154,23 +154,34 @@ describe("useWorkspacePullRequests", () => {
     }
   });
 
-  it("reads the live folder immediately when liveRefreshKey changes, even within the turn cooldown", async () => {
+  it("reads the live folder immediately when liveRefreshKey changes for the same session, but not on session switch", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(1_000_000);
     const asked = fakeBackend(async () => answer(364));
     const { rerender } = renderHook(
-      ({ key }) => useWorkspacePullRequests(["/w/a", "/w/b"], true, [], { liveFolder: "/w/a", liveRefreshKey: key }),
-      { initialProps: { key: "s1:https://github.com/o/r/pull/363:" } },
+      ({ sessionId, key }) =>
+        useWorkspacePullRequests(["/w/a", "/w/b"], true, [], {
+          liveFolder: "/w/a",
+          liveSessionId: sessionId,
+          liveRefreshKey: key,
+        }),
+      { initialProps: { sessionId: "s1", key: "https://github.com/o/r/pull/363|" } },
     );
     await settle();
     expect(asked.filter((path) => path === "/w/a")).toHaveLength(1);
 
-    // 1 second later the agent creates PR #364: refresh immediately without waiting for TURN_REFRESH_MS.
+    // 1 second later the same session creates PR #364: refresh immediately without waiting for TURN_REFRESH_MS.
     vi.setSystemTime(1_001_000);
-    rerender({ key: "s1:https://github.com/o/r/pull/363,https://github.com/o/r/pull/364:" });
+    rerender({ sessionId: "s1", key: "https://github.com/o/r/pull/363,https://github.com/o/r/pull/364|" });
     await settle();
     expect(asked.filter((path) => path === "/w/a")).toHaveLength(2);
     expect(asked.filter((path) => path === "/w/b")).toHaveLength(1);
+
+    // Switching to another session in the same folder with different agentWork does not trigger an extra poll.
+    vi.setSystemTime(1_002_000);
+    rerender({ sessionId: "s2", key: "https://github.com/o/r/pull/360|" });
+    await settle();
+    expect(asked.filter((path) => path === "/w/a")).toHaveLength(2);
   });
 
   it("uses responsive refresh intervals for turn end, focus and live polling", () => {

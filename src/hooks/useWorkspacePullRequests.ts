@@ -38,7 +38,7 @@ export function useWorkspacePullRequests(
   paths: readonly string[],
   isEnabled: boolean,
   busyFolders: readonly string[],
-  { liveFolder, liveRefreshKey }: { liveFolder?: string; liveRefreshKey?: string } = {},
+  { liveFolder, liveSessionId, liveRefreshKey }: { liveFolder?: string; liveSessionId?: string; liveRefreshKey?: string } = {},
 ): ReadonlyMap<string, FolderPullRequests> {
   const [folders, setFolders] = useState<ReadonlyMap<string, FolderPullRequests>>(NONE);
   const readAt = useRef(new Map<string, number>());
@@ -136,14 +136,22 @@ export function useWorkspacePullRequests(
   }, [busyKey, isEnabled, readIfOlder]);
 
   // A new PR URL or branch recorded by the active agent triggers an immediate read, bypassing cooldowns.
-  const seenLiveKey = useRef(liveRefreshKey);
+  // Switching to a different session in the same folder updates the baseline without triggering an extra poll.
+  const seenLive = useRef({ sessionId: liveSessionId, key: liveRefreshKey });
   useEffect(() => {
-    const prev = seenLiveKey.current;
-    seenLiveKey.current = liveRefreshKey;
-    if (isEnabled && liveFolder && liveRefreshKey && prev !== undefined && liveRefreshKey !== prev) {
+    const prev = seenLive.current;
+    seenLive.current = { sessionId: liveSessionId, key: liveRefreshKey };
+    if (
+      isEnabled &&
+      liveFolder &&
+      liveRefreshKey &&
+      prev.sessionId === liveSessionId &&
+      prev.key !== undefined &&
+      liveRefreshKey !== prev.key
+    ) {
       read(liveFolder);
     }
-  }, [isEnabled, liveFolder, liveRefreshKey, read]);
+  }, [isEnabled, liveFolder, liveSessionId, liveRefreshKey, read]);
 
   return isEnabled ? folders : NONE;
 }

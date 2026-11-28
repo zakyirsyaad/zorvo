@@ -57,6 +57,7 @@ export function usePullRequestsWiring({
     : '';
   const folderPullRequests = useWorkspacePullRequests(listedFolders, isGithubSignedIn, busyFolders, {
     liveFolder: activeSession ? workspacePathOf(activeSession) : undefined,
+    liveSessionId: activeSession?.id,
     liveRefreshKey,
   });
   const newestInFolder = useMemo(() => newestSessionInFolder(sessions), [sessions]);

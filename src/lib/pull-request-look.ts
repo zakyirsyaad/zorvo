@@ -35,10 +35,34 @@ export function pullRequestLabel(pullRequest: PullRequestStatus): string {
   return `Pull request ${pullRequest.number}, ${LOOK_WORDS[pullRequestLook(pullRequest)]}`;
 }
 
+/** The short state word for a pull request: "Draft", "Open", "Merged", or "Closed". */
+export function pullRequestStateWord(pullRequest: PullRequestStatus): string {
+  const look = pullRequestLook(pullRequest);
+  return look === 'failing' ? 'Open' : look.charAt(0).toUpperCase() + look.slice(1);
+}
+
+export type PullRequestChecksTone = 'failing' | 'running' | 'passing';
+
+export interface PullRequestChecksSummary {
+  tone: PullRequestChecksTone;
+  label: string;
+}
+
+/** Compact check count + semantic tone for an open/draft pull request, or null when no checks apply. */
+export function pullRequestChecksSummary(pullRequest: PullRequestStatus): PullRequestChecksSummary | null {
+  const look = pullRequestLook(pullRequest);
+  const { passing, failing, pending } = pullRequest.checks;
+  const total = passing + failing + pending;
+  if (total === 0 || look === 'merged' || look === 'closed') return null;
+  if (failing > 0) return { tone: 'failing', label: `${failing}/${total} failed` };
+  if (pending > 0) return { tone: 'running', label: `${pending}/${total} running` };
+  return { tone: 'passing', label: `${passing}/${total} passed` };
+}
+
 /** The state and the checks in one line, for the row's tooltip: "Open · 2 of 5 checks failing". */
 export function pullRequestLine(pullRequest: PullRequestStatus): string {
   const look = pullRequestLook(pullRequest);
-  const state = look === 'failing' ? 'Open' : look.charAt(0).toUpperCase() + look.slice(1);
+  const state = pullRequestStateWord(pullRequest);
   const { passing, failing, pending } = pullRequest.checks;
   const total = passing + failing + pending;
   if (total === 0 || look === 'merged' || look === 'closed') return state;

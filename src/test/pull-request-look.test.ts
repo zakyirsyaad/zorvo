@@ -3,12 +3,14 @@ import type { PullRequestStatus } from "../hooks/usePullRequest";
 import {
   LOOK_STYLE,
   newestSessionInFolder,
+  pullRequestChecksSummary,
   pullRequestLabel,
   pullRequestLine,
   pullRequestLook,
   pullRequestOfWork,
   pullRequestsOfWork,
   pullRequestOnBranch,
+  pullRequestStateWord,
   sessionBranchOf,
   sessionPullRequestOf,
   type FolderPullRequests,
@@ -63,6 +65,25 @@ describe("what the row says", () => {
     expect(pullRequestLine(pr({ checks: { passing: 4, failing: 0, pending: 0 } }))).toBe("Open · checks passing");
     expect(pullRequestLine(pr({ isDraft: true }))).toBe("Draft");
     expect(pullRequestLine(pr({ state: "merged", checks: { passing: 4, failing: 0, pending: 0 } }))).toBe("Merged");
+  });
+
+  it("summarizes open PR checks with a semantic tone and compact counts", () => {
+    expect(pullRequestStateWord(pr({ isDraft: true }))).toBe("Draft");
+    expect(pullRequestStateWord(pr())).toBe("Open");
+    expect(pullRequestChecksSummary(pr({ checks: { passing: 8, failing: 1, pending: 0 } }))).toEqual({
+      tone: "failing",
+      label: "1/9 failed",
+    });
+    expect(pullRequestChecksSummary(pr({ checks: { passing: 6, failing: 0, pending: 2 } }))).toEqual({
+      tone: "running",
+      label: "2/8 running",
+    });
+    expect(pullRequestChecksSummary(pr({ checks: { passing: 9, failing: 0, pending: 0 } }))).toEqual({
+      tone: "passing",
+      label: "9/9 passed",
+    });
+    expect(pullRequestChecksSummary(pr({ state: "merged", checks: { passing: 9, failing: 0, pending: 0 } }))).toBeNull();
+    expect(pullRequestChecksSummary(pr())).toBeNull();
   });
 });
 

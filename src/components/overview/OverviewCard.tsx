@@ -28,7 +28,15 @@ import type { TaskTab } from "../../hooks/useTaskTabs";
 import { fileNameOf } from "../../lib/attachments";
 import { formatElapsed } from "../../lib/background-tasks";
 import { fileNameAndFolder, pathInFolder, type CreatedFile } from "../../lib/created-files";
-import { LOOK_STYLE, pullRequestLine, pullRequestLook, type PullRequestLook } from "../../lib/pull-request-look";
+import {
+  LOOK_STYLE,
+  pullRequestChecksSummary,
+  pullRequestLine,
+  pullRequestLook,
+  pullRequestStateWord,
+  type PullRequestChecksTone,
+  type PullRequestLook,
+} from "../../lib/pull-request-look";
 import { formatRelativeTime } from "../../lib/relative-time";
 import { newestVersion } from "../../lib/artifacts";
 import { pillRunning, SECTION_CAP, type Overview, type OverviewTask } from "../../lib/session-overview";
@@ -71,7 +79,7 @@ const ICON = "size-3.5 shrink-0 text-fg-muted";
 const META = "shrink-0 text-caption text-fg-subtle";
 
 /** A row's name and, under it, its second line. */
-function Label({ name, detail, isMono = false }: { name: string; detail?: string; isMono?: boolean }) {
+function Label({ name, detail, isMono = false }: { name: string; detail?: ReactNode; isMono?: boolean }) {
   return (
     <span className="flex min-w-0 flex-1 flex-col">
       <span className={`truncate font-medium text-fg ${isMono ? "font-mono text-ui-sm" : ""}`}>{name}</span>
@@ -437,10 +445,40 @@ export function OverviewCard({
   );
 }
 
+const CHECKS_TONE: Record<PullRequestChecksTone, string> = {
+  failing: "text-danger",
+  running: "text-status-attention",
+  passing: "text-status-running",
+};
+
+const CHECKS_DOT: Record<Exclude<PullRequestChecksTone, "passing">, string> = {
+  failing: "bg-danger",
+  running: "bg-status-attention",
+};
+
 /** One pull request of the session; a click opens it on GitHub. */
 function PullRequestRow({ pullRequest, onOpenUrl }: { pullRequest: PullRequestStatus; onOpenUrl: (url: string) => void }) {
   const look = pullRequestLook(pullRequest);
   const PullRequestIcon = PULL_REQUEST_ICON[look];
+  const checks = pullRequestChecksSummary(pullRequest);
+  const detail = (
+    <span className="inline-flex min-w-0 items-center gap-1">
+      <span className="shrink-0">{`#${pullRequest.number} · ${pullRequestStateWord(pullRequest)}`}</span>
+      {checks && (
+        <>
+          <span aria-hidden="true" className="shrink-0">·</span>
+          <span className={`inline-flex shrink-0 items-center gap-1 font-medium tabular-nums ${CHECKS_TONE[checks.tone]}`}>
+            {checks.tone === "passing" ? (
+              <Check size={11} aria-hidden="true" className="shrink-0" />
+            ) : (
+              <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${CHECKS_DOT[checks.tone]}`} />
+            )}
+            {checks.label}
+          </span>
+        </>
+      )}
+    </span>
+  );
   return (
     <button
       type="button"
@@ -449,7 +487,7 @@ function PullRequestRow({ pullRequest, onOpenUrl }: { pullRequest: PullRequestSt
       className={ROW}
     >
       <PullRequestIcon aria-hidden="true" className={`size-3.5 shrink-0 ${LOOK_STYLE[look]}`} />
-      <Label name={pullRequest.title} detail={`#${pullRequest.number} · ${pullRequestLine(pullRequest)}`} />
+      <Label name={pullRequest.title} detail={detail} />
       <ExternalLink aria-hidden="true" className={ICON} />
     </button>
   );

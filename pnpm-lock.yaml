@@ -144,8 +144,8 @@ importers:
         specifier: 2.5.1
         version: 2.5.1(@near-js/types@2.5.1)
       '@noble/curves':
-        specifier: 1.8.1
-        version: 1.8.1
+        specifier: 2.4.0
+        version: 2.4.0
       '@noble/hashes':
         specifier: 2.4.0
         version: 2.4.0
@@ -1160,6 +1160,10 @@ packages:
   '@noble/curves@1.8.1':
     resolution: {integrity: sha512-warwspo+UYUPep0Q+vtdVB4Ugn8GGQj8iyB3gnRWsztmUHTI3S1nhdiWNsPUGL0vud7JlRRk1XEu7Lq1KGTnMQ==}
     engines: {node: ^14.21.3 || >=16}
+
+  '@noble/curves@2.4.0':
+    resolution: {integrity: sha512-P4/62zrgfH33CneE3Dn4WhJVA22YUU0eR51wKIan4NVRvwsA0YnPTwWGpNbpuacSujmSFLvyzpyuR30+fbq2Ew==}
+    engines: {node: '>= 20.19.0'}
 
   '@noble/hashes@1.7.1':
     resolution: {integrity: sha512-B8XBPsn4vT/KJAGqDzbwztd+6Yte3P4V7iafm24bxgDe/mlRuK6xmWPuCNrKt2vDafZ8MfJLlchDG/vYafQEjQ==}
@@ -3971,6 +3975,10 @@ snapshots:
   '@noble/curves@1.8.1':
     dependencies:
       '@noble/hashes': 1.7.1
+
+  '@noble/curves@2.4.0':
+    dependencies:
+      '@noble/hashes': 2.4.0
 
   '@noble/hashes@1.7.1': {}
 

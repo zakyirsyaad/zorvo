@@ -62,11 +62,11 @@ function Gauge({ used, size }: ContextUsage) {
       aria-valuemin={0}
       aria-valuemax={100}
       title={`Context: ${used.toLocaleString("en-US")} of ${tokens(size)} (${percent}%)`}
-      // A ring, then the words, as the canvas draws it; both take the warning tones as the window fills.
+      // A ring, then the percentage, as the canvas draws it; both take the warning tones as the window fills.
       className={`inline-flex items-center gap-1.5 tabular-nums ${toneFor(percent)}`}
     >
       <Ring percent={percent} />
-      {percent}% of context
+      {percent}%
     </span>
   );
 }

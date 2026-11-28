@@ -4,275 +4,190 @@
     "os": "macOS 27.0.1",
     "architecture": "arm64",
     "appVersion": "0.14.1",
-    "build": "debug app with embedded frontend, launched through LaunchServices",
-    "upstreamMain": "5006132b7bb4c7bc9c5b03094afeb9321c76b6f0"
+    "build": "debug app with embedded frontend, launched through LaunchServices; separate temporary bundle",
+    "upstreamMain": "265aea9990f412a7644e9333a78a67799326a01b"
   },
-  "scope": "Current-Mac integration observations; not full runtime-gate or release certification.",
+  "scope": "WebKit-only 19-operation integration observations on this Mac; not a release or cross-OS runtime certification. Chromium is excluded from this record.",
   "sourceSha256": {
-    "src-tauri/src/browser/native.rs": "4d02812e6aee66c841436cde21dc8297e1b4d1b8f4cdbc5fed525944a52b400f",
-    "src-tauri/src/browser/mod.rs": "47caf890a4cd14339272558610a7011db330562e00ed557ea80dc8f1d2150853",
-    "src-tauri/src/browser/smoke.rs": "aefb73d689a461b825257036ec494e30a8cb2222587f4c93e398f13c5fbcd712",
-    "src-tauri/src/browser/dialog_smoke.rs": "862feab90e38b2bc8633173565591c6af80e9e0c1bbd330f016768d0d65655d7",
-    "src-tauri/src/browser/forms_smoke.rs": "c25a7cb70a5674191f5f6d9ff6292b1f39922347ce19e0e54719af06653e7076",
-    "src-tauri/src/browser/lifecycle_smoke.rs": "f52e50d5bad340574efc2be99f7fc7aba668dd68483a96a4c4c4637f2d15fd84",
-    "src-tauri/src/browser/placement_smoke.rs": "395df513f68e2453b9c84fced2e136a923eba7015f1f831b57a261a9c3ca1a04",
+    "src-tauri/src/browser/native.rs": "bb2330e35d18828cc41ed15ba59eeebfef94cb3844e719ced252e77c41290d5a",
+    "src-tauri/src/browser/mod.rs": "eb52d4e8dfdcd5b806df53b9b4ecfa43365e23453513c871be3cc75e3ac0a4ca",
+    "src-tauri/src/browser/policy.rs": "e44efb512e1b1402e524cacc4ba32a275593727a5476f14b0b0682f8a2b09f0c",
+    "src-tauri/src/browser/page.js": "ae08dd8a1c11e7c10f52f1e273477e0254aa3c7e5edceae510e67425fb2d9ba3",
+    "src-tauri/src/browser/catalog.json": "04afe4726258ec05d18808e039fcee259b835d1107762f10cd864aaeb965a3ff",
+    "src-tauri/src/browser/smoke.rs": "5c555468a0aff45b64a54e6fa7459be6d90d796219baad6d373e09604f2e25c5",
+    "src-tauri/src/browser/forms_smoke.rs": "927470c2d6cd712992a73125216bc5c3df744c613d6764615dc948534a861613",
+    "src-tauri/src/browser/lifecycle_smoke.rs": "48f50047dbaf0f724e7cd257345926df372c5d69d7d29e0aa59b0cf9d57bccaa",
+    "src-tauri/src/browser/placement_smoke.rs": "b23589415e46f629a9aaf8a844b8760101aa19a406f4e078416289c7a9705ca1",
     "src-tauri/src/browser/sites_smoke.rs": "4e7f19dc3e7d28e74b12aa68a998201f6bbae2acc90c64c36e3323a7710df0b0",
-    "src-tauri/src/browser/smoke-fixture.mjs": "44b2f66327c4d7bc8f91b620a21c2731af598dc0ccf184eb2ed8d51865903994",
-    "src-tauri/src/browser/react-smoke-fixture.mjs": "e7b76bac2402e76e1e390c061e1e4d7a14b458f4eef5a58d6065fa317631f1ac",
-    "src-tauri/src/artifacts/view.rs": "0613f7f81f7c93f1806acdfdd0e8c8e9baa03f295ced573991c172d338a54385",
-    "src-tauri/src/lib.rs": "0742773c040b3186a37afcaf3bc4966c4361582f04c2a733e971de9ad6fc3cf2",
-    "src-tauri/resources/browser-cdp/catalog.json": "d5f72430d16b95d96d5b1a0487d5d96c2e5d78a4c0c8b3ac203840f95bcad784"
+    "src-tauri/src/browser/smoke-fixture.mjs": "bd47d7fecb5313a128a4139d1170eb98f273b90299babad88e4b51de916c628d",
+    "src-tauri/src/browser_commands.rs": "54e6b2cb8078b3ae8ba3900e9041a5e6ea03db7f40c2a348aac9422999816c92",
+    "src-tauri/src/agent_tools/tools.rs": "1a20dc7f855ecccfc18a3b8a8ea08f889e50c5996cf1c8c6d4114680f81db680",
+    "src-tauri/src/lib.rs": "0fe787314f62d1032b7f5c5bff66fb38c0e0906bde6afa9475cc9b25249182ca",
+    "src/hooks/useAgentTools.ts": "379e61713b91908ea63c49edba9667fdea22c2025f373ccf2959ad73e8dec686",
+    "src/hooks/useBrowserToolCards.ts": "faf80aa9a469f9dcbc8fe138a057a93aba7fe1e70e7e965aab95e3b390bd8d6d",
+    "src/lib/browser.ts": "17cb3eb4404b7d1b823c48d760a74e92f00339ef0c26021b3f84e05d98ab6570"
   },
   "nativeFull": {
-    "freshLaunches": 5,
-    "passed": 5,
-    "stepsPerLaunch": 12,
-    "dialogCases": [
-      "alert accept",
-      "alert dismiss",
-      "confirm accept",
-      "confirm dismiss",
-      "prompt text accept",
-      "prompt empty accept",
-      "prompt dismiss",
-      "pending-dialog navigation",
-      "pending-dialog tab close"
-    ]
+    "freshLaunches": 2,
+    "passed": 2,
+    "stepsPerLaunch": [
+      13,
+      13
+    ],
+    "checks": [
+      "immediate wait on a delayed first document reaches the helper and clicks once",
+      "a stalled image does not block helper-ready DOM interactions",
+      "first-request browser identity and native responsive resizing preserve document state",
+      "native blank tabs and per-tab zoom/reset preserve form state",
+      "native view and isolated snapshot",
+      "ref click, controlled input, select, check, no app bridge",
+      "native PNG screenshot",
+      "hidden view click/state/native snapshot",
+      "shared store within session, separate store across sessions",
+      "native site metadata and origin clear preserve other sessions and reject stale URLs",
+      "navigation observes a new complete document and rejects its old same-tab ref",
+      "page dialogs return denied defaults without a UI or pending callback",
+      "automatic popup is blocked and page-created background tab preserves selection"
+    ],
+    "snapshotPrivacy": "The full serialized snapshot is checked for absence of password, OTP, card and sensitive textarea fixture values."
+  },
+  "popup": {
+    "automaticWindowOpenDenied": true,
+    "syntheticLinkClickDenied": true,
+    "trustedMainFrameBlankLink": {
+      "method": "REA AXPress on the selected temporary app window and link",
+      "passed": true,
+      "tabCount": 2,
+      "activeTabPreserved": true
+    },
+    "attemptWithoutClick": "An initial observation-only run reached its no-click timeout; the following actual AXPress run passed.",
+    "limits": "Named targets, iframe links and button window.open are conservatively denied."
   },
   "forms": {
-    "passed": true,
-    "nestedOpenShadowRefs": true,
-    "actualControlledReactLongForm": true,
+    "pass": true,
+    "shadow": {
+      "count": "1",
+      "value": "nested shadow value"
+    },
     "strictCsp": {
       "awaited": {
         "awaited": true,
         "helper": "undefined",
         "cspBlocksEval": true,
-        "marker": "native page world",
-        "bridge": "undefined"
+        "bridge": "undefined",
+        "marker": "native page world"
       },
       "runtimeSyntaxErrorExecutions": 1,
       "legacyScriptExecutions": 1,
       "isolatedInputFilled": true
     },
-    "syntheticEventsTrusted": false
-  },
-  "lifecycle": [
-    {
-      "tabs": 5,
-      "cycles": 3,
-      "nestedScrollMs": [
-        7,
-        4,
-        2,
-        15,
-        14,
-        4,
-        14,
-        3,
-        16,
-        8,
-        5,
-        5,
-        12,
-        11,
-        4
-      ],
-      "loopingPage": {
-        "nativeListMs": 5,
-        "nativeCloseMs": 3,
-        "ownedProcessExitMs": 54,
-        "healthySiblingResponsive": true
-      },
-      "cleanup": {
-        "retainedViews": 0,
-        "observedOwnedProcesses": 8,
-        "allObservedOwnedProcessesGone": true
-      },
-      "ownedWebContentRssBytes": {
-        "beforeCycles": 174931968,
-        "afterCycles": 174522368
-      },
-      "appRssBytes": {
-        "beforeCycles": 131891200,
-        "afterCycles": 132497408
-      }
+    "submitted": {
+      "checked": true,
+      "choice": "b",
+      "last": "last controlled field",
+      "text": "controlled state changed"
     },
-    {
-      "tabs": 5,
-      "cycles": 3,
-      "nestedScrollMs": [
-        22,
-        5,
-        13,
-        20,
-        6,
-        9,
-        5,
-        14,
-        9,
-        10,
-        3,
-        5,
-        3,
-        1,
-        11
-      ],
-      "loopingPage": {
-        "nativeListMs": 1,
-        "nativeCloseMs": 4,
-        "ownedProcessExitMs": 51,
-        "healthySiblingResponsive": true
-      },
-      "cleanup": {
-        "retainedViews": 0,
-        "observedOwnedProcesses": 8,
-        "allObservedOwnedProcessesGone": true
-      },
-      "ownedWebContentRssBytes": {
-        "beforeCycles": 173703168,
-        "afterCycles": 176226304
-      },
-      "appRssBytes": {
-        "beforeCycles": 130777088,
-        "afterCycles": 131514368
-      }
-    }
-  ],
+    "page": {
+      "isolated": "undefined",
+      "scrollY": 4112,
+      "controls": 44,
+      "bridge": "undefined"
+    },
+    "trustedInput": false
+  },
+  "lifecycle": {
+    "passed": true,
+    "tabs": 5,
+    "cycles": 3,
+    "grantRevocationPreservesManualTabsFormsCookies": true,
+    "nestedScrollMs": [
+      3,
+      3,
+      5,
+      13,
+      8,
+      3,
+      1,
+      3,
+      2,
+      2,
+      4,
+      13,
+      6,
+      1,
+      11
+    ],
+    "loopingPage": {
+      "nativeListMs": 1,
+      "nativeCloseMs": 5,
+      "ownedProcessExitMs": 52,
+      "healthySiblingResponsive": true
+    },
+    "cleanup": {
+      "retainedViews": 0,
+      "observedOwnedProcesses": 8,
+      "allObservedOwnedProcessesGone": true
+    },
+    "ownedWebContentRssBytes": {
+      "beforeCycles": 178552832,
+      "afterCycles": 180699136
+    },
+    "resourceScope": "Short process RSS/CPU observations only; no sustained performance or leak-free claim."
+  },
   "placement": {
     "passed": true,
-    "actualArtifactAndBrowserChildViews": true,
     "widths": [
-      360,
-      560,
-      800
+      360.0,
+      560.0,
+      800.0
     ],
-    "nativeVisibilityAndBounds": true,
-    "oneShotPngHideRestore": true,
-    "browserDocumentAndFormRetained": true,
-    "composerFocusVerified": false
+    "closedAllViews": true,
+    "sameDocumentAndFormPreserved": true,
+    "scope": "Real artifact/native-view placement, hidden/restored views and one bounded menu-cover PNG."
   },
   "publicSites": [
     {
-      "requested": "https://example.com/",
+      "url": "https://example.com/",
       "outcome": "loaded",
       "connectionSecurity": "secure",
-      "snapshotControls": 1,
-      "layouts": [
-        {
-          "requestedWidth": 360.0,
-          "width": 360,
-          "clientWidth": 343,
-          "scrollWidth": 343,
-          "applicationBridge": "undefined",
-          "isolatedHelper": "undefined"
-        },
-        {
-          "requestedWidth": 560.0,
-          "width": 560,
-          "clientWidth": 543,
-          "scrollWidth": 543,
-          "applicationBridge": "undefined",
-          "isolatedHelper": "undefined"
-        },
-        {
-          "requestedWidth": 900.0,
-          "width": 900,
-          "clientWidth": 883,
-          "scrollWidth": 883,
-          "applicationBridge": "undefined",
-          "isolatedHelper": "undefined"
-        }
-      ],
       "atsPolicyChanged": false
     },
     {
-      "requested": "https://github.com/",
+      "url": "https://github.com/",
       "outcome": "loaded",
       "connectionSecurity": "secure",
-      "snapshotControls": 242,
-      "layouts": [
-        {
-          "requestedWidth": 360.0,
-          "width": 360,
-          "clientWidth": 343,
-          "scrollWidth": 343,
-          "applicationBridge": "undefined",
-          "isolatedHelper": "undefined"
-        },
-        {
-          "requestedWidth": 560.0,
-          "width": 560,
-          "clientWidth": 543,
-          "scrollWidth": 543,
-          "applicationBridge": "undefined",
-          "isolatedHelper": "undefined"
-        },
-        {
-          "requestedWidth": 900.0,
-          "width": 900,
-          "clientWidth": 883,
-          "scrollWidth": 883,
-          "applicationBridge": "undefined",
-          "isolatedHelper": "undefined"
-        }
-      ],
       "atsPolicyChanged": false
     },
     {
-      "requested": "https://developer.mozilla.org/en-US/docs/Web/JavaScript",
+      "url": "https://developer.mozilla.org/en-US/docs/Web/JavaScript",
       "outcome": "loaded",
       "connectionSecurity": "secure",
-      "snapshotControls": 687,
-      "layouts": [
-        {
-          "requestedWidth": 360.0,
-          "width": 360,
-          "clientWidth": 343,
-          "scrollWidth": 343,
-          "applicationBridge": "undefined",
-          "isolatedHelper": "undefined"
-        },
-        {
-          "requestedWidth": 560.0,
-          "width": 560,
-          "clientWidth": 543,
-          "scrollWidth": 543,
-          "applicationBridge": "undefined",
-          "isolatedHelper": "undefined"
-        },
-        {
-          "requestedWidth": 900.0,
-          "width": 900,
-          "clientWidth": 883,
-          "scrollWidth": 883,
-          "applicationBridge": "undefined",
-          "isolatedHelper": "undefined"
-        }
-      ],
       "atsPolicyChanged": false
     },
     {
-      "requested": "http://example.com/",
+      "url": "http://example.com/",
       "outcome": "blocked-or-unavailable",
       "connectionSecurity": null,
-      "snapshotControls": null,
-      "layouts": [],
       "atsPolicyChanged": false
     }
   ],
-  "chromium": {
-    "actualInstalledBrowserSmokePassed": true,
-    "all45CatalogOperationsExercised": true,
-    "pinnedLighthouse13_6_0Included": true,
-    "webKitAndChromiumShareDocumentOrCookies": false
+  "policy": {
+    "dialogs": "Alerts complete silently; confirms return false; prompts return null.",
+    "permission": "Memory-only Rust grants approved through ordinary session chat cards; no frontend authorization map.",
+    "search": "Non-address text receives a local hint and is never sent to a search provider.",
+    "chromium": "Excluded from this PR; proposed separately and not exposed through UI/tools/IPC."
   },
-  "remainingLimits": [
-    "Capture-denial runtime below macOS 27",
-    "Intel runtime",
-    "Sustained full-application resource cost and OpenCode trackpad parity",
-    "All composer/popout focus and window arrangements",
-    "Manual iframe picking",
-    "Some sites reject script-generated input; closed shadow roots remain opaque"
-  ]
+  "limits": [
+    "Capture denial below macOS 27 and Intel runtime remain unverified.",
+    "OpenCode trackpad parity, sustained resource cost and all composer/popout focus arrangements remain unverified.",
+    "Native interactions dispatch script events; sites can reject them. Closed shadow roots are opaque and manual iframe picking is not implemented.",
+    "No model/provider requests were used for these native fixtures."
+  ],
+  "readinessRegression": {
+    "initialRetest": "A post-merge retest failed because a DOM operation reached WebKit before its isolated helper existed.",
+    "fix": "A bounded, original-tab readiness wait dispatches the operation once after helper installation, without waiting for all resources.",
+    "delayedFirstResponse": true,
+    "stalledSubresource": true,
+    "interactionCount": 1
+  }
 }

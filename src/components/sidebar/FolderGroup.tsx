@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { ChevronDown, ChevronRight, Folder } from "lucide-react";
 import type { AgentProfile } from "../../types";
 import type { SessionGroup } from "../../lib/session-helpers";
 import { folderSummary, REVEAL_ON_ROW, sessionsIn, type FolderSummary } from "../../lib/sidebar-status";
+import { FolderMenu } from "./FolderMenu";
 import { NewSessionMenu } from "./NewSessionMenu";
 import { SessionTree, type SessionListContext } from "./SessionList";
 
@@ -19,6 +21,12 @@ export interface FolderGroupProps {
   defaultAgentId?: string;
   /** Opens a new session in this folder; the + is hidden when absent. */
   onNewSessionIn?: (path: string, agentId: string) => void;
+  onRevealFolder?: (path: string) => void;
+  onCopyFolderPath?: (path: string) => void;
+  onArchiveFolderSessions?: (path: string) => void;
+  onRemoveFolder?: (path: string) => void;
+  hasIdleSessions?: boolean;
+  hasBusySessions?: boolean;
 }
 
 const SUMMARY_STYLE: Record<FolderSummary["tone"], { dot?: string; text: string }> = {
@@ -59,14 +67,39 @@ export function FolderGroup({
   agents,
   defaultAgentId,
   onNewSessionIn,
+  onRevealFolder,
+  onCopyFolderPath,
+  onArchiveFolderSessions,
+  onRemoveFolder,
+  hasIdleSessions = false,
+  hasBusySessions = false,
 }: FolderGroupProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const isOpen = isForcedOpen || !isFolded;
   const summary = isOpen
     ? null
     : folderSummary(sessionsIn(group.sessions), context.isSessionWaiting, context.isSessionBusy);
+  const newSessionAgentId =
+    (defaultAgentId && agents.some((a) => a.id === defaultAgentId) ? defaultAgentId : agents[0]?.id) ?? undefined;
+  const onNewSession = onNewSessionIn && newSessionAgentId ? () => onNewSessionIn(group.path, newSessionAgentId) : undefined;
+  const onReveal = onRevealFolder ? () => onRevealFolder(group.path) : undefined;
+  const onCopyPath = onCopyFolderPath ? () => onCopyFolderPath(group.path) : undefined;
+  const onArchiveAll = onArchiveFolderSessions && hasIdleSessions ? () => onArchiveFolderSessions(group.path) : undefined;
+  const onRemove = onRemoveFolder && !hasBusySessions ? () => onRemoveFolder(group.path) : undefined;
+  const hasMenu = Boolean(onNewSession || onReveal || onCopyPath || onArchiveAll || onRemove);
   return (
     <li>
-      <div className={`group flex items-center rounded-md pr-1 ${isOpen ? "h-7 gap-0.5" : "h-8 gap-1.5"}`}>
+      <div
+        className={`group flex items-center rounded-md pr-1 ${isOpen ? "h-7 gap-0.5" : "h-8 gap-1.5"}`}
+        onContextMenu={
+          hasMenu
+            ? (e) => {
+                e.preventDefault();
+                setMenuOpen(true);
+              }
+            : undefined
+        }
+      >
         <button
           type="button"
           onClick={onToggle}
@@ -85,14 +118,33 @@ export function FolderGroup({
         {isOpen && (
           <span className="shrink-0 pr-1 text-caption text-fg-subtle">{sessionsIn(group.sessions).length}</span>
         )}
-        {onNewSessionIn && (
-          <span data-testid="folder-actions" className={`flex shrink-0 ${REVEAL_ON_ROW}`}>
-            <NewSessionMenu
-              folderName={group.name}
-              agents={agents}
-              defaultAgentId={defaultAgentId}
-              onPick={(agentId) => onNewSessionIn(group.path, agentId)}
-            />
+        {(onNewSessionIn || hasMenu) && (
+          <span
+            data-testid="folder-actions"
+            className={`flex shrink-0 items-center gap-0.5 ${REVEAL_ON_ROW} has-[[data-confirm]]:opacity-100 has-[[data-confirm]]:pointer-events-auto`}
+          >
+            {onNewSessionIn && (
+              <NewSessionMenu
+                folderName={group.name}
+                agents={agents}
+                defaultAgentId={defaultAgentId}
+                onPick={(agentId) => onNewSessionIn(group.path, agentId)}
+              />
+            )}
+            {hasMenu && (
+              <FolderMenu
+                folderName={group.name}
+                isFolded={isFolded}
+                isOpen={menuOpen}
+                onOpenChange={setMenuOpen}
+                onNewSession={onNewSession}
+                onReveal={onReveal}
+                onCopyPath={onCopyPath}
+                onToggle={!isForcedOpen ? onToggle : undefined}
+                onArchiveAll={onArchiveAll}
+                onRemove={onRemove}
+              />
+            )}
           </span>
         )}
         {isOpen && (

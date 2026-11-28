@@ -28,6 +28,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - Clicking a system notification now focuses Zorvo and opens the session that sent it.
 - Introduced Zorvo's computer use inspection tools (`list_apps`, `request_access`, `list_windows`, `get_window_state`, `zoom`, `verify_state`) in the session tools context so on-demand and command-path agents know when and how to use them automatically.
+- Styled pull request check counts in the session Overview with compact inline status indicators (`failed`, `running`, `passed`) and semantic colours so failing or running checks stand out at a glance.
 
 ## [0.22.1] - 2026-11-27
 

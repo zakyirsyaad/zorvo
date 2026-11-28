@@ -173,6 +173,23 @@ describe("OverviewCard", () => {
     expect(onOpenUrl).toHaveBeenCalledWith("https://github.com/o/r/pull/272");
   });
 
+  it("renders inline semantic checks status on open pull request rows", () => {
+    const { card } = show({
+      pullRequests: [
+        { ...pullRequest(368, "Fix notifications"), checks: { passing: 8, failing: 1, pending: 0 } },
+        { ...pullRequest(367, "Add folder menu"), checks: { passing: 6, failing: 0, pending: 2 } },
+        { ...pullRequest(366, "Narrow chat column"), checks: { passing: 9, failing: 0, pending: 0 } },
+      ],
+    });
+    const listed = section(card, /^Pull requests/);
+    const failed = within(listed).getByText("1/9 failed");
+    const running = within(listed).getByText("2/8 running");
+    const passed = within(listed).getByText("9/9 passed");
+    expect(failed.className).toContain("text-danger");
+    expect(running.className).toContain("text-status-attention");
+    expect(passed.className).toContain("text-status-running");
+  });
+
   it("renders nothing when collapsed instead of a floating pill", () => {
     render(
       <OverviewCard

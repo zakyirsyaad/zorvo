@@ -10,9 +10,9 @@
 import { randomBytes } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { secp256k1 } from "@noble/curves/secp256k1";
-import { keccak_256 } from "@noble/hashes/sha3";
-import { sha256 } from "@noble/hashes/sha256";
-import { bytesToHex, hexToBytes } from "@noble/hashes/utils";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { keccak_256 } from "@noble/hashes/sha3.js";
+import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 
 const NEAR_AI_URL = "https://cloud-api.near.ai/v1";
 const MODEL = "Qwen/Qwen3.8-27B-abliterated";

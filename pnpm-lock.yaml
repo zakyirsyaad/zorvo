@@ -130,7 +130,7 @@ importers:
     devDependencies:
       '@cloudflare/vitest-pool-workers':
         specifier: 0.22.0
-        version: 0.22.0(@cloudflare/workers-types@5.20261121.1)(@types/node@26.6.6)(@vitest/runner@4.1.12)(@vitest/snapshot@4.1.12)(vitest@4.1.12(@types/node@26.6.6)(jsdom@31.0.1(@noble/hashes@1.8.0))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)))
+        version: 0.22.0(@cloudflare/workers-types@5.20261121.1)(@types/node@26.6.6)(@vitest/runner@4.1.12)(@vitest/snapshot@4.1.12)(vitest@4.1.12(@types/node@26.6.6)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)))
       '@cloudflare/workers-types':
         specifier: 5.20261121.1
         version: 5.20261121.1
@@ -147,8 +147,8 @@ importers:
         specifier: 1.8.1
         version: 1.8.1
       '@noble/hashes':
-        specifier: 1.8.0
-        version: 1.8.0
+        specifier: 2.4.0
+        version: 2.4.0
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
@@ -160,10 +160,10 @@ importers:
         version: 6.0.3
       vitest:
         specifier: 4.1.12
-        version: 4.1.12(@types/node@26.6.6)(jsdom@31.0.1(@noble/hashes@1.8.0))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0))
+        version: 4.1.12(@types/node@26.6.6)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0))
       wrangler:
         specifier: 4.166.0
-        version: 4.166.0(@cloudflare/workers-types@5.20261121.1)(@types/node@26.6.6)(vitest@4.1.12(@types/node@26.6.6)(jsdom@31.0.1(@noble/hashes@1.8.0))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)))
+        version: 4.166.0(@cloudflare/workers-types@5.20261121.1)(@types/node@26.6.6)(vitest@4.1.12(@types/node@26.6.6)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)))
 
   site:
     dependencies:
@@ -1168,6 +1168,10 @@ packages:
   '@noble/hashes@1.8.0':
     resolution: {integrity: sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==}
     engines: {node: ^14.21.3 || >=16}
+
+  '@noble/hashes@2.4.0':
+    resolution: {integrity: sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA==}
+    engines: {node: '>= 20.19.0'}
 
   '@oxc-project/types@0.156.0':
     resolution: {integrity: sha512-1Duyg48TdJNdyhEB8Xn1L36bT9Pv6GUtlKjHxOys8xkaF/rQq3XJE+bAurSK/AgIz5mGFsb77cn9Pb20+WCScw==}
@@ -3422,14 +3426,14 @@ snapshots:
     optionalDependencies:
       workerd: 1.20261119.1
 
-  '@cloudflare/vitest-pool-workers@0.22.0(@cloudflare/workers-types@5.20261121.1)(@types/node@26.6.6)(@vitest/runner@4.1.12)(@vitest/snapshot@4.1.12)(vitest@4.1.12(@types/node@26.6.6)(jsdom@31.0.1(@noble/hashes@1.8.0))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)))':
+  '@cloudflare/vitest-pool-workers@0.22.0(@cloudflare/workers-types@5.20261121.1)(@types/node@26.6.6)(@vitest/runner@4.1.12)(@vitest/snapshot@4.1.12)(vitest@4.1.12(@types/node@26.6.6)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)))':
     dependencies:
       '@vitest/runner': 4.1.12
       '@vitest/snapshot': 4.1.12
       cjs-module-lexer: 1.2.3
       esbuild: 0.28.1
       miniflare: 5.20260815.0-alpha(@types/node@26.6.6)
-      vitest: 4.1.12(@types/node@26.6.6)(jsdom@31.0.1(@noble/hashes@1.8.0))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0))
+      vitest: 4.1.12(@types/node@26.6.6)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0))
       wrangler: 4.124.0(@cloudflare/workers-types@5.20261121.1)(@types/node@26.6.6)
       zod: 4.6.7
     transitivePeerDependencies:
@@ -3470,14 +3474,14 @@ snapshots:
 
   '@cloudflare/workers-types@5.20261121.1': {}
 
-  '@cloudflare/workers-utils@0.56.0(vitest@4.1.12(@types/node@26.6.6)(jsdom@31.0.1(@noble/hashes@1.8.0))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)))':
+  '@cloudflare/workers-utils@0.56.0(vitest@4.1.12(@types/node@26.6.6)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)))':
     dependencies:
       '@cspotcode/source-map-support': 0.8.1
       chalk: 5.3.0
       dotenv: 16.3.1
       undici: 7.30.2
     optionalDependencies:
-      vitest: 4.1.12(@types/node@26.6.6)(jsdom@31.0.1(@noble/hashes@1.8.0))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0))
+      vitest: 4.1.12(@types/node@26.6.6)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0))
 
   '@cspotcode/source-map-support@0.8.1':
     dependencies:
@@ -3697,6 +3701,11 @@ snapshots:
   '@exodus/bytes@1.16.0(@noble/hashes@1.8.0)':
     optionalDependencies:
       '@noble/hashes': 1.8.0
+
+  '@exodus/bytes@1.16.0(@noble/hashes@2.4.0)':
+    optionalDependencies:
+      '@noble/hashes': 2.4.0
+    optional: true
 
   '@fontsource-variable/geist-mono@5.3.0': {}
 
@@ -3966,6 +3975,8 @@ snapshots:
   '@noble/hashes@1.7.1': {}
 
   '@noble/hashes@1.8.0': {}
+
+  '@noble/hashes@2.4.0': {}
 
   '@oxc-project/types@0.156.0': {}
 
@@ -4589,6 +4600,14 @@ snapshots:
     transitivePeerDependencies:
       - '@noble/hashes'
 
+  data-urls@8.0.0(@noble/hashes@2.4.0):
+    dependencies:
+      whatwg-mimetype: 5.0.0
+      whatwg-url: 17.2.0(@noble/hashes@2.4.0)
+    transitivePeerDependencies:
+      - '@noble/hashes'
+    optional: true
+
   debug@4.4.3(supports-color@10.2.2):
     dependencies:
       ms: 2.1.3
@@ -4975,6 +4994,13 @@ snapshots:
     transitivePeerDependencies:
       - '@noble/hashes'
 
+  html-encoding-sniffer@7.0.0(@noble/hashes@2.4.0):
+    dependencies:
+      '@exodus/bytes': 1.16.0(@noble/hashes@2.4.0)
+    transitivePeerDependencies:
+      - '@noble/hashes'
+    optional: true
+
   html-url-attributes@3.0.1: {}
 
   humanize-ms@1.2.1:
@@ -5042,6 +5068,30 @@ snapshots:
       xml-name-validator: 5.0.0
     transitivePeerDependencies:
       - '@noble/hashes'
+
+  jsdom@31.0.1(@noble/hashes@2.4.0):
+    dependencies:
+      '@exodus/bytes': 1.16.0(@noble/hashes@2.4.0)
+      bcp-47: 2.1.2
+      bcp-47-match: 2.0.3
+      data-urls: 8.0.0(@noble/hashes@2.4.0)
+      decimal.js: 10.6.0
+      html-encoding-sniffer: 7.0.0(@noble/hashes@2.4.0)
+      is-potential-custom-element-name: 1.0.1
+      lru-cache: 11.5.3
+      parse5: 8.1.1
+      parse5-parser-stream: 8.1.1
+      saxes: 6.0.0
+      tough-cookie: 6.0.2
+      undici: 8.12.4
+      w3c-xmlserializer: 6.0.0
+      webidl-conversions: 8.0.1
+      whatwg-mimetype: 5.0.0
+      whatwg-url: 17.3.0(@noble/hashes@2.4.0)
+      xml-name-validator: 5.0.0
+    transitivePeerDependencies:
+      - '@noble/hashes'
+    optional: true
 
   jsesc@3.1.0: {}
 
@@ -6043,7 +6093,7 @@ snapshots:
       fsevents: 2.3.3
       jiti: 2.7.0
 
-  vitest@4.1.12(@types/node@26.6.6)(jsdom@31.0.1(@noble/hashes@1.8.0))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)):
+  vitest@4.1.12(@types/node@26.6.6)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)):
     dependencies:
       '@vitest/expect': 4.1.12
       '@vitest/mocker': 4.1.12(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0))
@@ -6067,7 +6117,7 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 26.6.6
-      jsdom: 31.0.1(@noble/hashes@1.8.0)
+      jsdom: 31.0.1(@noble/hashes@2.4.0)
     transitivePeerDependencies:
       - msw
 
@@ -6113,6 +6163,15 @@ snapshots:
     transitivePeerDependencies:
       - '@noble/hashes'
 
+  whatwg-url@17.2.0(@noble/hashes@2.4.0):
+    dependencies:
+      '@exodus/bytes': 1.16.0(@noble/hashes@2.4.0)
+      tr46: 7.0.0
+      webidl-conversions: 8.0.1
+    transitivePeerDependencies:
+      - '@noble/hashes'
+    optional: true
+
   whatwg-url@17.3.0(@noble/hashes@1.8.0):
     dependencies:
       '@exodus/bytes': 1.16.0(@noble/hashes@1.8.0)
@@ -6120,6 +6179,15 @@ snapshots:
       webidl-conversions: 8.0.1
     transitivePeerDependencies:
       - '@noble/hashes'
+
+  whatwg-url@17.3.0(@noble/hashes@2.4.0):
+    dependencies:
+      '@exodus/bytes': 1.16.0(@noble/hashes@2.4.0)
+      tr46: 7.0.0
+      webidl-conversions: 8.0.1
+    transitivePeerDependencies:
+      - '@noble/hashes'
+    optional: true
 
   whatwg-url@5.0.0:
     dependencies:
@@ -6173,11 +6241,11 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  wrangler@4.166.0(@cloudflare/workers-types@5.20261121.1)(@types/node@26.6.6)(vitest@4.1.12(@types/node@26.6.6)(jsdom@31.0.1(@noble/hashes@1.8.0))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0))):
+  wrangler@4.166.0(@cloudflare/workers-types@5.20261121.1)(@types/node@26.6.6)(vitest@4.1.12(@types/node@26.6.6)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0))):
     dependencies:
       '@cloudflare/kv-asset-handler': 0.5.1
       '@cloudflare/unenv-preset': 2.16.2(unenv@2.0.0-rc.24)(workerd@1.20261119.1)
-      '@cloudflare/workers-utils': 0.56.0(vitest@4.1.12(@types/node@26.6.6)(jsdom@31.0.1(@noble/hashes@1.8.0))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)))
+      '@cloudflare/workers-utils': 0.56.0(vitest@4.1.12(@types/node@26.6.6)(jsdom@31.0.1(@noble/hashes@2.4.0))(vite@8.3.8(@types/node@26.6.6)(esbuild@0.28.2)(jiti@2.7.0)))
       '@cspotcode/source-map-support': 0.8.1
       '@types/yargs': 17.0.24
       cloudflare: 5.2.0

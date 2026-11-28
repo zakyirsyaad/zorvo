@@ -10,7 +10,7 @@ const active = { id: "t1", url: site.url, title: "Google", loading: false, canGo
 function props(overrides: Partial<ComponentProps<typeof BrowserToolbar>> = {}): ComponentProps<typeof BrowserToolbar> {
   return {
     tabs: [active], active, engine: "webkit", panel: "page", busy: false, overlay: "site",
-    onOverlay: vi.fn(), onNavigate: vi.fn(), onAction: vi.fn(), onEngine: vi.fn(), onPanel: vi.fn(), onRevoke: vi.fn(),
+    onOverlay: vi.fn(), onNavigate: vi.fn(), onAction: vi.fn(), onPanel: vi.fn(),
     onNewTab: vi.fn(), zoomFactor: 1, onZoom: vi.fn(), onCopyLink: vi.fn(), onOpenExternal: vi.fn(), onClearHistory: vi.fn(), hasHistory: false,
     site, siteBusy: false, onClearSite: vi.fn(), ...overrides,
   };
@@ -71,9 +71,4 @@ describe("browser site information", () => {
     expect(screen.getByRole("status").textContent).toBe("Cookies were cleared. Some site data could not be removed.");
   });
 
-  it("keeps unsupported site information disabled for the separate Chromium window", () => {
-    render(<BrowserToolbar {...props({ engine: "chromium", overlay: null })} />);
-    expect(screen.getByRole("button", { name: "Site information" }).hasAttribute("disabled")).toBe(true);
-    expect(screen.queryByRole("dialog", { name: "Site information" })).toBeNull();
-  });
 });

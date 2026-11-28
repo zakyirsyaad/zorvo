@@ -9,9 +9,10 @@ describe("browser addresses", () => {
     expect(browserAddress("localhost:5173/docs")).toBe("http://localhost:5173/docs");
     expect(browserAddress("127.0.0.1:3000")).toBe("http://127.0.0.1:3000/");
   });
-  it("treats google and words as search terms", () => {
-    expect(browserAddress("google")).toBe("https://www.google.com/search?q=google");
-    expect(browserAddress("react hooks")).toBe("https://www.google.com/search?q=react%20hooks");
+  it("rejects non-address text without sending it to a search provider", () => {
+    for (const text of ["google", "react hooks", "TODO: fix login", "error: cannot find module", "python: list comprehension"]) {
+      expect(() => browserAddress(text)).toThrow("Search is not configured");
+    }
   });
   it("rejects local paths, non-web schemes and credentials", () => {
     for (const address of ["", "file:///etc/hosts", "javascript:alert(1)", "data:text/html,test", "https://user:pass@example.com", "/Users/me/private.txt", "~/private.txt"]) {
@@ -33,9 +34,9 @@ it("offers the wide Browser tab only for a session", () => {
   expect(minInspectorWidth("browser")).toBe(560);
 });
 
-it("searches for text whose first word ends in a colon instead of reading it as a scheme", () => {
+it("gives colon-prefixed non-address text the local search-not-configured hint", () => {
   for (const text of ["TODO: fix login", "python: list comprehension", "error: cannot find module"]) {
-    expect(browserAddress(text)).toBe("https://www.google.com/search?q=" + encodeURIComponent(text));
+    expect(() => browserAddress(text)).toThrow("Search is not configured");
   }
   expect(() => browserAddress("mailto:someone@example.com")).toThrow();
 });

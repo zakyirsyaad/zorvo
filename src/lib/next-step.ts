@@ -37,6 +37,7 @@ export type NextStepButton =
 
 export const ACTION_LABELS: Record<NextStepAction, string> = {
   commit: 'Commit',
+  push: 'Push',
   create_pr: 'Create PR',
   merge: 'Merge',
   auto_merge: 'Turn on auto-merge',
@@ -46,17 +47,18 @@ export const ACTION_LABELS: Record<NextStepAction, string> = {
 
 const MESSAGES: Partial<Record<NextStepAction, string>> = {
   commit: 'Commit the changes you made.',
+  push: 'Push this branch.',
   create_pr: 'Commit the changes you made, push them and open a pull request.',
   merge: 'Merge the pull request.',
   auto_merge: 'Turn on auto-merge for the pull request.',
 };
 
-const ACTIONS: readonly NextStepAction[] = ['commit', 'create_pr', 'merge', 'auto_merge', 'open_preview', 'open_pr'];
+const ACTIONS: readonly NextStepAction[] = ['commit', 'push', 'create_pr', 'merge', 'auto_merge', 'open_preview', 'open_pr'];
 
 export const MAX_RECAP_CHARS = 300;
 export const MAX_ASK_CHARS = 100;
-export const MAX_REPLIES = 2;
-export const MAX_REPLY_CHARS = 24;
+export const MAX_REPLIES = 3;
+export const MAX_REPLY_CHARS = 40;
 const MAX_BUTTONS = 5;
 
 /** The sentence a button sends as the user's message; none for the two that only open a page. */
@@ -89,6 +91,7 @@ export function offeredActions(facts: NextStepFacts, scope: TurnScope): NextStep
   const mayOffer = (action: NextStepAction) => scope.turnChanged || scope.pick === action;
   const offered: NextStepAction[] = [];
   if (hasChanges && mayOffer('commit')) offered.push('commit');
+  if (hasUnpushed && mayOffer('push') && (scope.pick === 'push' || Boolean(openPr))) offered.push('push');
   if ((hasChanges || hasUnpushed) && !openPr && mayOffer('create_pr')) offered.push('create_pr');
   if (openPr) {
     const { failing, pending } = openPr.checks;
@@ -106,13 +109,22 @@ export function offeredActions(facts: NextStepFacts, scope: TurnScope): NextStep
 export function buttonsOf(step: NextStep | undefined, facts: NextStepFacts, turn: Pick<TurnScope, 'turnChanged'>): NextStepButton[] {
   const offered = offeredActions(facts, { turnChanged: turn.turnChanged, ...(step?.pick ? { pick: step.pick } : {}) });
   const pick = step?.pick && offered.includes(step.pick) ? step.pick : undefined;
-  const action = (name: NextStepAction, isPick: boolean): NextStepButton => ({
-    kind: 'action',
-    action: name,
-    label: ACTION_LABELS[name],
-    ...(MESSAGES[name] ? { message: MESSAGES[name] } : {}),
-    isPick,
-  });
+  const hasChanges = (facts.changes?.files ?? 0) > 0;
+  const hasUnpushed = (facts.ahead ?? 0) > 0;
+  const actionMessage = (name: NextStepAction): string | undefined => {
+    if (name === 'create_pr' && !hasChanges && hasUnpushed) return 'Push this branch and open a pull request.';
+    return MESSAGES[name];
+  };
+  const action = (name: NextStepAction, isPick: boolean): NextStepButton => {
+    const message = actionMessage(name);
+    return {
+      kind: 'action',
+      action: name,
+      label: ACTION_LABELS[name],
+      ...(message ? { message } : {}),
+      isPick,
+    };
+  };
   const replies: NextStepButton[] = (step?.replies ?? []).map((label) => ({ kind: 'reply', label, message: label }));
   const picked = pick ? [action(pick, true)] : [];
   const room = Math.max(0, MAX_BUTTONS - picked.length - replies.length);
@@ -138,11 +150,13 @@ export function parseNextStep(raw: unknown): NextStep | null {
   const ask = boundedText(input.ask, MAX_ASK_CHARS);
   const pick = isAction(input.pick) ? input.pick : undefined;
   const rawReplies = Array.isArray(input.replies) ? input.replies : undefined;
-  const replies =
-    rawReplies && rawReplies.length <= MAX_REPLIES
-      ? rawReplies.map((reply) => boundedText(reply, MAX_REPLY_CHARS))
-      : undefined;
-  const keptReplies = replies && replies.length > 0 && replies.every((reply) => reply !== undefined) ? (replies as string[]) : undefined;
+  const keptReplies = rawReplies
+    ? rawReplies
+        .map((reply) => boundedText(reply, MAX_REPLY_CHARS))
+        .filter((reply): reply is string => reply !== undefined)
+        .slice(0, MAX_REPLIES)
+    : undefined;
+  const replies = keptReplies && keptReplies.length > 0 ? keptReplies : undefined;
   const answer = input.answered as { label?: unknown; at?: unknown } | undefined;
   const answered =
     typeof answer === 'object' && answer !== null && typeof answer.label === 'string' && answer.label.length > 0 && typeof answer.at === 'number'
@@ -152,7 +166,7 @@ export function parseNextStep(raw: unknown): NextStep | null {
     ...(recap ? { recap } : {}),
     ...(ask ? { ask } : {}),
     ...(pick ? { pick } : {}),
-    ...(keptReplies ? { replies: keptReplies } : {}),
+    ...(replies ? { replies } : {}),
     ...(answered ? { answered } : {}),
   };
   return Object.keys(step).length > 0 ? step : null;

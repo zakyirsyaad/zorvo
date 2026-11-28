@@ -33,6 +33,7 @@ import App from "../App";
 import { PopoutApp } from "../components/PopoutApp";
 import { verificationCenterUrl } from "../components/private/PrivateInspector";
 import { readWindowMode } from "../lib/window-mode";
+import { browserCard } from "../lib/agent-tool-card";
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
 
@@ -79,6 +80,19 @@ async function startSessionInMainWindow(spy: { mock: { calls: unknown[][] } }): 
 }
 
 describe("Popout windows", () => {
+  it("answers the browser grant from the requesting session's popout card", async () => {
+    await act(async () => { render(<PopoutApp sessionId="s-1" />); });
+    await deliver('session-snapshot', {
+      sessionId: 's-1', session: runningSession, status: { isBusy: true, isWaiting: true },
+      messages: [{ id: 'browser-message', role: 'agent', content: '', timestamp: 1,
+        actionCard: browserCard({ cardId: 'browser-card', sessionId: 's-1', callerName: 'Claude Code', folder: runningSession.cwd, operations: ['tabs.open'], now: 1 }) }],
+    });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Allow for this session' })); });
+    expect(emitted).toContainEqual({ event: 'popout-action', payload: {
+      sessionId: 's-1', action: { kind: 'choose-option', cardId: 'browser-card', optionId: 'zorvo-allow-session' },
+    } });
+  });
   afterEach(() => {
     vi.restoreAllMocks();
     listeners.clear();

@@ -38,10 +38,11 @@ pub const MAX_FILES: usize = 50;
 /// `wrap_up`'s limits, in characters, and the actions an agent may pick.
 pub const MAX_RECAP_CHARS: usize = 300;
 pub const MAX_ASK_CHARS: usize = 100;
-pub const MAX_REPLIES: usize = 2;
-pub const MAX_REPLY_CHARS: usize = 24;
-pub const WRAP_UP_ACTIONS: [&str; 6] = [
+pub const MAX_REPLIES: usize = 3;
+pub const MAX_REPLY_CHARS: usize = 40;
+pub const WRAP_UP_ACTIONS: [&str; 7] = [
     "commit",
+    "push",
     "create_pr",
     "merge",
     "auto_merge",
@@ -174,12 +175,12 @@ pub fn tool_list() -> Value {
         }
     ]);
     tools.as_array_mut().unwrap().extend([
-        json!({"name":"browser", "description":"Operate Zorvo's browser. Open a page with operation tabs.open and url. Scroll the current WebKit page with operation scroll and deltaY (positive is down), without listing tabs first. Omit tabID to use the active WebKit tab; Chromium requires tabID from tabs.open or tabs.list. WebKit is the native in-app view; engine chromium opens an isolated installed Chromium window for advanced diagnostics. Requires the user's session browser grant. files.upload fills a file input, in WebKit too, after a separate one-time approval of the files. Read browser_guide for advanced operation details.",
+        json!({"name":"browser", "description":"Operate Zorvo's browser. Open a page with operation tabs.open and url. Scroll the current WebKit page with operation scroll and deltaY (positive is down), without listing tabs first. Omit tabID to use the active WebKit tab; WebKit is the native in-app view. Requires the user's session browser grant. files.upload fills a file input after a separate one-time approval of the files. Read browser_guide for the supported operations.",
             "inputSchema":browser_input_schema()}),
         json!({"name":"browser_guide","description":"List browser operations, parameters, engine limits and permission rules.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}),
         json!({
             "name": "wrap_up",
-            "description": "Call once at the end of a turn that changed files or leaves the user a decision. recap: two or three short sentences on what is now true and what is not done. ask: the one decision that is the user's, as a question. pick: the action you recommend, if Zorvo offers it. replies: up to two short answers the user may give. Then end your turn.",
+            "description": "Call once at the end of a turn that changed files or leaves the user a decision. recap: two or three short sentences on what is now true and what is not done. ask: the one decision that is the user's, as a question. pick: the action you recommend, if Zorvo offers it. replies: up to three short answers the user may give. Then end your turn.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -227,9 +228,8 @@ pub fn tool_list() -> Value {
 /// `additionalProperties`. Publish every public parameter so they can pass a
 /// URL, tab id or scroll distance without first fetching the whole guide.
 fn browser_input_schema() -> Value {
-    let catalog: Value =
-        serde_json::from_str(include_str!("../../resources/browser-cdp/catalog.json"))
-            .expect("bundled browser catalog");
+    let catalog: Value = serde_json::from_str(include_str!("../browser/catalog.json"))
+        .expect("bundled browser catalog");
     let mut properties = Map::new();
     for tool in catalog.as_object().expect("browser operations").values() {
         for (name, schema) in tool["inputSchema"]["properties"]
@@ -247,23 +247,20 @@ fn browser_input_schema() -> Value {
     );
     properties.insert(
         "engine".into(),
-        json!({"type":"string", "enum":["webkit","chromium"], "default":"webkit"}),
+        json!({"type":"string", "enum":["webkit"], "default":"webkit"}),
     );
-    properties.insert(
-        "title".into(),
-        json!({"type":"string", "description":"Title when previewing a local HTML file."}),
-    );
-    // Some model adapters reject an array branch without an items schema.
-    properties.get_mut("fields").expect("form fields")["items"]["properties"]["value"] = json!({
-        "anyOf":[{"type":"string"},{"type":"boolean"},{"type":"array","items":{"type":"string"}}]
-    });
     for (name, description) in [
         ("url", "HTTP or HTTPS URL for tabs.open or navigate."),
-        ("tabID", "Tab id from tabs.open or tabs.list. Omit for the active WebKit tab; required for Chromium tab operations."),
-        ("frameID", "Optional frame id returned by frames."),
+        (
+            "tabID",
+            "Tab id from tabs.open or tabs.list. Omit for the active WebKit tab.",
+        ),
         ("ref", "Element reference returned by snapshot."),
         ("deltaX", "Horizontal scroll distance in pixels."),
-        ("deltaY", "Vertical scroll distance in pixels; positive scrolls down."),
+        (
+            "deltaY",
+            "Vertical scroll distance in pixels; positive scrolls down.",
+        ),
     ] {
         properties.get_mut(name).expect("browser parameter")["description"] = json!(description);
     }
@@ -989,8 +986,7 @@ mod tests {
     fn browser_signature_exposes_the_public_operation_parameters() {
         let schema = browser_input_schema();
         let properties = schema["properties"].as_object().unwrap();
-        let catalog: Value =
-            serde_json::from_str(include_str!("../../resources/browser-cdp/catalog.json")).unwrap();
+        let catalog: Value = serde_json::from_str(include_str!("../browser/catalog.json")).unwrap();
         for (operation, tool) in catalog.as_object().unwrap() {
             for (name, source) in tool["inputSchema"]["properties"].as_object().unwrap() {
                 let mut expected = source.clone();
@@ -1014,7 +1010,8 @@ mod tests {
             json!(crate::browser_commands::OPERATIONS)
         );
         assert_eq!(properties["engine"]["default"], "webkit");
-        assert_eq!(properties["title"]["type"], "string");
+        assert!(!properties.contains_key("title"));
+        assert_eq!(crate::browser_commands::OPERATIONS.len(), 20);
         for internal in ["approval", "_zorvoCallId", "_zorvoGrant"] {
             assert!(!properties.contains_key(internal), "{internal}");
         }
@@ -1309,8 +1306,8 @@ mod tests {
         let cases = [
             json!({"recap": "r".repeat(301)}),
             json!({"recap": "Done.", "ask": "a".repeat(101)}),
-            json!({"recap": "Done.", "replies": ["a", "b", "c"]}),
-            json!({"recap": "Done.", "replies": ["x".repeat(25)]}),
+            json!({"recap": "Done.", "replies": ["a", "b", "c", "d"]}),
+            json!({"recap": "Done.", "replies": ["x".repeat(41)]}),
             json!({"recap": "Done.", "pick": "deploy"}),
         ];
         for case in cases {
@@ -1329,13 +1326,16 @@ mod tests {
     fn wrap_up_trims_and_keeps_its_fields() {
         let clean = validate(
             "wrap_up",
-            &json!({"recap": " Done. ", "ask": "Merge?", "pick": "merge", "replies": ["Not yet"]}),
+            &json!({"recap": " Done. ", "ask": "Push?", "pick": "push", "replies": ["Not yet", "Open PR instead", "Keep local"]}),
         )
         .unwrap();
         assert_eq!(clean["recap"], "Done.");
-        assert_eq!(clean["ask"], "Merge?");
-        assert_eq!(clean["pick"], "merge");
-        assert_eq!(clean["replies"], json!(["Not yet"]));
+        assert_eq!(clean["ask"], "Push?");
+        assert_eq!(clean["pick"], "push");
+        assert_eq!(
+            clean["replies"],
+            json!(["Not yet", "Open PR instead", "Keep local"])
+        );
     }
     #[test]
     fn show_visual_takes_exactly_one_source() {

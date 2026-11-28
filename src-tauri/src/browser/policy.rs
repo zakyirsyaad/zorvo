@@ -11,7 +11,7 @@ use objc2_foundation::{
     MainThreadMarker, NSArray, NSObjectProtocol, NSProcessInfo, NSString, NSURL,
 };
 use objc2_web_kit::{
-    WKFrameInfo, WKMediaCaptureType, WKNavigationAction, WKOpenPanelParameters,
+    WKFrameInfo, WKMediaCaptureType, WKNavigationAction, WKNavigationType, WKOpenPanelParameters,
     WKPermissionDecision, WKPreferences, WKScriptMessage, WKScriptMessageHandler, WKSecurityOrigin,
     WKUIDelegate, WKUserContentController, WKWebView, WKWebViewConfiguration, WKWindowFeatures,
 };
@@ -20,7 +20,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter};
 use wry::WebViewExtMacOS;
 static NEXT_FRAME: AtomicU64 = AtomicU64::new(1);
-static NEXT_DIALOG: AtomicU64 = AtomicU64::new(1);
 
 #[link(name = "AVFoundation", kind = "framework")]
 unsafe extern "C" {}
@@ -69,33 +68,6 @@ pub fn disable_screen_capture(preferences: &WKPreferences) -> Result<(), String>
     Ok(())
 }
 
-enum Completion {
-    Alert(RcBlock<dyn Fn()>),
-    Confirm(RcBlock<dyn Fn(Bool)>),
-    Prompt(RcBlock<dyn Fn(*mut NSString)>),
-}
-pub struct Dialog {
-    pub info: Value,
-    completion: Completion,
-}
-impl Dialog {
-    pub fn answer(self, accept: bool, text: Option<&str>) {
-        match self.completion {
-            Completion::Alert(block) => block.call(()),
-            Completion::Confirm(block) => block.call((Bool::new(accept),)),
-            Completion::Prompt(block) => {
-                let text = accept.then(|| NSString::from_str(text.unwrap_or("")));
-                block.call((text
-                    .as_ref()
-                    .map_or(std::ptr::null_mut(), |s| Retained::as_ptr(s).cast_mut()),));
-            }
-        }
-    }
-    pub fn dismiss(self) {
-        self.answer(false, None);
-    }
-}
-
 pub struct DelegateData {
     app: AppHandle,
     session: String,
@@ -135,6 +107,12 @@ define_class!(
                     return None;
                 }
                 if !frame.isMainFrame() || tab.loading{return None;}
+                if data["kind"]=="popup-link" {
+                    if data["document"].as_str()!=tab.document.as_deref(){return None;}
+                    let url=super::navigation_url(data["url"].as_str()?).ok()?;
+                    tab.popup_link=Some(super::PopupLink{url,document:tab.document.clone()?,at:std::time::Instant::now()});
+                    return None;
+                }
                 let arm=tab.picker.as_ref()?;
                 if tab.document.as_deref()!=Some(&arm.document){return None;}
                 let mut payload=picker_message(&data,&arm.document,&arm.nonce)?;
@@ -150,11 +128,34 @@ define_class!(
     unsafe impl WKUIDelegate for BrowserDelegate {
         #[unsafe(method(webView:createWebViewWithConfiguration:forNavigationAction:windowFeatures:))]
         fn popup(&self,_view:&WKWebView,_configuration:&WKWebViewConfiguration,action:&WKNavigationAction,_features:&WKWindowFeatures)->*mut WKWebView {
-            let url=unsafe{action.request().URL().and_then(|u|u.absoluteString()).map(|s|s.to_string())};
-            if let Some(url)=url.filter(|url|super::navigation_url(url).is_ok()) {
-                let app=self.ivars().app.clone(); let session=self.ivars().session.clone();
+            // WebKit can ask this delegate about a blocked window.open even
+            // with automatic windows disabled. Navigation type alone also accepts
+            // synthetic clicks, so require the isolated world's trusted link event.
+            let raw_url=unsafe{action.request().URL().and_then(|u|u.absoluteString()).map(|s|s.to_string())};
+            let app=self.ivars().app.clone(); let session=self.ivars().session.clone(); let tab=self.ivars().tab.clone();
+            if unsafe { action.navigationType() } != WKNavigationType::LinkActivated {
                 let app2=app.clone();
-                let _=app.run_on_main_thread(move||{ if super::create(&app2,&session,&url).is_ok(){super::changed(&app2,&session);} });
+                let _=app.run_on_main_thread(move||{
+                    super::record_blocked_popup(&app2,&session,&tab,raw_url.as_deref());
+                });
+                return std::ptr::null_mut();
+            }
+            // The click's address was stored in this normal form; compare like with like.
+            if let Some(url)=raw_url.as_deref().and_then(|url|super::navigation_url(url).ok()) {
+                let app2=app.clone();
+                let _=app.run_on_main_thread(move||{
+                    let allowed=super::with_tab(&session,&tab,|tab|tab.popup_link.take().is_some_and(|click|click.url==url && tab.document.as_ref()==Some(&click.document) && click.at.elapsed()<std::time::Duration::from_secs(2))).unwrap_or(false);
+                    if allowed {
+                        if super::create_background(&app2,&session,&url).is_ok(){super::changed(&app2,&session);}
+                    } else {
+                        super::record_blocked_popup(&app2,&session,&tab,Some(&url));
+                    }
+                });
+            } else {
+                let app2=app.clone();
+                let _=app.run_on_main_thread(move||{
+                    super::record_blocked_popup(&app2,&session,&tab,raw_url.as_deref());
+                });
             }
             std::ptr::null_mut()
         }
@@ -167,17 +168,11 @@ define_class!(
         fn media(&self,_view:&WKWebView,_origin:&WKSecurityOrigin,_frame:&WKFrameInfo,_kind:WKMediaCaptureType,decision:&Block<dyn Fn(WKPermissionDecision)>){decision.call((WKPermissionDecision::Deny,));}
 
         #[unsafe(method(webView:runJavaScriptAlertPanelWithMessage:initiatedByFrame:completionHandler:))]
-        fn alert(&self,_view:&WKWebView,message:&NSString,frame:&WKFrameInfo,completion:&Block<dyn Fn()>){
-            self.dialog("alert",message,None,frame,Completion::Alert(completion.copy()));
-        }
+        fn alert(&self,_view:&WKWebView,_message:&NSString,_frame:&WKFrameInfo,completion:&Block<dyn Fn()>){completion.call(());}
         #[unsafe(method(webView:runJavaScriptConfirmPanelWithMessage:initiatedByFrame:completionHandler:))]
-        fn confirm(&self,_view:&WKWebView,message:&NSString,frame:&WKFrameInfo,completion:&Block<dyn Fn(Bool)>){
-            self.dialog("confirm",message,None,frame,Completion::Confirm(completion.copy()));
-        }
+        fn confirm(&self,_view:&WKWebView,_message:&NSString,_frame:&WKFrameInfo,completion:&Block<dyn Fn(Bool)>){completion.call((Bool::new(false),));}
         #[unsafe(method(webView:runJavaScriptTextInputPanelWithPrompt:defaultText:initiatedByFrame:completionHandler:))]
-        fn prompt(&self,_view:&WKWebView,message:&NSString,default_text:Option<&NSString>,frame:&WKFrameInfo,completion:&Block<dyn Fn(*mut NSString)>){
-            self.dialog("prompt",message,default_text,frame,Completion::Prompt(completion.copy()));
-        }
+        fn prompt(&self,_view:&WKWebView,_message:&NSString,_default_text:Option<&NSString>,_frame:&WKFrameInfo,completion:&Block<dyn Fn(*mut NSString)>){completion.call((std::ptr::null_mut(),));}
     }
     impl BrowserDelegate {
         // The SDK-generated objc2 bindings predate this public macOS 27 callback.
@@ -308,51 +303,6 @@ impl BrowserDelegate {
                 panel.beginWithCompletionHandler(&handler);
             }
         }
-    }
-    fn dialog(
-        &self,
-        kind: &str,
-        message: &NSString,
-        default: Option<&NSString>,
-        frame: &WKFrameInfo,
-        completion: Completion,
-    ) {
-        let id = NEXT_DIALOG.fetch_add(1, Ordering::Relaxed);
-        let info = unsafe {
-            json!({"id":id,"type":kind,"message":message.to_string().chars().take(4000).collect::<String>(),"defaultText":default.map(|s|s.to_string()),"url":frame.request().URL().and_then(|u|u.absoluteString()).map(|s|s.to_string())})
-        };
-        let dialog = Dialog { info, completion };
-        let sid = &self.ivars().session;
-        let tid = &self.ivars().tab;
-        super::with_tab(sid, tid, |tab| {
-            if let Some(old) = tab.dialog.replace(dialog) {
-                old.dismiss();
-            }
-        });
-        super::changed(&self.ivars().app, sid);
-        let app = self.ivars().app.clone();
-        let sid = sid.clone();
-        let tid = tid.clone();
-        tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-            let handle = app.clone();
-            let _ = app.run_on_main_thread(move || {
-                super::with_tab(&sid, &tid, |tab| {
-                    if tab
-                        .dialog
-                        .as_ref()
-                        .and_then(|d| d.info.get("id"))
-                        .and_then(Value::as_u64)
-                        == Some(id)
-                    {
-                        if let Some(d) = tab.dialog.take() {
-                            d.dismiss();
-                        }
-                    }
-                });
-                super::changed(&handle, &sid);
-            });
-        });
     }
 }
 

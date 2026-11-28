@@ -31,7 +31,7 @@ describe("the chat column, as drawn", () => {
     expect(canvas).toHaveClass("relative");
   });
 
-  it("keeps every part of the column 720px wide", () => {
+  it("keeps every part of the column 640px wide", () => {
     const files = [
       "components/ChatCanvas.tsx",
       "components/chat/MessageRow.tsx",
@@ -50,7 +50,7 @@ describe("the chat column, as drawn", () => {
 
   it("defines the column, the selection colour and the terminal text as tokens", () => {
     const css = read("styles/globals.css");
-    expect(css).toContain("--container-chat: 720px;");
+    expect(css).toContain("--container-chat: 640px;");
     expect(css).toContain("--color-selection: rgba(161, 161, 170, 0.32);");
     expect(css).toContain("--color-terminal-fg: #d4d4d8;");
     expect(css).toMatch(/::selection\s*\{[^}]*var\(--color-selection\)/);

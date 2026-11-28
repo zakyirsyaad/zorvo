@@ -8,8 +8,7 @@ import { BrowserTabs } from "./BrowserTabs";
 
 export const BROWSER_PANELS = [
   { id: "page", label: "Page" }, { id: "console", label: "Console" },
-  { id: "network", label: "Network" }, { id: "files", label: "Files" },
-  { id: "performance", label: "Performance" }, { id: "debug", label: "Debug" },
+  { id: "debug", label: "Debug" },
 ] as const;
 export type BrowserPanelId = typeof BROWSER_PANELS[number]["id"];
 export type BrowserOverlay = "options" | "site" | "tools" | null;
@@ -33,9 +32,7 @@ interface BrowserToolbarProps {
   onOverlay: (overlay: BrowserOverlay) => void;
   onNavigate: (value: string) => void;
   onAction: (args: Record<string, unknown>) => void;
-  onEngine: (engine: BrowserEngine) => void;
   onPanel: (panel: BrowserPanelId) => void;
-  onRevoke: () => void;
   onSelectElement?: () => void;
   selectingElement?: boolean;
   site: BrowserSiteInfo | null;
@@ -66,7 +63,7 @@ function menuKeys(event: KeyboardEvent<HTMLDivElement>) {
 }
 
 /** Page tabs sit above navigation; the page menu and diagnostic tools have separate controls. */
-export function BrowserToolbar({ tabs, active, engine, panel, busy, overlay, onOverlay, onNavigate, onAction, onEngine, onPanel, onRevoke, onSelectElement, selectingElement, site, siteBusy, onClearSite, onNewTab, zoomFactor, onZoom, onCopyLink, onOpenExternal, onClearHistory, hasHistory, isExpanded = false, onToggleExpanded }: BrowserToolbarProps) {
+export function BrowserToolbar({ tabs, active, engine, panel, busy, overlay, onOverlay, onNavigate, onAction, onPanel, onSelectElement, selectingElement, site, siteBusy, onClearSite, onNewTab, zoomFactor, onZoom, onCopyLink, onOpenExternal, onClearHistory, hasHistory, isExpanded = false, onToggleExpanded }: BrowserToolbarProps) {
   const menu = useRef<HTMLDivElement>(null);
   const tools = useRef<HTMLDivElement>(null);
   const choose = (action: () => void) => { onOverlay(null); action(); };
@@ -98,12 +95,6 @@ export function BrowserToolbar({ tabs, active, engine, panel, busy, overlay, onO
           }}><PanelRight size={14} /></IconButton>}>
         <div ref={tools} onKeyDown={menuKeys}>
           <PopoverGroup heading="Tools">{BROWSER_PANELS.map(item => <PopoverOption key={item.id} isRadio selected={item.id === panel} onSelect={() => choose(() => onPanel(item.id))}>{item.label}</PopoverOption>)}</PopoverGroup>
-          <PopoverGroup heading="Browser engine">
-            <PopoverOption isRadio selected={engine === "webkit"} onSelect={() => choose(() => onEngine("webkit"))}>WebKit</PopoverOption>
-            <PopoverOption isRadio selected={engine === "chromium"} onSelect={() => choose(() => onEngine("chromium"))}>Chromium debug</PopoverOption>
-          </PopoverGroup>
-          <div role="separator" className="my-1 border-t border-border" />
-          <PopoverOption onSelect={() => choose(onRevoke)}>Revoke browser access</PopoverOption>
         </div>
       </Popover>
       </div>} />
@@ -176,7 +167,7 @@ function Address({ tab, onNavigate, siteButton, zoom }: { tab: BrowserTab | unde
   return <form onSubmit={submit} className="relative flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md bg-surface-2 pr-2 pl-1 focus-ring-within hover:bg-surface-hover">
     {siteButton}
     <div className="relative h-full min-w-0 flex-1">
-      <input ref={input} aria-label="Address or search" value={draft ?? url} placeholder="Search or enter a URL"
+      <input ref={input} aria-label="Web address" value={draft ?? url} placeholder="Enter a URL"
         autoCapitalize="off" autoCorrect="off" autoComplete="off" spellCheck={false}
         onFocus={event => { setDraft(url); event.currentTarget.select(); }} onBlur={() => setDraft(null)}
         onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === "Escape") input.current?.blur(); }}

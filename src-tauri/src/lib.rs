@@ -10,7 +10,6 @@ pub mod branch_state;
 pub mod branches;
 pub mod browser;
 pub mod browser_commands;
-pub mod browser_debug;
 pub mod browser_upload;
 pub mod changes;
 pub mod checkpoints;
@@ -360,6 +359,7 @@ fn delete_transcript(
     session_id: String,
 ) -> Result<(), String> {
     browser_commands::forget(&app, &session_id);
+    browser::close_session(&app, session_id.clone());
     store.delete_transcript(&session_id)
 }
 
@@ -594,7 +594,6 @@ pub fn run() {
             app.manage(Arc::new(browser::history::BrowserHistory::new(
                 app.state::<store::AppStore>().root(),
             )));
-            app.manage(browser_debug::DebugBrowsers::default());
             // Off until the saved switch says otherwise; no driver starts here.
             let computer_use_on = app
                 .state::<store::AppStore>()
@@ -718,10 +717,9 @@ pub fn run() {
             browser_commands::browser_agent_execute,
             browser_commands::browser_permission,
             browser_commands::browser_file_permission,
-            browser_commands::browser_manual_file_permission,
+            browser_commands::browser_close_session,
             browser_commands::browser_catalog,
-            browser_debug::browser_runtime_install,
-            browser_debug::browser_runtime_status,
+            browser_commands::browser_permission_status,
             browser::browser_bounds,
             artifacts::commands::artifact_show,
             artifacts::visual_commands::visual_show,
@@ -907,13 +905,12 @@ pub fn run() {
 }
 
 /// Closes every native view drawn over the main webview: the artifact view and the Browser
-/// panel's pages, plus the Chromium debug worker. They belong to the page that placed them, so
-/// they go when Zorvo exits and when a reloaded page starts; otherwise a view stays drawn over
-/// the new page at its old place, with no box under it and nothing that could close it.
+/// panel's pages. They belong to the page that placed them, so they go when Zorvo exits and
+/// when a reloaded page starts; otherwise a view stays drawn over the new page at its old
+/// place, with no box under it and nothing that could close it.
 fn close_native_views(app: &AppHandle) {
     artifacts::view::close(app);
     browser::close_all(app);
-    browser_debug::close(app, None);
 }
 
 /// The native views have no test window to be drawn in here, so these read the wiring itself: a
@@ -938,11 +935,7 @@ mod native_view_tests {
         assert!(body_of("end_orphaned_sessions").contains("close_native_views(&app);"));
         assert!(body_of("run").contains("close_native_views(app);"));
         let closes = body_of("close_native_views");
-        for call in [
-            "artifacts::view::close(app);",
-            "browser::close_all(app);",
-            "browser_debug::close(app, None);",
-        ] {
+        for call in ["artifacts::view::close(app);", "browser::close_all(app);"] {
             assert!(
                 closes.contains(call),
                 "close_native_views does not call {call}"

@@ -67,6 +67,7 @@ function MoreOptionsMenu({
   onEndDelegation,
   delegationEnds,
   onStopAllowingDelegation,
+  onStopAllowingBrowser,
   onStopComputerUse,
   triggerRef,
 }: {
@@ -83,6 +84,7 @@ function MoreOptionsMenu({
   delegationEnds?: readonly { label: string; run: () => void }[];
   /** Takes back the session's leave to give other agents tasks without asking; shown only while it has it. */
   onStopAllowingDelegation?: () => void;
+  onStopAllowingBrowser?: () => void;
   /** Ends what the session's agent may use on this Mac; absent while it holds no grant. */
   onStopComputerUse?: () => void;
   /** The ⋯ button, which takes focus back when the dialog its Delegate item opened closes. */
@@ -105,6 +107,9 @@ function MoreOptionsMenu({
     ),
     ...(onStopAllowingDelegation !== undefined
       ? [{ label: "Stop allowing delegation", run: onStopAllowingDelegation, Icon: ShieldOff }]
+      : []),
+    ...(onStopAllowingBrowser !== undefined
+      ? [{ label: "Stop allowing browser access", run: onStopAllowingBrowser, Icon: ShieldOff }]
       : []),
     ...(onStopComputerUse !== undefined
       ? [{ label: "Stop computer use", run: onStopComputerUse, Icon: CircleStop }]
@@ -214,6 +219,7 @@ export interface TopBarProps {
   delegationEnds?: readonly { label: string; run: () => void }[];
   /** Takes back the session's leave to give other agents tasks without asking; shown only while it has it. */
   onStopAllowingDelegation?: () => void;
+  onStopAllowingBrowser?: () => void;
   /** Ends what the session's agent may use on this Mac; absent while it holds no grant. */
   onStopComputerUse?: () => void;
   /** The ⋯ button, which takes focus back when a dialog its item opened closes. */
@@ -261,6 +267,7 @@ export function TopBar({
   onEndDelegation,
   delegationEnds,
   onStopAllowingDelegation,
+  onStopAllowingBrowser,
   onStopComputerUse,
   moreButtonRef,
   onToggleInspector,
@@ -403,6 +410,7 @@ export function TopBar({
           onEndDelegation={onEndDelegation}
           delegationEnds={delegationEnds}
           onStopAllowingDelegation={onStopAllowingDelegation}
+          onStopAllowingBrowser={onStopAllowingBrowser}
           onStopComputerUse={onStopComputerUse}
           triggerRef={moreButtonRef}
         />

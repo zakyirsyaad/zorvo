@@ -8,6 +8,16 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - Continue a conversation with another agent: pick it from the agent menu in the composer, and your message starts its session with the conversation so far, or pick it from Fork from here under any reply. The new session marks where it continued.
 
+### Changed
+
+- **WebKit-only Browser panel with chat permission cards.** Deferred Chromium/CDP debugging to a follow-up, moved agent browser grants and one-time WebKit file-upload approvals into ordinary chat cards, removed dead engine branches from `BrowserPanel`, and stopped sending non-URL address-bar text to Google.
+
+### Fixed
+
+- **Browser tools wait for a new page.** An operation issued immediately after opening a tab waits for its page helper, instead of failing before the document is ready. The wait keeps its original tab and timeout.
+- **Private browser form values.** Snapshots omit passwords, one-time codes and card autocomplete values. Automatic popups are blocked with a quiet one-line notice in the panel (and reported in agent click results), and permitted page-created tabs stay in the background.
+- **Browser tabs survive an agent exit and close on archive.** Ending or crashing an agent revokes its browser access without closing the user's pages; archiving or deleting a session closes its browser views, and hitting the 8-session browser limit names the sessions still holding tabs.
+
 ## [0.22.1] - 2026-11-27
 
 ### Added
@@ -165,7 +175,6 @@ Tagged but never published; its changes shipped in 0.22.1.
 
 - A new session keeps the name from your first message. With Claude Agent it could be named after a note Zorvo sends the agent, which you never wrote.
 - **Browser tools on sites with a strict content policy.** Native JavaScript expressions and console reads use WebKit's page-world compiler, so a site's ban on `eval` does not block the tools. The site's policy remains unchanged.
-- **Navigation past a page dialog.** Navigating, reloading or going back/forward dismisses a pending page dialog before WebKit starts the new document, so the dialog cannot keep the navigation waiting.
 - **Closing browser pages releases their process state.** Closed views cancel pending operations and ask WebKit to end and reset the page process, including a page running a script that never yields.
 - **Browser tabs and page controls.** A tab strip, blank new tabs and the page menu now follow the compact browser layout, with native page zoom, copying/opening links and a clearable list of recent pages. Diagnostic tools have their own menu.
 - **Responsive pages in the browser.** WebKit now includes its Safari compatibility token and Zorvo identity, so sites such as Google serve a layout that follows the panel width.

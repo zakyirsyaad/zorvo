@@ -105,6 +105,7 @@ export function useSessionActions(deps: SessionActionsDeps): SessionActions {
     }
     // A stopped agent ends no turn itself: requests it was waiting on are answered as closed.
     if (isRunning) deps.updateMessages(sessionId, closeTurn);
+    void invoke('browser_close_session', { sessionId }).catch(() => {});
     const now = Date.now();
     patchSession(sessionId, { archivedAt: now, ...(isRunning ? { status: 'terminated', endedAt: now } : {}) });
     selectNextAfter(sessionId);

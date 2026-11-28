@@ -98,10 +98,8 @@ import { withLinkChange, workerHandleOf, workerStateOf } from "./lib/workers";
 import { useComputerUse } from "./hooks/useComputerUse";
 import { isComputerUseCardId } from "./lib/computer-use-card";
 import { ComputerUseStatusLine } from "./components/chat/ComputerUseStatusLine";
-import { useBrowserAgentTools } from "./hooks/useBrowserAgentTools";
 import { useBrowserOpening } from "./hooks/useBrowserOpening";
 import { useFileLinkOpening } from "./hooks/useFileLinkOpening";
-import { BrowserPermissionLayer } from "./components/browser/BrowserPermissionLayer";
 import { useOpenedSessions } from "./hooks/useOpenedSessions";
 import { createStartPlaces } from "./lib/start-places";
 import { ProfileFooter } from "./components/ProfileFooter";
@@ -765,7 +763,7 @@ export default function App() {
     forgetInMessage,
     onError: reportError,
   });
-  useBrowserOpening({ sessionId: activeSession?.id ?? null, show: () => inspector.show("browser"), onError: reportError, onArtifactShown });
+  useBrowserOpening({ sessionId: activeSession?.id ?? null, show: () => inspector.show("browser"), onError: reportError });
   useFileLinkOpening({
     folder: filesFolder?.path,
     viewFile: (relative) => {
@@ -881,11 +879,9 @@ export default function App() {
     onNotice: (message) => setNotice(message),
   });
   const isSessionWaiting = (sessionId: string) =>
-    browserAgentTools.isWaiting(sessionId) ||
     agentTools.isWaiting(sessionId) ||
     computerUse.isWaiting(sessionId) ||
     isWaitingForAnswer(sessionById(sessionId), transcripts[sessionId] ?? [], () => isSessionBusy(sessionId));
-  const browserAgentTools = useBrowserAgentTools({ sessions, agents: agentsInUse, onAttention: (sessionId, reason) => notifyAttention(sessionId, reason), onError: reportError });
 
   const {
     recordSession,
@@ -1268,6 +1264,10 @@ export default function App() {
     sessionOfItsOwn !== undefined && agentTools.hasGrant(sessionOfItsOwn.id)
       ? () => agentTools.revokeGrant(sessionOfItsOwn.id)
       : undefined;
+  const onStopAllowingBrowser =
+    sessionOfItsOwn !== undefined && agentTools.hasBrowserGrant(sessionOfItsOwn.id)
+      ? () => agentTools.revokeBrowserGrant(sessionOfItsOwn.id)
+      : undefined;
   const activeComputerUse = sessionOfItsOwn ? computerUse.grantOf(sessionOfItsOwn.id) : undefined;
   const onStopComputerUse =
     sessionOfItsOwn !== undefined && activeComputerUse !== undefined
@@ -1578,6 +1578,7 @@ export default function App() {
               delegateBlockedReason={activeDelegateBlockedReason}
               delegationEnds={delegationEnds}
               onStopAllowingDelegation={onStopAllowingDelegation}
+              onStopAllowingBrowser={onStopAllowingBrowser}
               onStopComputerUse={onStopComputerUse}
               moreButtonRef={moreOptionsButtonRef}
               workspaceName={activeSession ? folderNameOf(workspacePathOf(activeSession)) : activeWorkspace?.name}
@@ -2163,7 +2164,6 @@ export default function App() {
           )}
         </div>
       </section>
-      <BrowserPermissionLayer request={browserAgentTools.request} busy={browserAgentTools.answering} answer={browserAgentTools.answer} />
       <SettingsPage
         page={settingsPage}
         persisted={{ state, updateState }}

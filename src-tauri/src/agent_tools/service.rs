@@ -172,9 +172,6 @@ impl AgentTools {
             .then(|| (call.connection.caller.session.clone(), call.args.clone()))
     }
 
-    pub fn browser_owner(&self, call_id: &str) -> Option<String> {
-        self.browser_call(call_id).map(|(session, _)| session)
-    }
     /// How long a call may wait for the webview. Agents give up on a tool call
     /// on their own (Antigravity after 3 minutes, Qwen Code and Codex after 5),
     /// so Zorvo answers before the shortest of them.

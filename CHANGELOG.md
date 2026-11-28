@@ -19,6 +19,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - **Private browser form values.** Snapshots omit passwords, one-time codes and card autocomplete values. Automatic popups are blocked with a quiet one-line notice in the panel (and reported in agent click results), and permitted page-created tabs stay in the background.
 - **Browser tabs survive an agent exit and close on archive.** Ending or crashing an agent revokes its browser access without closing the user's pages; archiving or deleting a session closes its browser views, and hitting the 8-session browser limit names the sessions still holding tabs.
 - **The session overview toggle lives in the top bar.** Folding the overview no longer leaves a floating pill inside the chat sheet; the top bar button beside the inspector opens and closes it on both wide and narrow sheets, with a dot when tasks are running while it is closed.
+- **One Send / Stop button in the composer.** While a turn runs, the composer shows Stop when the box is empty and switches to Queue message once you type or attach files, instead of showing both buttons side by side; tighter chip spacing keeps the composer bar on one row.
 
 ## [0.22.1] - 2026-11-27
 

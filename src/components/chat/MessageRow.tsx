@@ -29,6 +29,7 @@ import { ArtifactCardRow } from "./ArtifactCardRow";
 import type { ArtifactCard } from "../../types";
 import { cardIdOf } from "../../lib/artifacts";
 import { ContinuedFromLine, type ContinuedFromView } from "./ContinuedFromLine";
+import type { SwitchTarget } from "../../lib/agent-switch";
 import { NextStepBox, type NextStepView } from "./NextStepBox";
 
 /** A message or card that arrives on screen fades in once (the appear token); streamed text does not move. */
@@ -49,7 +50,10 @@ export interface MessageRowProps {
   speaking: boolean;
   readAloudSupported: boolean;
   onCopy: (messageId: string, content: string) => void;
-  onFork?: (messageId: string) => void;
+  /** No agent id: the session's own agent. */
+  onFork?: (messageId: string, agentId?: string) => void;
+  /** The agents the Fork menu offers (the session's own first); empty or absent keeps Fork one click. */
+  forkAgents?: readonly SwitchTarget[];
   /** Names the agent and the source session of a message marked continuedFrom; absent where nothing resolves it. */
   continuedFromOf?: (mark: NonNullable<ChatMessage["continuedFrom"]>) => ContinuedFromView;
   onRewind?: (messageId: string, options?: RewindOptions) => void;
@@ -116,6 +120,7 @@ export const MessageRow = memo(function MessageRow({
   readAloudSupported,
   onCopy,
   onFork,
+  forkAgents,
   continuedFromOf,
   onRewind,
   onToggleReadAloud,
@@ -327,7 +332,14 @@ export const MessageRow = memo(function MessageRow({
             <MessageActionBar
               copied={copied}
               onCopy={() => onCopy(message.id, message.content)}
-              onFork={onFork ? () => onFork(message.id) : undefined}
+              fork={
+                onFork
+                  ? {
+                      agents: forkAgents ?? [],
+                      onFork: (agentId) => (agentId === undefined ? onFork(message.id) : onFork(message.id, agentId)),
+                    }
+                  : undefined
+              }
               readAloud={
                 readAloudSupported
                   ? { speaking, onToggle: () => onToggleReadAloud(message.id, message.content) }

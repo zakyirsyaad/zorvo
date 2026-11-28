@@ -92,6 +92,8 @@ describe("Chat wiring", () => {
     await screen.findByText("Plan: split it in two");
 
     await click(forkButtonFor("Plan: split it in two"));
+    // With other agents in use Fork is a menu; its first row forks with the session's own agent.
+    await click(screen.getByRole("menuitem", { name: /^Fork with Claude Code/ }));
 
     const [, handoffArgs] = callsTo(spy, "write_fork_handoff")[0];
     expect(handoffArgs?.content).toContain("Plan: split it in two");

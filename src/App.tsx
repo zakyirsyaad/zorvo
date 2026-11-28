@@ -118,6 +118,8 @@ import { useWorkspaceTerminals } from "./hooks/useWorkspaceTerminals";
 import { useTerminalDrawer } from "./hooks/useTerminalDrawer";
 import { useDraftSessionList } from "./hooks/useDraftSessionList";
 import { useSessionFork } from "./hooks/useSessionFork";
+import { useOutsideTeeConfirm } from "./hooks/useOutsideTeeConfirm";
+import { switchHiddenFor, switchTargets } from "./lib/agent-switch";
 import { useSessionRewind } from "./hooks/useSessionRewind";
 import { useSessionStartWiring } from "./hooks/useSessionStartWiring";
 import { useUnreadMarks } from "./hooks/useUnreadMarks";
@@ -926,6 +928,27 @@ export default function App() {
     startSession,
     onNotice: setNotice,
   });
+  const teeConfirm = useOutsideTeeConfirm();
+  // The agents a conversation can continue with, the session's own first; none where no other agent is offered.
+  const activeMessageCount = (transcripts[activeSessionId] ?? []).length;
+  const switchAgents = useMemo(
+    () =>
+      activeSession && !switchHiddenFor(activeSession, activeMessageCount, false)
+        ? switchTargets(agentsInUse, activeSession.profileId, signInStatus.stateOf, Boolean(activeSession.privateMode))
+        : [],
+    [activeSession, activeMessageCount, agentsInUse, signInStatus.stateOf],
+  );
+  // Fork from here: the session's own agent, or another one with its remembered picks, asking first for a private session.
+  const forkFromMessage = (messageId: string, agentId?: string) => {
+    const agent = agentId === undefined ? undefined : agents.find((candidate) => candidate.id === agentId);
+    if (!agent) {
+      void forkSession(messageId);
+      return;
+    }
+    const run = () => void forkSession(messageId, { agent, choices: withPreferred(NO_CHOICES, state.agentOptions?.[agent.id]) });
+    if (activeSession?.privateMode) teeConfirm.ask({ id: agent.id, name: agent.name }, run);
+    else run();
+  };
 
   const {
     creditsOutReason,
@@ -1596,7 +1619,8 @@ export default function App() {
                       onJumped={() => setChatJump(null)}
                       agentName={activeAgent?.name}
                       agentProfileId={activeSession?.profileId}
-                      onForkBranch={(messageId) => void forkSession(messageId)}
+                      onForkBranch={forkFromMessage}
+                      forkAgents={switchAgents}
                       continuedFromOf={(mark) => {
                         const origin = sessions.find((session) => session.id === mark.sessionId);
                         return {
@@ -2121,6 +2145,7 @@ export default function App() {
           onEdit={secretGuard.edit}
         />
       )}
+      {teeConfirm.dialog}
       {delegateDialog.dialog !== null && (
         <DelegateDialog
           agents={delegateAgents}

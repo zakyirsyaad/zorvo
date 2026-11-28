@@ -27,6 +27,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - Narrowed the chat and composer column from 720px to 640px and shortened the context meter label to a compact percentage so the composer toolbar stays on one row.
 
 - Clicking a system notification now focuses Zorvo and opens the session that sent it.
+- Introduced Zorvo's computer use inspection tools (`list_apps`, `request_access`, `list_windows`, `get_window_state`, `zoom`, `verify_state`) in the session tools context so on-demand and command-path agents know when and how to use them automatically.
 
 ## [0.22.1] - 2026-11-27
 

@@ -486,8 +486,22 @@ function withValidWorkerReport(message: ChatMessage): ChatMessage {
   return workers.length === 0 ? (rest as ChatMessage) : { ...rest, workerReport: { workers } };
 }
 
+/** A continued-from mark keeps both ids when they are non-empty strings, else the message goes on without it. */
+function withValidContinuedFrom(message: ChatMessage): ChatMessage {
+  if (!('continuedFrom' in message)) return message;
+  const { continuedFrom, ...rest } = message;
+  if (!isObject(continuedFrom)) return rest as ChatMessage;
+  const { sessionId, agentId } = continuedFrom as { sessionId?: unknown; agentId?: unknown };
+  if (typeof sessionId !== 'string' || sessionId === '' || typeof agentId !== 'string' || agentId === '') {
+    return rest as ChatMessage;
+  }
+  return { ...rest, continuedFrom: { sessionId, agentId } } as ChatMessage;
+}
+
 function withValidDelegationReport(message: ChatMessage): ChatMessage {
-  return withValidWorkerReport(withValidAgentMark(withValidAgentMark(message, 'delegationReport'), 'delegationTask'));
+  return withValidContinuedFrom(
+    withValidWorkerReport(withValidAgentMark(withValidAgentMark(message, 'delegationReport'), 'delegationTask')),
+  );
 }
 
 /**

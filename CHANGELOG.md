@@ -8,6 +8,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - Continue a conversation with another agent: pick it from the agent menu in the composer, and your message starts its session with the conversation so far, or pick it from Fork from here under any reply. The new session marks where it continued.
 
+### Changed
+
+- Introduced Zorvo's computer use inspection tools (`list_apps`, `request_access`, `list_windows`, `get_window_state`, `zoom`, `verify_state`) in the session tools context so on-demand and command-path agents know when and how to use them automatically.
+
 ## [0.22.1] - 2026-11-27
 
 ### Added

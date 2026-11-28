@@ -60,6 +60,7 @@ describe("AuthPanel", () => {
 
   it("disables every sign-in button while signing in", () => {
     renderPanel({ methods: [agent, terminal], status: "signing-in" });
+    fireEvent.click(screen.getByRole("button", { name: "Other ways to sign in (1)" }));
 
     const buttons = screen.getAllByRole("button", { name: /^Sign in with/ });
     expect(buttons).toHaveLength(2);
@@ -115,18 +116,52 @@ describe("AuthPanel", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Sign-in failed: Claude Code still says you are signed out");
   });
 
-  it("is a card named for the agent that lists every method", () => {
+  it("is a card named for the agent that leads with the first method it can run and folds the others", () => {
     renderPanel({ agentName: "Gemini CLI", methods: [agent, terminal, explain] });
 
     const card = within(screen.getByRole("region", { name: "Sign in to Gemini CLI" }));
     expect(card.getByRole("heading", { level: 2, name: "Sign in to Gemini CLI" })).toBeInTheDocument();
-    expect(card.getAllByRole("listitem")).toHaveLength(3);
-    expect(card.getByRole("button", { name: "Sign in with ChatGPT" })).toBeInTheDocument();
-    expect(card.getByRole("button", { name: "Sign in with Claude Subscription" })).toBeInTheDocument();
+    expect(card.getByRole("button", { name: "Sign in with ChatGPT" }).className).toContain("bg-primary");
+    expect(card.queryByRole("button", { name: "Sign in with Claude Subscription" })).toBeNull();
+
+    const fold = card.getByRole("button", { name: "Other ways to sign in (2)" });
+    expect(fold).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(fold);
+
+    expect(fold).toHaveAttribute("aria-expanded", "true");
+    const others = within(card.getByRole("list", { name: "Other ways to sign in" }));
+    expect(others.getAllByRole("listitem")).toHaveLength(2);
+    expect(others.getByRole("button", { name: "Sign in with Claude Subscription" })).toBeInTheDocument();
+  });
+
+  it("keeps the agent's order: a key listed first does not lead, the first method Zorvo can run does", () => {
+    renderPanel({ methods: [explain, terminal] });
+
+    expect(screen.getByRole("button", { name: "Sign in with Claude Subscription" }).className).toContain("bg-primary");
+    expect(screen.getByRole("button", { name: "Other ways to sign in (1)" })).toBeInTheDocument();
+  });
+
+  it("gives a key method that names its variable a line to copy, with a placeholder and never a field", () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    renderPanel({ methods: [agent, { ...explain, variables: ["GEMINI_API_KEY"] }] });
+    fireEvent.click(screen.getByRole("button", { name: "Other ways to sign in (1)" }));
+
+    expect(screen.getByText('export GEMINI_API_KEY=')).toBeInTheDocument();
+    expect(screen.queryByText("In your shell")).toBeNull();
+    expect(screen.queryByRole("textbox")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Copy the line that sets GEMINI_API_KEY" }));
+    expect(writeText).toHaveBeenCalledWith('export GEMINI_API_KEY=');
+  });
+
+  it("says what to try next when a sign-in fails", () => {
+    renderPanel({ status: "failed", error: "Claude Code still says you are signed out" });
+    expect(screen.getByRole("status")).toHaveTextContent("Try again, or pick another way.");
   });
 
   it("shows a method Zorvo cannot run as its name, In your shell and its description, with no button or field", () => {
     renderPanel({ methods: [agent, explain] });
+    fireEvent.click(screen.getByRole("button", { name: "Other ways to sign in (1)" }));
 
     const item = screen.getAllByRole("listitem").find((li) => li.textContent?.includes("API Key"))!;
     expect(item).toHaveTextContent("API Key");
@@ -207,27 +242,30 @@ describe("AuthPanel", () => {
   describe("as drawn", () => {
     const setup: AuthMethod = { id: "openai", name: "Use OpenAI API key", kind: "setup" };
 
-    it("leads by asking how the agent signs in", () => {
+    it("leads by saying the agent signs in with its own tool", () => {
       renderPanel();
 
-      expect(screen.getByText("Pick how Claude Code signs in. It uses its own tool; Zorvo never sees your password or key.")).toBeInTheDocument();
+      expect(screen.getByText("Claude Code signs in with its own tool. Zorvo never sees your password or key.")).toBeInTheDocument();
     });
 
-    it("methods are a bordered list with outline buttons", () => {
+    it("the first method is a boxed row with the one primary button, and Check again is a text button", () => {
       renderPanel({ methods: [terminal, explain] });
 
-      expect(screen.getByRole("list", { name: "Sign-in methods" })).toHaveClass("divide-y", "rounded-lg", "border");
       const button = screen.getByRole("button", { name: "Sign in with Claude Subscription" });
-      expect(button.className).toContain("border-border-strong");
-      expect(button.querySelector("svg")).toBeNull();
+      expect(button.className).toContain("bg-primary");
+      expect(button.parentElement).toHaveClass("rounded-lg", "border");
+      expect(screen.getByRole("button", { name: "Check again" }).className).not.toContain("border-border-strong");
     });
 
     it("In your shell sits at the row's end", () => {
       renderPanel({ methods: [terminal, explain] });
+      fireEvent.click(screen.getByRole("button", { name: "Other ways to sign in (1)" }));
 
       const item = screen.getAllByRole("listitem").find((li) => li.textContent?.includes("API Key"))!;
-      expect(item.lastElementChild).toHaveTextContent("In your shell");
-      expect(item.lastElementChild).toHaveClass("shrink-0");
+      const end = screen.getByText("In your shell");
+      expect(end).toHaveClass("shrink-0");
+      expect(end.parentElement?.lastElementChild).toBe(end);
+      expect(item).toContainElement(end);
     });
 
     it("the waiting line has an attention dot and ends with a period", () => {
@@ -245,7 +283,7 @@ describe("AuthPanel", () => {
         screen.getByText("Qwen Code connects to a provider you pick in its own setup, and keeps the choice and the key in its settings."),
       ).toBeInTheDocument();
       const open = screen.getByRole("button", { name: "Open setup in terminal" });
-      expect(open.className).toContain("border-border-strong");
+      expect(open.className).toContain("bg-primary");
       expect(open.closest(".border-t")).toBeNull();
       expect(open.parentElement).toHaveTextContent("Already set up in Qwen Code? Check again.");
       expect(screen.queryByText("Already set up?")).toBeNull();
@@ -255,7 +293,7 @@ describe("AuthPanel", () => {
       renderPanel({ agentName: "Qwen Code", methods: [setup, agent] });
 
       expect(screen.getByRole("region", { name: "Sign in to Qwen Code" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Open setup in terminal" }).className).toContain("border-border-strong");
+      expect(screen.getByRole("button", { name: "Open setup in terminal" }).className).toContain("bg-primary");
     });
   });
 
@@ -263,7 +301,8 @@ describe("AuthPanel", () => {
     const setup: AuthMethod = { id: "openai", name: "Use OpenAI API key", kind: "setup" };
 
     it("an outline method button's label is in fg", () => {
-      renderPanel();
+      renderPanel({ methods: [agent, terminal] });
+      fireEvent.click(screen.getByRole("button", { name: "Other ways to sign in (1)" }));
       expect(screen.getByRole("button", { name: "Sign in with Claude Subscription" }).querySelector(".text-fg")).not.toBeNull();
     });
 

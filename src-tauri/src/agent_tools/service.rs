@@ -26,7 +26,9 @@ use serde_json::{json, Value};
 use super::bridge::{SOCKET_VARIABLE, TOKEN_VARIABLE, TOOLS_VARIABLE};
 use super::path::ToolsPath;
 use super::peer::ProcessId;
-use super::protocol::{handle_line, tool_result, Step, MAX_LINE_BYTES};
+use super::protocol::{
+    handle_line, is_screen_tool, tool_result, tool_result_content, Step, MAX_LINE_BYTES,
+};
 use super::socket::{socket_path, Caller, Capabilities, Listener, Tokens};
 
 static NEXT_CALL: AtomicU64 = AtomicU64::new(1);
@@ -47,6 +49,32 @@ pub struct ToolCall {
     pub session_id: String,
     pub tool: String,
     pub args: Value,
+}
+
+/// A valid computer-use call. It never reaches the webview: `ScreenTools`
+/// answers it with `respond` or `respond_content`.
+#[derive(Debug, Clone)]
+pub struct ScreenCall {
+    pub call_id: String,
+    pub session_id: String,
+    /// The registry id of the session's agent, when the session said it.
+    pub profile: Option<String>,
+    pub path: ToolsPath,
+    pub tool: String,
+    pub args: Value,
+}
+
+/// What carries out computer-use calls (`computer_use::ScreenServer`).
+pub trait ScreenTools: Send + Sync {
+    /// Whether this server carries out `tool`.
+    fn offers(&self, tool: &str) -> bool;
+    /// Starts `call` without blocking: this runs on the connection's reader.
+    fn call(&self, call: ScreenCall);
+    /// `call_id` ended without an answer from here: it timed out, the agent
+    /// cancelled it, or its session or connection went away.
+    fn ended(&self, call_id: &str);
+    /// The session stopped: what it was allowed ends with it.
+    fn forget(&self, session: &str);
 }
 
 type Emit = Arc<dyn Fn(ToolCall) + Send + Sync>;
@@ -96,6 +124,9 @@ struct CallPhase {
     ended_early: bool,
 }
 
+/// A pending call taken out of the table: its id, its state and the backend that carried it out.
+type Removed = (String, Arc<CallState>, Option<Arc<dyn ScreenTools>>);
+
 struct Pending {
     tool: String,
     args: Value,
@@ -103,6 +134,8 @@ struct Pending {
     state: Arc<CallState>,
     /// The JSON-RPC id the agent used, to answer it and to match a cancel.
     rpc_id: Value,
+    /// A call a backend server carries out: its end is reported to it, not the webview.
+    backend: Option<Arc<dyn ScreenTools>>,
     /// Dropped with the entry, which wakes the timer thread so it exits.
     _timer_stop: mpsc::Sender<()>,
 }
@@ -118,6 +151,11 @@ pub struct AgentTools {
     ended: Ended,
     /// False for `disabled()`: no socket, and `servers_for` offers nothing.
     enabled: bool,
+    /// Servers that carry out calls in the backend (computer use, motion rendering), each
+    /// added once at start by `set_screen_tools`.
+    backends: Mutex<Vec<Arc<dyn ScreenTools>>>,
+    /// Each session's agent, by registry id, for the name computer use shows.
+    profiles: Mutex<HashMap<String, String>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -171,6 +209,8 @@ impl AgentTools {
             emit: Arc::new(emit),
             ended: Arc::new(ended),
             enabled: true,
+            backends: Mutex::new(Vec::new()),
+            profiles: Mutex::new(HashMap::new()),
         });
         let accepting = Arc::clone(&service);
         let tokens = Arc::clone(&service.tokens);
@@ -197,6 +237,8 @@ impl AgentTools {
             emit: Arc::new(|_| {}),
             ended: Arc::new(|_| {}),
             enabled: false,
+            backends: Mutex::new(Vec::new()),
+            profiles: Mutex::new(HashMap::new()),
         })
     }
 
@@ -298,9 +340,59 @@ impl AgentTools {
         }
     }
 
+    /// Answers a waiting call with MCP content blocks (text and images).
+    pub fn respond_content(&self, call_id: &str, ok: bool, content: Vec<Value>) {
+        let entry = lock(&self.pending).remove(call_id);
+        if let Some(entry) = entry {
+            entry
+                .connection
+                .send(&tool_result_content(&entry.rpc_id, ok, content));
+        }
+    }
+
+    /// Whether `call_id` still waits for its answer.
+    pub fn is_waiting(&self, call_id: &str) -> bool {
+        lock(&self.pending).contains_key(call_id)
+    }
+
+    /// Adds a server that carries out the tools it `offers` in the backend. Called at start.
+    pub fn set_screen_tools(&self, screen: Arc<dyn ScreenTools>) {
+        lock(&self.backends).push(screen);
+    }
+
+    /// The backend server that carries out `tool`, if any.
+    fn backend_for(&self, tool: &str) -> Option<Arc<dyn ScreenTools>> {
+        lock(&self.backends)
+            .iter()
+            .find(|backend| backend.offers(tool))
+            .cloned()
+    }
+
+    /// The session runs this registry agent; computer use shows its name.
+    pub fn note_profile(&self, app_session_id: &str, profile_id: &str) {
+        lock(&self.profiles).insert(app_session_id.to_string(), profile_id.to_string());
+    }
+
+    /// A fork runs its source's agent.
+    pub fn copy_profile(&self, source_session_id: &str, app_session_id: &str) {
+        let mut profiles = lock(&self.profiles);
+        if let Some(profile) = profiles.get(source_session_id).cloned() {
+            profiles.insert(app_session_id.to_string(), profile);
+        }
+    }
+
     /// Reports a call as ended, now when its event already went out, else
     /// right after `emit` returns (see `start_call`).
-    fn report_ended(&self, call_id: String, state: &CallState) {
+    fn report_ended(
+        &self,
+        call_id: String,
+        state: &CallState,
+        backend: Option<Arc<dyn ScreenTools>>,
+    ) {
+        if let Some(backend) = backend {
+            backend.ended(&call_id);
+            return;
+        }
         let now = {
             let mut phase = lock(&state.inner);
             if phase.emitted {
@@ -325,6 +417,7 @@ impl AgentTools {
     /// its waiting calls end.
     pub fn forget(&self, app_session_id: &str) {
         self.tokens.forget(app_session_id);
+        lock(&self.profiles).remove(app_session_id);
         let doomed: Vec<Arc<Connection>> = lock(&self.connections)
             .values()
             .filter(|c| c.caller.session == app_session_id)
@@ -334,6 +427,10 @@ impl AgentTools {
             connection.close();
         }
         self.end_pending(|p| p.connection.caller.session == app_session_id);
+        let backends: Vec<Arc<dyn ScreenTools>> = lock(&self.backends).clone();
+        for backend in backends {
+            backend.forget(app_session_id);
+        }
     }
 
     /// Removes the socket file and closes every connection. Call it when the
@@ -350,7 +447,7 @@ impl AgentTools {
 
     /// Removes every pending call that matches and reports each as ended.
     fn end_pending(&self, matches: impl Fn(&Pending) -> bool) {
-        let removed: Vec<(String, Arc<CallState>)> = {
+        let removed: Vec<Removed> = {
             let mut pending = lock(&self.pending);
             let ids: Vec<String> = pending
                 .iter()
@@ -358,11 +455,11 @@ impl AgentTools {
                 .map(|(id, _)| id.clone())
                 .collect();
             ids.into_iter()
-                .filter_map(|id| pending.remove(&id).map(|p| (id, p.state)))
+                .filter_map(|id| pending.remove(&id).map(|p| (id, p.state, p.backend)))
                 .collect()
         };
-        for (id, state) in removed {
-            self.report_ended(id, &state);
+        for (id, state, backend) in removed {
+            self.report_ended(id, &state, backend);
         }
     }
 
@@ -424,6 +521,20 @@ impl AgentTools {
         tool: String,
         args: Value,
     ) {
+        let screen = self.backend_for(&tool);
+        if crate::agent_tools::tools::MOTION_TOOL_NAMES.contains(&tool.as_str()) && screen.is_none()
+        {
+            connection.send(&tool_result(&rpc_id, false, "Rendering is not available."));
+            return;
+        }
+        if is_screen_tool(&tool) && screen.is_none() {
+            connection.send(&tool_result(
+                &rpc_id,
+                false,
+                "Computer use is not available.",
+            ));
+            return;
+        }
         let call_id = NEXT_CALL.fetch_add(1, Ordering::Relaxed).to_string();
         let (stop, stopped) = mpsc::channel::<()>();
         let state = Arc::new(CallState::default());
@@ -448,6 +559,7 @@ impl AgentTools {
                     connection: Arc::clone(connection),
                     state: Arc::clone(&state),
                     rpc_id: rpc_id.clone(),
+                    backend: screen.clone(),
                     _timer_stop: stop,
                 },
             );
@@ -464,6 +576,19 @@ impl AgentTools {
             lock(&self.pending).remove(&call_id);
             connection.send(&tool_result(&rpc_id, false, TOO_MANY_CALLS_TEXT));
             return;
+        }
+        if let Some(screen) = screen {
+            let profile = lock(&self.profiles)
+                .get(&connection.caller.session)
+                .cloned();
+            return screen.call(ScreenCall {
+                call_id,
+                session_id: connection.caller.session.clone(),
+                profile,
+                path: connection.caller.capabilities.path,
+                tool,
+                args,
+            });
         }
         (self.emit)(ToolCall {
             call_id: call_id.clone(),
@@ -488,7 +613,7 @@ impl AgentTools {
             entry
                 .connection
                 .send(&tool_result(&entry.rpc_id, false, TIMEOUT_TEXT));
-            self.report_ended(call_id.to_string(), &entry.state);
+            self.report_ended(call_id.to_string(), &entry.state, entry.backend);
         }
     }
 }

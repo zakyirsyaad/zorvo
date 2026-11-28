@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
+use zorvo_lib::agent_tools::socket::Capabilities;
 use zorvo_lib::agent_tools::{AgentTools, ToolCall};
 
 const WAIT: Duration = Duration::from_secs(5);
@@ -114,13 +115,14 @@ fn text(bytes: &[u8]) -> String {
 }
 
 #[test]
-fn without_a_tool_it_lists_the_seven_tools_and_needs_no_socket() {
+fn without_a_tool_it_lists_the_eight_tools_and_needs_no_socket() {
     let output = command(&[]).output().unwrap();
     assert_eq!(output.status.code(), Some(0));
     let listed = text(&output.stdout);
     for tool in [
         "list_agents",
-        "delegate",
+        "start_worker",
+        "send",
         "start_session",
         "read_session",
         "stop_session",
@@ -130,7 +132,7 @@ fn without_a_tool_it_lists_the_seven_tools_and_needs_no_socket() {
         assert!(listed.contains(tool), "{tool} is listed: {listed}");
     }
     assert!(
-        listed.contains("\"$ZORVO_TOOLS\" tools delegate"),
+        listed.contains("\"$ZORVO_TOOLS\" tools start_worker"),
         "{listed}"
     );
 }
@@ -140,18 +142,165 @@ fn a_call_reaches_the_service_with_its_session_and_prints_the_answer() {
     let rig = rig("call");
     let (call, output) = rig.run_answered(
         "s1",
-        &["delegate", r#"{"agent":"qwen-code","task":"review it"}"#],
+        &[
+            "start_worker",
+            r#"{"agent":"qwen-code","task":"review it"}"#,
+        ],
         true,
         "started",
     );
     assert_eq!(call.session_id, "s1");
-    assert_eq!(call.tool, "delegate");
+    assert_eq!(call.tool, "start_worker");
     assert_eq!(
         call.args,
         json!({"agent": "qwen-code", "task": "review it"})
     );
     assert_eq!(text(&output.stdout), "started\n");
     assert_eq!(output.status.code(), Some(0));
+}
+
+/// The token of a worker on the command path, bound to this test process.
+fn worker_token(rig: &Rig, session: &str) -> String {
+    let env = rig.tools.launch_env_with(
+        session,
+        Capabilities::worker(zorvo_lib::agent_tools::ToolsPath::Command),
+    );
+    rig.tools.bind_process(
+        session,
+        zorvo_lib::agent_tools::peer::ProcessId::of(std::process::id() as i32).unwrap(),
+    );
+    env.into_iter()
+        .find(|(name, _)| name == "ZORVO_MCP_TOKEN")
+        .expect("a token")
+        .1
+}
+
+const COORDINATOR_TOOLS: [&str; 8] = [
+    "list_agents",
+    "start_worker",
+    "send",
+    "start_session",
+    "read_session",
+    "stop_session",
+    "show_artifact",
+    "artifact_guide",
+];
+
+fn listing(rig: &Rig, token: &str, args: &[&str]) -> String {
+    let output = command(args)
+        .env("ZORVO_MCP_SOCKET", &rig.socket)
+        .env("ZORVO_MCP_TOKEN", token)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    let listed = text(&output.stdout);
+    assert!(!listed.contains(token), "the token is never printed");
+    listed
+}
+
+#[test]
+fn a_workers_listing_shows_done_alone() {
+    let rig = rig("worker-list");
+    let token = worker_token(&rig, "w1");
+    for args in [&[][..], &["--help"][..]] {
+        let listed = listing(&rig, &token, args);
+        assert!(
+            listed.contains("\"$ZORVO_TOOLS\" tools done '{\"outcome\""),
+            "{listed}"
+        );
+        for tool in zorvo_lib::agent_tools::tools::TOOL_NAMES {
+            assert!(!listed.contains(tool), "{tool} listed: {listed}");
+        }
+    }
+}
+
+#[test]
+fn the_bare_program_in_a_workers_shell_lists_done_alone() {
+    let rig = rig("worker-bare");
+    let token = worker_token(&rig, "w1");
+    let output = Command::new(BINARY)
+        .env("ZORVO_MCP_SOCKET", &rig.socket)
+        .env("ZORVO_MCP_TOKEN", &token)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let shown = text(&output.stderr);
+    assert!(shown.contains("tools done"), "{shown}");
+    for tool in zorvo_lib::agent_tools::tools::TOOL_NAMES {
+        assert!(!shown.contains(tool), "{tool} listed: {shown}");
+    }
+    assert!(!shown.contains(&token), "the token is never printed");
+}
+
+#[test]
+fn a_coordinators_listing_shows_the_eight_and_not_done() {
+    let rig = rig("coord-list");
+    let token = rig.token("s1");
+    let _ = bound(&rig.tools, "s1");
+    let listed = listing(&rig, &token, &[]);
+    for tool in COORDINATOR_TOOLS {
+        assert!(listed.contains(tool), "{tool} missing: {listed}");
+    }
+    assert!(!listed.contains("tools done"), "{listed}");
+}
+
+#[test]
+fn a_listing_with_an_unknown_token_falls_back_to_the_fixed_table() {
+    let rig = rig("stale-list");
+    let listed = listing(&rig, "0000", &[]);
+    assert!(listed.contains("start_worker"));
+    assert!(!listed.contains("tools done"));
+}
+
+#[test]
+fn a_worker_runs_done_and_nothing_else_from_its_shell() {
+    let rig = rig("worker");
+    let token = worker_token(&rig, "w1");
+    let run = |args: &[&str]| {
+        command(args)
+            .env("ZORVO_MCP_SOCKET", &rig.socket)
+            .env("ZORVO_MCP_TOKEN", &token)
+            .spawn()
+            .unwrap()
+    };
+
+    let child = run(&["done", r#"{"outcome":"succeeded","summary":"ok"}"#]);
+    let call = rig
+        .calls
+        .recv_timeout(WAIT)
+        .expect("done reaches the service");
+    assert_eq!(call.session_id, "w1");
+    assert_eq!(call.tool, "done");
+    rig.tools.respond(&call.call_id, true, "recorded");
+    let output = child.wait_with_output().unwrap();
+    assert_eq!(output.status.code(), Some(0));
+    assert_eq!(text(&output.stdout), "recorded\n");
+
+    for tool in [
+        "start_worker",
+        "send",
+        "start_session",
+        "show_artifact",
+        "list_agents",
+        "nonsense",
+    ] {
+        let output = run(&[tool, r#"{"agent":"qwen-code","task":"x","path":"a.html"}"#])
+            .wait_with_output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1), "{tool}");
+        assert!(
+            text(&output.stderr).contains("Unknown tool."),
+            "{tool}: {}",
+            text(&output.stderr)
+        );
+    }
+    assert!(
+        rig.calls.recv_timeout(QUIET).is_err(),
+        "nothing else was emitted"
+    );
 }
 
 #[test]
@@ -169,7 +318,7 @@ fn json_split_across_words_is_joined() {
     let (call, output) = rig.run_answered(
         "s1",
         &[
-            "delegate",
+            "start_worker",
             "{\"agent\":",
             "\"qwen-code\",",
             "\"task\":",
@@ -191,7 +340,7 @@ fn a_task_with_quotes_and_newlines_arrives_intact() {
     let rig = rig("quotes");
     let task = "say 'hi' and \"bye\"\nthen stop";
     let arguments = json!({"agent": "qwen-code", "task": task}).to_string();
-    let (call, _) = rig.run_answered("s1", &["delegate", &arguments], true, "started");
+    let (call, _) = rig.run_answered("s1", &["start_worker", &arguments], true, "started");
     assert_eq!(call.args["task"], task);
 }
 
@@ -199,7 +348,7 @@ fn a_task_with_quotes_and_newlines_arrives_intact() {
 fn arguments_that_are_not_an_object_exit_2_with_the_quoting_hint() {
     let rig = rig("notobject");
     for arguments in ["review it", "[1]", "\"text\""] {
-        let (child, _) = rig.spawn("s1", &["delegate", arguments]);
+        let (child, _) = rig.spawn("s1", &["start_worker", arguments]);
         let output = child.wait_with_output().unwrap();
         assert_eq!(output.status.code(), Some(2), "{arguments}");
         assert!(
@@ -219,7 +368,10 @@ fn a_refused_call_prints_the_reason_on_stderr_and_exits_1() {
     let rig = rig("refused");
     let (_, output) = rig.run_answered(
         "s1",
-        &["delegate", r#"{"agent":"qwen-code","task":"review it"}"#],
+        &[
+            "start_worker",
+            r#"{"agent":"qwen-code","task":"review it"}"#,
+        ],
         false,
         "The user declined.",
     );
@@ -230,7 +382,7 @@ fn a_refused_call_prints_the_reason_on_stderr_and_exits_1() {
     // A call the backend's validation refuses never reaches the webview.
     let (child, _) = rig.spawn(
         "s1",
-        &["delegate", r#"{"agent":"qwen-code","task":"/review"}"#],
+        &["start_worker", r#"{"agent":"qwen-code","task":"/review"}"#],
     );
     let output = child.wait_with_output().unwrap();
     assert_eq!(output.status.code(), Some(1));
@@ -294,7 +446,7 @@ fn killing_the_command_ends_the_waiting_call() {
 #[test]
 fn neither_stream_ever_holds_the_token() {
     let rig = rig("secret");
-    let (child, token) = rig.spawn("s1", &["delegate", "not json"]);
+    let (child, token) = rig.spawn("s1", &["start_worker", "not json"]);
     let output = child.wait_with_output().unwrap();
     assert!(!text(&output.stdout).contains(&token));
     assert!(!text(&output.stderr).contains(&token));
@@ -348,7 +500,7 @@ fn from_an_agents_environment_it_never_opens_the_app() {
                 .unwrap_or_else(|| panic!("{args:?} with {variable} opened the app"));
             assert_eq!(output.status.code(), Some(2), "{args:?} {variable}");
             assert!(
-                text(&output.stderr).contains("\"$ZORVO_TOOLS\" tools delegate"),
+                text(&output.stderr).contains("\"$ZORVO_TOOLS\" tools start_worker"),
                 "{args:?} {variable}: {}",
                 text(&output.stderr)
             );

@@ -16,7 +16,7 @@ const task = (key: string, state: OverviewTask["state"], overrides: Partial<Over
   ...overrides,
 });
 
-const empty: Overview = { tasks: [], finished: [], sources: [], pages: [], files: [], pullRequest: null, runningCount: 0 };
+const empty: Overview = { tasks: [], finished: [], sources: [], pages: [], files: [], pullRequests: [], runningCount: 0 };
 
 function show(overview: Partial<Overview> = {}, props: Partial<OverviewCardProps> = {}) {
   const handlers = {
@@ -43,13 +43,23 @@ function show(overview: Partial<Overview> = {}, props: Partial<OverviewCardProps
   return { card: screen.getByRole("region", { name: "Session overview" }), ...handlers };
 }
 
+const pullRequest = (number: number, title: string): Overview["pullRequests"][number] => ({
+  branch: `agent/pr-${number}`,
+  number,
+  title,
+  url: `https://github.com/o/r/pull/${number}`,
+  state: "open",
+  isDraft: false,
+  checks: { passing: 5, failing: 0, pending: 0 },
+});
+
 const section = (card: HTMLElement, name: string | RegExp) => within(card).getByRole("region", { name });
 
 describe("OverviewCard", () => {
-  it("always shows Environment and Output, and the rest only when they hold something", () => {
+  it("always shows Environment and Artifacts, and the rest only when they hold something", () => {
     const { card } = show();
     expect(section(card, "Environment")).toBeTruthy();
-    expect(within(section(card, /^Output/)).getByText("Nothing yet. Pages and files Claude Code makes in this session show here.")).toBeTruthy();
+    expect(within(section(card, /^Artifacts/)).getByText("Nothing yet. Pages and files Claude Code makes in this session show here.")).toBeTruthy();
     expect(within(card).queryByRole("region", { name: /^Running/ })).toBeNull();
     expect(within(card).queryByRole("region", { name: /^Sources/ })).toBeNull();
     expect(within(card).queryByRole("region", { name: /^Pull request/ })).toBeNull();
@@ -63,6 +73,44 @@ describe("OverviewCard", () => {
     expect(onShowTab.mock.calls).toEqual([["changes"], ["files"]]);
     expect(within(environment).getByText("+42")).toHaveClass("text-status-running");
     expect(within(environment).getByText("agent/redesign-row")).toBeTruthy();
+  });
+
+  it("shows a background agent as a plain row: no button, nothing to open, its status still read", () => {
+    const live = task("bg-1", "running", { tab: undefined, title: "Explore auth", detail: "grep: createSession" });
+    const failed = task("bg-2", "failed", { tab: undefined, title: "Write docs", detail: "Subagent" });
+    const { card, onOpenTask } = show({ tasks: [live, failed], finished: [task("bg-3", "done", { tab: undefined })], runningCount: 1 });
+    const running = section(card, /^Running/);
+
+    expect(within(running).getByText("Explore auth")).toBeTruthy();
+    expect(within(running).getByText("grep: createSession")).toBeTruthy();
+    expect(within(running).getByText("Failed")).toBeTruthy();
+    expect(within(running).queryByRole("button", { name: /Explore auth/ })).toBeNull();
+    expect(within(running).queryByRole("button", { name: /Write docs/ })).toBeNull();
+    expect(within(running).getByText("Subagent, working.")).toHaveClass("sr-only");
+    fireEvent.click(within(running).getByText("Explore auth"));
+    expect(onOpenTask).not.toHaveBeenCalled();
+
+    fireEvent.click(within(running).getByRole("button", { name: "1 finished" }));
+    expect(within(running).getByText("Task bg-3")).toBeTruthy();
+    expect(within(running).queryByRole("button", { name: /Task bg-3/ })).toBeNull();
+  });
+
+  it("marks a quiet background agent in the warning tone, with how long, and still lists it as running", () => {
+    const quiet = task("bg-q", "running", {
+      tab: undefined,
+      title: "Explore auth",
+      detail: "No activity for 55 min. Last: run_shell_command",
+      status: "Quiet",
+    });
+    const { card } = show({ tasks: [quiet], runningCount: 1 });
+    const running = section(card, /^Running/);
+
+    expect(within(running).getByText("Quiet")).toHaveClass("text-status-attention");
+    expect(within(running).getByText("No activity for 55 min. Last: run_shell_command")).toBeTruthy();
+    // The row cuts both lines to fit: hovering it gives them whole.
+    expect(within(running).getByTitle("Explore auth: No activity for 55 min. Last: run_shell_command")).toBeTruthy();
+    expect(within(running).getByText("Subagent, quiet.")).toHaveClass("sr-only");
+    expect(within(running).queryByRole("button")).toBeNull();
   });
 
   it("opens a task's tab, folds the finished ones, and keeps a failed one in sight", () => {
@@ -102,24 +150,27 @@ describe("OverviewCard", () => {
     const { card, onOpenPage, onOpenFile, onOpenUrl } = show({
       pages: [page] as unknown as Overview["pages"],
       files: [{ path: "/w/agent-desktop/src/lib/pr-chip.ts", at: Date.now() }],
-      pullRequest: {
-        branch: "agent/redesign-row",
-        number: 250,
-        title: "Redesign the session row",
-        url: "https://github.com/o/r/pull/250",
-        state: "open",
-        isDraft: false,
-        checks: { passing: 5, failing: 0, pending: 0 },
-      },
+      pullRequests: [pullRequest(250, "Redesign the session row")],
     });
 
-    fireEvent.click(within(section(card, /^Output/)).getByRole("button", { name: /Session row options/ }));
-    fireEvent.click(within(section(card, /^Output/)).getByRole("button", { name: /pr-chip\.ts/ }));
+    fireEvent.click(within(section(card, /^Artifacts/)).getByRole("button", { name: /Session row options/ }));
+    fireEvent.click(within(section(card, /^Artifacts/)).getByRole("button", { name: /pr-chip\.ts/ }));
     fireEvent.click(within(section(card, "Pull request")).getByRole("button", { name: /^Open pull request 250 in your browser/ }));
 
     expect(onOpenPage).toHaveBeenCalledWith("a-1");
     expect(onOpenFile).toHaveBeenCalledWith("src/lib/pr-chip.ts");
     expect(onOpenUrl).toHaveBeenCalledWith("https://github.com/o/r/pull/250");
+  });
+
+  it("lists every pull request of the session under Pull requests", () => {
+    const { card, onOpenUrl } = show({
+      pullRequests: [pullRequest(273, "Add the pull pipeline"), pullRequest(272, "Parse the XML")],
+    });
+    const listed = section(card, /^Pull requests/);
+    expect(within(listed).getByText("2")).toBeTruthy();
+    fireEvent.click(within(listed).getByRole("button", { name: /^Open pull request 272 in your browser/ }));
+    expect(within(listed).getByRole("button", { name: /^Open pull request 273 in your browser/ })).toBeTruthy();
+    expect(onOpenUrl).toHaveBeenCalledWith("https://github.com/o/r/pull/272");
   });
 
   it("folds to a pill that says what runs and what changed", () => {
@@ -139,7 +190,8 @@ describe("OverviewCard", () => {
       />,
     );
     expect(screen.queryByRole("region", { name: "Session overview" })).toBeNull();
-    const pill = screen.getByRole("button", { name: "Expand session overview: 3 running, 42 lines added, 11 removed" });
+    const pill = screen.getByRole("button", { name: "Expand session overview: 3 running" });
+    expect(pill.textContent).not.toMatch(/\+42|−11/);
     fireEvent.click(pill);
     expect(onToggleCollapsed).toHaveBeenCalledTimes(1);
   });

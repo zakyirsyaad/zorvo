@@ -71,6 +71,18 @@ describe("normalizePersistedState", () => {
     expect(state.sessions[1]).not.toHaveProperty("artifactComments");
   });
 
+  it("keeps a canvas comment through save and load, and drops a malformed canvas field", () => {
+    const canvas = { key: "c-0123456789abcdef", artboardId: "pay-b", fileHash: "b".repeat(64) };
+    const good = { id: "ac-1", artifactId: canvas.key, version: 0, anchor: { kind: "artboard" }, body: "More space", createdAt: 1, canvas };
+    const bad = { ...good, id: "ac-2", canvas: { ...canvas, artboardId: "Pay B" } };
+
+    const loaded = normalizePersistedState({ sessions: [{ ...base, artifactComments: [good, bad] }] });
+    const again = normalizePersistedState(JSON.parse(JSON.stringify(loaded)));
+
+    expect(loaded.sessions[0].artifactComments).toEqual([good]);
+    expect(again.sessions[0].artifactComments).toEqual([good]);
+  });
+
   it("keeps a session's private mode when it names a model", () => {
     const state = normalizePersistedState({ sessions: [{ ...base, privateMode: { modelId: "a" } }] });
 
@@ -525,6 +537,22 @@ describe("loadTranscript", () => {
     expect(messages.map((m) => m.content)).toEqual(["a", "b", "c", "d", "e"]);
   });
 
+  it("keeps a well-formed visual part and drops a list that holds a malformed one", async () => {
+    const visual = { kind: "visual", id: "v-0123456789abcdef", title: "Flow", visualKind: "svg" };
+    store().transcripts["s-1"] = [
+      { id: "a", role: "agent", content: "a", timestamp: 1, parts: [{ kind: "text", text: "a" }, visual] },
+      { id: "b", role: "agent", content: "b", timestamp: 2, parts: [{ ...visual, id: "nope" }] },
+      { id: "c", role: "agent", content: "c", timestamp: 3, parts: [{ ...visual, visualKind: "png" }] },
+      { id: "d", role: "agent", content: "d", timestamp: 4, parts: [{ ...visual, title: 3 }] },
+    ];
+
+    const messages = await loadTranscript("s-1");
+
+    expect(messages[0].parts).toEqual([{ kind: "text", text: "a" }, visual]);
+    expect(messages.slice(1).map((m) => m.parts)).toEqual([undefined, undefined, undefined]);
+    expect(messages.map((m) => m.content)).toEqual(["a", "b", "c", "d"]);
+  });
+
   it("drops an entry that is not a message", async () => {
     store().transcripts["s-1"] = [
       null,
@@ -634,6 +662,70 @@ describe("normalizePersistedState - delegation", () => {
     expect(state.sessions[0].delegatedFrom).toEqual(delegatedFrom);
   });
 
+  it("a link keeps a valid handle, outcome, last turn and report time", () => {
+    const link = {
+      sessionId: "s-a", task: "Do it", startedAt: 5, handle: "worker-2",
+      outcome: { result: "succeeded", at: 9, summary: "Done", files: ["a.ts"] },
+      lastTurn: { endedAt: 10, how: "finished" }, reportedAt: 11,
+    };
+
+    const state = normalizePersistedState({ sessions: [{ ...base, delegatedFrom: link }] });
+
+    expect(state.sessions[0].delegatedFrom).toEqual(link);
+  });
+
+  it("a malformed new field is dropped and the link is kept", () => {
+    const delegatedFrom = {
+      sessionId: "s-a", task: "Do it", startedAt: 5, handle: 7,
+      outcome: { result: "maybe", at: 9 }, lastTurn: { endedAt: "x", how: "finished" }, reportedAt: "soon",
+    };
+
+    const state = normalizePersistedState({ sessions: [{ ...base, delegatedFrom }] });
+
+    expect(state.sessions[0].delegatedFrom).toEqual({ sessionId: "s-a", task: "Do it", startedAt: 5 });
+  });
+
+  it("a handle of another shape is dropped", () => {
+    const delegatedFrom = { sessionId: "s-a", task: "Do it", startedAt: 5, handle: "session-1" };
+
+    const state = normalizePersistedState({ sessions: [{ ...base, delegatedFrom }] });
+
+    expect(state.sessions[0].delegatedFrom?.handle).toBeUndefined();
+    for (const handle of ["worker-0", "worker-x", "Worker-1"]) {
+      const other = normalizePersistedState({ sessions: [{ ...base, delegatedFrom: { ...delegatedFrom, handle } }] });
+      expect(other.sessions[0].delegatedFrom?.handle).toBeUndefined();
+    }
+  });
+
+  it("a summary and a reason are cut by code points, never inside an emoji", () => {
+    const delegatedFrom = {
+      sessionId: "s-a", task: "Do it", startedAt: 5,
+      outcome: { result: "failed", at: 9, summary: "x".repeat(1999) + "😀😀😀" },
+      lastTurn: { endedAt: 10, how: "failed", reason: "y".repeat(299) + "😀😀😀" },
+    };
+
+    const link = normalizePersistedState({ sessions: [{ ...base, delegatedFrom }] }).sessions[0].delegatedFrom;
+
+    expect([...(link?.outcome?.summary ?? "")].length).toBe(2000);
+    expect([...(link?.outcome?.summary ?? "")].pop()).toBe("😀");
+    expect([...(link?.lastTurn?.reason ?? "")].length).toBe(300);
+    expect([...(link?.lastTurn?.reason ?? "")].pop()).toBe("😀");
+  });
+
+  it("a link cuts a long summary, reason and file list on load", () => {
+    const delegatedFrom = {
+      sessionId: "s-a", task: "Do it", startedAt: 5,
+      outcome: { result: "failed", at: 9, summary: "x".repeat(2500), files: Array.from({ length: 60 }, (_, i) => `f${i}`) },
+      lastTurn: { endedAt: 10, how: "failed", reason: "y".repeat(400) },
+    };
+
+    const link = normalizePersistedState({ sessions: [{ ...base, delegatedFrom }] }).sessions[0].delegatedFrom;
+
+    expect(link?.outcome?.summary).toHaveLength(2000);
+    expect(link?.outcome?.files).toHaveLength(50);
+    expect(link?.lastTurn?.reason).toHaveLength(300);
+  });
+
   it("drops a malformed delegatedFrom and keeps the session", () => {
     const malformed = [
       5,
@@ -679,6 +771,61 @@ describe("normalizeTranscript - delegation report", () => {
 
     const [withoutId] = normalizeTranscript(withReport({ agentName: "Codex", agentId: 3 }));
     expect(withoutId.delegationReport).toEqual({ agentName: "Codex" });
+  });
+
+  it("keeps a string handle and drops a handle that is not one, keeping the mark", () => {
+    const [kept] = normalizeTranscript(withReport({ agentName: "Codex", agentId: "codex-acp", handle: "worker-2" }));
+    expect(kept.delegationReport).toEqual({ agentName: "Codex", agentId: "codex-acp", handle: "worker-2" });
+    const [dropped] = normalizeTranscript(withReport({ agentName: "Codex", agentId: "codex-acp", handle: 2 }));
+    expect(dropped.delegationReport).toEqual({ agentName: "Codex", agentId: "codex-acp" });
+  });
+});
+
+describe("normalizeTranscript - worker report", () => {
+  const reply = { id: "m-1", role: "user", content: "Reports.", timestamp: 7 };
+  const withMark = (workerReport: unknown) => normalizeTranscript([{ ...reply, workerReport }])[0];
+  const worker = { agentName: "Codex", agentId: "codex-acp", handle: "worker-1", state: "succeeded" };
+
+  it("keeps a well-formed mark", () => {
+    expect(withMark({ workers: [worker] }).workerReport).toEqual({ workers: [worker] });
+  });
+
+  it("drops an entry without a name, a handle or a known state, and an agent id that is not a string", () => {
+    const kept = withMark({
+      workers: [
+        worker,
+        { ...worker, agentName: 3 },
+        { ...worker, handle: undefined },
+        { ...worker, state: "weird" },
+        { ...worker, agentId: 4, handle: "worker-2" },
+      ],
+    });
+    expect(kept.workerReport).toEqual({
+      workers: [worker, { agentName: "Codex", handle: "worker-2", state: "succeeded" }],
+    });
+  });
+
+  it("drops a mark that is not an object, has no workers or keeps none", () => {
+    for (const mark of ["x", null, {}, { workers: [] }, { workers: "a" }, { workers: [{ ...worker, state: "x" }] }]) {
+      const message = withMark(mark);
+      expect(message).not.toHaveProperty("workerReport");
+      expect(message.content).toBe("Reports.");
+    }
+  });
+
+  it("keeps the first of a repeated handle", () => {
+    const kept = withMark({ workers: [worker, { ...worker, state: "failed" }] });
+    expect(kept.workerReport?.workers).toEqual([worker]);
+  });
+
+  it("keeps at most 50 entries", () => {
+    const many = Array.from({ length: 60 }, (_, i) => ({ ...worker, handle: `worker-${i + 1}` }));
+    expect(withMark({ workers: many }).workerReport?.workers).toHaveLength(50);
+  });
+
+  it("still loads the old delegationReport mark", () => {
+    const [message] = normalizeTranscript([{ ...reply, delegationReport: { agentName: "Codex", handle: "worker-2" } }]);
+    expect(message.delegationReport).toEqual({ agentName: "Codex", handle: "worker-2" });
   });
 });
 
@@ -734,5 +881,32 @@ describe("normalizeTranscript - tool diffs", () => {
     const [message] = normalizeTranscript(withDiff({ kind: "diff", path: "/r/x.ts", rows: "nope" }));
 
     expect(message.tools?.[0].details).toEqual([]);
+  });
+});
+
+describe("a saved continued-from mark", () => {
+  const first = { id: "u", role: "user", content: "Fix it", timestamp: 1_000 };
+
+  it("keeps a well-formed continuedFrom mark", () => {
+    const [message] = normalizeTranscript([{ ...first, continuedFrom: { sessionId: "s-1", agentId: "qwen-code" } }]);
+    expect(message.continuedFrom).toEqual({ sessionId: "s-1", agentId: "qwen-code" });
+  });
+
+  it("drops a continuedFrom mark with an empty or missing id", () => {
+    for (const mark of [{ sessionId: "", agentId: "x" }, { agentId: "x" }, "s-1"]) {
+      const [message] = normalizeTranscript([{ ...first, continuedFrom: mark }]);
+      expect(message.content).toBe("Fix it");
+      expect("continuedFrom" in message).toBe(false);
+    }
+  });
+});
+
+describe("a continued-from mark's taking agent", () => {
+  it("keeps toAgentId when it is a string and drops it otherwise", () => {
+    const first = { id: "u", role: "user", content: "Fix it", timestamp: 1_000 };
+    const [kept] = normalizeTranscript([{ ...first, continuedFrom: { sessionId: "s-1", agentId: "qwen-code", toAgentId: "claude-acp" } }]);
+    expect(kept.continuedFrom).toEqual({ sessionId: "s-1", agentId: "qwen-code", toAgentId: "claude-acp" });
+    const [dropped] = normalizeTranscript([{ ...first, continuedFrom: { sessionId: "s-1", agentId: "qwen-code", toAgentId: 3 } }]);
+    expect(dropped.continuedFrom).toEqual({ sessionId: "s-1", agentId: "qwen-code" });
   });
 });

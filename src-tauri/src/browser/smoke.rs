@@ -273,6 +273,10 @@ pub async fn smoke(app: &AppHandle) -> Result<Value, String> {
             steps.push(super::lifecycle_smoke::smoke(app, &url).await?);
             return Ok::<_,String>(());
         }
+        if std::env::var("ZORVO_BROWSER_SMOKE_CASE").as_deref() == Ok("upload") {
+            steps.push(super::upload_smoke::smoke(app, &parsed).await?);
+            return Ok::<_,String>(());
+        }
         if std::env::var("ZORVO_BROWSER_SMOKE_CASE").as_deref() == Ok("forms") {
             steps.push(super::forms_smoke::smoke(app, &parsed).await?);
             return Ok::<_,String>(());

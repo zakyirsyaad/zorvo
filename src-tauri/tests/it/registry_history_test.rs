@@ -1,4 +1,4 @@
-use zorvo_lib::registry::history::{VersionHistory, MIN_AGE_SECS};
+use zorvo_lib::registry::history::VersionHistory;
 use zorvo_lib::registry::schema::{Distribution, RegistryEntry};
 
 fn entry(id: &str, version: &str) -> RegistryEntry {
@@ -25,34 +25,27 @@ fn history(seen: &[(&str, &str, u64)]) -> VersionHistory {
 }
 
 #[test]
-fn offers_the_newest_version_past_seven_days() {
+fn offers_the_newest_version_as_soon_as_it_is_seen() {
     let h = history(&[("a", "1.0.0", 0), ("a", "2.0.0", 100)]);
-    assert_eq!(h.offered("a", MIN_AGE_SECS + 100).unwrap().version, "2.0.0");
-    assert_eq!(h.offered("a", MIN_AGE_SECS + 99).unwrap().version, "1.0.0");
-}
-
-#[test]
-fn offers_nothing_before_seven_days() {
-    let h = history(&[("a", "1.0.0", 0)]);
-    assert!(h.offered("a", MIN_AGE_SECS - 1).is_none());
-    assert!(h.offered("a", MIN_AGE_SECS).is_some());
-    assert!(h.offered("missing", MIN_AGE_SECS).is_none());
+    assert_eq!(h.offered("a").unwrap().version, "2.0.0");
+    let only_first = history(&[("a", "1.0.0", 0)]);
+    assert_eq!(only_first.offered("a").unwrap().version, "1.0.0");
+    assert!(h.offered("missing").is_none());
 }
 
 #[test]
 fn offers_nothing_newer_than_the_ceiling() {
     let h = history(&[("a", "1.0.0", 0), ("a", "1.10.0", 0), ("a", "2.0.0", 0)]);
-    let now = MIN_AGE_SECS;
     assert_eq!(
-        h.offered_up_to("a", now, Some("1.10.0")).unwrap().version,
+        h.offered_up_to("a", Some("1.10.0")).unwrap().version,
         "1.10.0"
     );
     assert_eq!(
-        h.offered_up_to("a", now, Some("1.9.0")).unwrap().version,
+        h.offered_up_to("a", Some("1.9.0")).unwrap().version,
         "1.0.0"
     );
-    assert_eq!(h.offered_up_to("a", now, None).unwrap().version, "2.0.0");
-    assert!(h.offered_up_to("a", now, Some("0.9.0")).is_none());
+    assert_eq!(h.offered_up_to("a", None).unwrap().version, "2.0.0");
+    assert!(h.offered_up_to("a", Some("0.9.0")).is_none());
 }
 
 #[test]
@@ -83,14 +76,11 @@ fn orders_versions_by_semver_not_text() {
         ("a", "0.10.0", 0),
         ("a", "0.10.0-beta.1", 0),
     ]);
-    assert_eq!(h.offered("a", MIN_AGE_SECS).unwrap().version, "0.10.0");
+    assert_eq!(h.offered("a").unwrap().version, "0.10.0");
     let pre = history(&[("a", "1.0.0-rc.1", 0), ("a", "0.9.0", 0)]);
-    assert_eq!(
-        pre.offered("a", MIN_AGE_SECS).unwrap().version,
-        "1.0.0-rc.1"
-    );
+    assert_eq!(pre.offered("a").unwrap().version, "1.0.0-rc.1");
     let both = history(&[("a", "1.0.0-rc.1", 0), ("a", "1.0.0", 0)]);
-    assert_eq!(both.offered("a", MIN_AGE_SECS).unwrap().version, "1.0.0");
+    assert_eq!(both.offered("a").unwrap().version, "1.0.0");
 }
 
 #[test]
@@ -112,15 +102,8 @@ fn round_trips_through_json() {
 fn bundled_history_offers_the_default_agents() {
     let h =
         VersionHistory::from_json(include_str!("../../resources/registry-history.json")).unwrap();
-    let generated_at = h
-        .agents
-        .values()
-        .flat_map(|versions| versions.values())
-        .map(|record| record.first_seen)
-        .max()
-        .unwrap();
     for id in ["claude-acp", "codex-acp", "qwen-code"] {
-        assert!(h.offered(id, generated_at).is_some(), "{id} is not offered");
+        assert!(h.offered(id).is_some(), "{id} is not offered");
     }
 }
 
@@ -166,12 +149,4 @@ fn skips_a_record_whose_entry_does_not_match_its_key() {
 fn rejects_a_file_without_agents() {
     assert!(VersionHistory::from_json("{}").is_err());
     assert!(VersionHistory::from_json("[]").is_err());
-}
-
-#[test]
-fn first_seen_returns_the_date_or_none() {
-    let h = history(&[("a", "1.0.0", 42)]);
-    assert_eq!(h.first_seen("a", "1.0.0"), Some(42));
-    assert_eq!(h.first_seen("a", "2.0.0"), None);
-    assert_eq!(h.first_seen("b", "1.0.0"), None);
 }

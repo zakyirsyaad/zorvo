@@ -57,8 +57,12 @@ function agentSignIn(overrides: Partial<SettingsSignIn> = {}): SettingsSignIn {
     check: vi.fn(),
     signInWith: vi.fn(),
     sweep: vi.fn(),
+    againOf: () => "closed" as const,
+    openAgain: vi.fn(),
+    closeAgain: vi.fn(),
     terminal,
     cancelSignIn: vi.fn(),
+    finishSignIn: vi.fn(),
     retrySignIn: vi.fn(),
     ...overrides,
   };
@@ -86,14 +90,27 @@ function renderSettings(signIn: SettingsSignIn, isOpen = true) {
   );
 }
 
+describe("the Agents section's order", () => {
+  it("puts what every agent may do above the catalog, where a long list cannot hide it", () => {
+    renderSettings(agentSignIn({ terminal: { ...terminal, dialog: null } as unknown as SettingsSignIn["terminal"] }));
+
+    const toggle = screen.getByRole("switch", { name: "Let agents delegate and open sessions" });
+    const search = screen.getByRole("searchbox");
+    // DOCUMENT_POSITION_FOLLOWING: the search field of the catalog comes after the switch.
+    expect(toggle.compareDocumentPosition(search) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
 describe("an agent's login started in Settings", () => {
-  it("is drawn by Settings, and Close stops it", () => {
+  it("is drawn by Settings: Cancel stops it, and I've signed in checks it", () => {
     const signIn = agentSignIn();
     renderSettings(signIn);
 
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "I've signed in" }));
 
-    expect(signIn.cancelSignIn).toHaveBeenCalled();
+    expect(signIn.cancelSignIn).toHaveBeenCalledTimes(1);
+    expect(signIn.finishSignIn).toHaveBeenCalledTimes(1);
   });
 
   it("offers Try again after a failure, which runs the same login once more", () => {

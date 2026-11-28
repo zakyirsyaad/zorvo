@@ -47,9 +47,9 @@ describe("arrangedAgents", () => {
 describe("rowWords", () => {
   it("says where a ready agent runs and its sign-in", () => {
     expect(rowWords(agent("a", { id: "a", name: "A", status: "on_your_mac" }), "ready", false)).toBe("On this Mac · Ready");
-    expect(rowWords(agent("a", { id: "a", name: "A", status: "by_zorvo" }), "unchecked", false)).toBe("Installed by Zorvo · Not checked");
+    expect(rowWords(agent("a", { id: "a", name: "A", status: "by_zorvo" }), "unchecked", false)).toBe("Installed by Zorvo · Not checked yet");
     expect(rowWords(agent("a", { id: "a", name: "A", status: "ready", distribution: "npx" }), "needed", false)).toBe(
-      "Runs with npx · Sign in when you start",
+      "Runs with npx · Needs sign-in",
     );
     expect(rowWords(agent("a", { id: "a", name: "A", status: "ready" }), "needed", true)).toContain("Set up when you start");
   });

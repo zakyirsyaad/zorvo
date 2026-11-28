@@ -7,6 +7,8 @@ import type { QuestionAnswers } from "./UserQuestionsForm";
 import { orderedChoices, permissionTitle, titleHoldsPrompt } from "../lib/permission-copy";
 import { usableQuestions } from "../lib/user-questions";
 import { settledWords, usableZorvoTool } from "../lib/agent-tool-card";
+import { usableComputerUse } from "../lib/computer-use-card";
+import { ComputerUseCard } from "./chat/ComputerUseCard";
 import type { ActionCard as ActionCardType, PermissionChoice } from "../types";
 
 /** A permission request from an agent, answered with one of the agent's own options. */
@@ -118,6 +120,13 @@ export function ActionCard({ card, onChoose, disabled = false, agentName = "The 
         onChoose={onChoose}
         disabled={disabled}
       />
+    );
+  }
+  // An agent's request to use apps on this Mac: rows to tick, answered with their keys.
+  const computerUse = usableComputerUse(card.computerUse);
+  if (computerUse) {
+    return (
+      <ComputerUseCard card={card} request={computerUse} agentName={agentName} onChoose={onChoose} disabled={disabled} />
     );
   }
   // A card Zorvo made for an agent's tool call carries its own title, and its prompt is the task.

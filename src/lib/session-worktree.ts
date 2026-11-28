@@ -1,11 +1,31 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { Session, SessionWorktree } from '../types';
 
+const queues = new Map<string, Promise<unknown>>();
+
 /**
  * A new session's worktree of `repoPath`, and the folder its agent runs in.
  * It starts from the local branch `baseBranch`, or from the folder's HEAD.
+ * Git locks a repository's index while it makes a worktree, so calls for one
+ * `repoPath` run one after another, whatever the earlier call's result.
  */
-export async function createSessionWorktree(
+export function createSessionWorktree(
+  repoPath: string,
+  title: string,
+  baseBranch?: string,
+): Promise<{ worktree: SessionWorktree; cwd: string }> {
+  const run = () => makeSessionWorktree(repoPath, title, baseBranch);
+  const previous = queues.get(repoPath);
+  const mine = previous ? previous.then(run, run) : run();
+  queues.set(repoPath, mine);
+  const release = () => {
+    if (queues.get(repoPath) === mine) queues.delete(repoPath);
+  };
+  mine.then(release, release);
+  return mine;
+}
+
+async function makeSessionWorktree(
   repoPath: string,
   title: string,
   baseBranch?: string,

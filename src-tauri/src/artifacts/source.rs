@@ -42,7 +42,16 @@ fn has_html_name(path: &Path) -> bool {
 /// a path can name another thing between a check and the open that follows it.
 /// A link in the last place is not followed, and the open does not wait, since
 /// a pipe nobody writes to would otherwise hold the call forever.
-fn read_checked(path: &Path) -> Result<Vec<u8>, String> {
+pub(crate) fn read_checked(path: &Path) -> Result<Vec<u8>, String> {
+    let bytes = read_bytes_checked(path)?;
+    if std::str::from_utf8(&bytes).is_err() {
+        return Err(NOT_TEXT.to_string());
+    }
+    Ok(bytes)
+}
+
+/// `read_checked` without the text check: a canvas serves pictures and fonts too.
+pub(crate) fn read_bytes_checked(path: &Path) -> Result<Vec<u8>, String> {
     use std::os::unix::fs::OpenOptionsExt;
     let refused = || NOT_ALLOWED.to_string();
     let file = fs::OpenOptions::new()
@@ -63,9 +72,6 @@ fn read_checked(path: &Path) -> Result<Vec<u8>, String> {
         .map_err(|_| refused())?;
     if bytes.len() as u64 > MAX_PAGE_BYTES {
         return Err(TOO_LARGE.to_string());
-    }
-    if std::str::from_utf8(&bytes).is_err() {
-        return Err(NOT_TEXT.to_string());
     }
     Ok(bytes)
 }
@@ -91,6 +97,40 @@ pub fn read_source(
     let bytes = read_checked(&canonical)?;
     let canonical = canonical.to_str().ok_or_else(refused)?.to_string();
     Ok((canonical, bytes))
+}
+
+fn has_visual_name(path: &Path) -> bool {
+    has_html_name(path)
+        || path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("svg"))
+}
+
+/// Reads an inline visual's file under the page rules: inside the session's folder or a
+/// temporary one, a regular `.html`, `.htm` or `.svg` file of valid UTF-8, within the visual cap.
+pub fn read_visual_source(
+    session_folder: &Path,
+    temp_roots: &[PathBuf],
+    path: &str,
+    max_bytes: usize,
+    too_large: &str,
+) -> Result<Vec<u8>, String> {
+    let refused = || NOT_ALLOWED.to_string();
+    if path.is_empty() || path.chars().count() > MAX_PATH_CHARS {
+        return Err(refused());
+    }
+    let canonical = fs::canonicalize(session_folder.join(path)).map_err(|_| refused())?;
+    let is_inside = canonical.starts_with(session_folder)
+        || temp_roots.iter().any(|root| canonical.starts_with(root));
+    if !is_inside || !has_visual_name(&canonical) {
+        return Err(refused());
+    }
+    let bytes = read_bytes_checked(&canonical)?;
+    if bytes.len() > max_bytes {
+        return Err(too_large.to_string());
+    }
+    Ok(bytes)
 }
 
 #[cfg(test)]

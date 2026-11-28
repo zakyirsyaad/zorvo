@@ -1,9 +1,15 @@
 import { memo, useState, type ReactNode } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { invoke } from "@tauri-apps/api/core";
 import { Copy, Check } from "lucide-react";
 import { OPENABLE_URL } from "../lib/link-menu";
+import { requestBrowserOpen } from "../lib/browser";
+import { readWindowMode } from "../lib/window-mode";
+import { fileLinkPath, isFileLink, requestFileLinkOpen } from "../lib/file-links";
+
+/** A link to a page, which Zorvo's browser can show. */
+const WEB_URL = /^https?:\/\//i;
 
 const COPIED_FEEDBACK_MS = 2000;
 const LANGUAGE_CLASS = /language-([\w-]+)/;
@@ -55,12 +61,28 @@ function textOf(children: ReactNode): string {
 }
 
 /**
- * Links open in the user's browser; a click must never navigate the app's
- * webview away. Anything else (a file path an agent mentions, say) is shown
- * as text with its target on hover instead of a link that does nothing.
+ * A link to a page opens in Zorvo's browser panel, and anything else it can open
+ * (a mail link, or any link in a popout) in the system; a click must never navigate
+ * the app's webview away. A path to a file is a button that opens it in the Files tab
+ * or shows it in Finder. Anything else is shown as text with its target on hover instead
+ * of a link that does nothing.
  */
 function ExternalLink({ href, children }: { href?: string; children?: ReactNode }) {
   if (!href || !OPENABLE_URL.test(href)) {
+    const file = fileLinkPath(href);
+    // A popout has no Files tab and no folder to read a relative path against: there it stays text.
+    if (file !== null && readWindowMode(window.location.search).kind === "main") {
+      return (
+        <button
+          type="button"
+          title={file}
+          onClick={() => requestFileLinkOpen(file)}
+          className="focus-ring cursor-pointer rounded text-left text-fg underline decoration-fg-muted decoration-dotted underline-offset-2 hover:decoration-fg"
+        >
+          {children}
+        </button>
+      );
+    }
     return (
       <span title={href} className="text-fg-secondary underline decoration-dotted decoration-fg-subtle underline-offset-2">
         {children}
@@ -73,6 +95,12 @@ function ExternalLink({ href, children }: { href?: string; children?: ReactNode 
       title={href}
       onClick={(event) => {
         event.preventDefault();
+        // A page opens in Zorvo's own browser, beside the chat. A popout has no browser panel and
+        // a mail link is not a page, so those go to the system, as the link menu's "Open in browser" does.
+        if (WEB_URL.test(href) && readWindowMode(window.location.search).kind === "main") {
+          requestBrowserOpen(href);
+          return;
+        }
         // The backend only refuses what OPENABLE_URL already excludes.
         invoke("open_external_url", { url: href }).catch(() => {});
       }}
@@ -129,6 +157,12 @@ const COMPONENTS: Components = {
 const REMARK_PLUGINS = [remarkGfm];
 
 /**
+ * The parser's own rule empties a link with a scheme it does not know, `file://` and `README.md:12` among
+ * them. A file link is kept as written: it is drawn as a button or as text, never as an `href` to follow.
+ */
+const urlTransform: UrlTransform = (url, key) => (key === "href" && isFileLink(url) ? url : defaultUrlTransform(url));
+
+/**
  * Agent replies as GitHub-flavored Markdown (tables, task lists, links,
  * strikethrough). Raw HTML is not rendered. Memoized on `content`, so a
  * message that did not change is not parsed again while another one streams.
@@ -136,7 +170,7 @@ const REMARK_PLUGINS = [remarkGfm];
 export const MarkdownRenderer = memo(function MarkdownRenderer({ content }: { content: string }) {
   return (
     <div className="space-y-3 text-fg-secondary">
-      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={COMPONENTS}>
+      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={COMPONENTS} urlTransform={urlTransform}>
         {content}
       </ReactMarkdown>
     </div>

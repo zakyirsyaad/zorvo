@@ -1,34 +1,46 @@
+import type { CSSProperties } from "react";
+import { STRIP_AGENTS, type StripAgent } from "../../lib/strip-agents";
 import { AgentTile } from "../ui/AgentTile";
+
+function AgentCard({ agent }: { agent: StripAgent }) {
+  return (
+    <li className="lp-card flex flex-none items-center gap-3 h-14 py-0 px-4.5">
+      {agent.logo ? (
+        <AgentTile agent={agent.logo} size="large" logo={16} />
+      ) : (
+        // The registry's icon is one colour, so it is drawn as a mask in the text colour.
+        <span className="lp-logo" aria-hidden="true">
+          <span className="lp-mark" style={{ "--lp-mark": `url(/agents/${agent.id}.svg)` } as CSSProperties} />
+        </span>
+      )}
+      <span className="text-fg font-medium whitespace-nowrap">{agent.name}</span>
+    </li>
+  );
+}
 
 export function Agents() {
   return (
-    <section className="border-t border-border py-14 px-0" aria-label="Agents">
+    <section className="py-14 px-0" aria-label="Agents">
       <div className="lp-wrap flex flex-col items-center gap-7" data-reveal="">
         <p className="lp-eyebrow" data-r="">
-          Driven over the Agent Client Protocol, so each agent shows its own models, effort, modes and approvals.
+          Each agent runs as itself, with its own models, effort, modes and approvals.
         </p>
-        <ul className="flex flex-wrap justify-center gap-3">
-          <li className="lp-card flex items-center gap-3 h-14 py-0 px-4.5" data-r="" data-hover="">
-            <AgentTile agent="Claude Code" size="large" logo={16} />
-            <span className="text-fg font-medium">Claude Code</span>
-          </li>
-          <li className="lp-card flex items-center gap-3 h-14 py-0 px-4.5" data-r="" data-hover="">
-            <AgentTile agent="Codex" size="large" logo={16} />
-            <span className="text-fg font-medium">Codex</span>
-          </li>
-          <li className="lp-card flex items-center gap-3 h-14 py-0 px-4.5" data-r="" data-hover="">
-            <AgentTile agent="Qwen Code" size="large" logo={16} />
-            <span className="text-fg font-medium">Qwen Code</span>
-          </li>
-          <li className="lp-card flex items-center gap-3 h-14 py-0 px-4.5" data-r="" data-hover="">
-            <AgentTile agent="Antigravity" size="large" logo={16} />
-            <span className="text-fg font-medium">Antigravity</span>
-          </li>
-          <li className="lp-card flex items-center gap-3 h-14 py-0 px-4.5 border-dashed" data-r="" data-hover="">
-            <span className="lp-logo font-mono" aria-hidden="true">+</span>
-            <span className="text-fg-secondary">Every agent in the ACP registry</span>
-          </li>
-        </ul>
+        {/* A slow strip. It stops under the pointer, and with reduced motion it is a plain wrapped list. The
+            second list only fills the loop, so it is hidden from assistive technology. */}
+        <div className="lp-mq w-full" data-r="">
+          <div className="lp-track">
+            <ul>
+              {STRIP_AGENTS.map((agent) => (
+                <AgentCard key={agent.id} agent={agent} />
+              ))}
+            </ul>
+            <ul aria-hidden="true">
+              {STRIP_AGENTS.map((agent) => (
+                <AgentCard key={agent.id} agent={agent} />
+              ))}
+            </ul>
+          </div>
+        </div>
       </div>
     </section>
   );

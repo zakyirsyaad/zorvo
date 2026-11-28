@@ -28,6 +28,22 @@ afterEach(() => {
 });
 
 describe("useInspector", () => {
+  it("ends the Browser tab's Expand when another tab shows or the inspector closes", () => {
+    const { result, rerender } = renderInspector(true);
+    rerender({ folder: "/Users/test/zorvo", offered: ["changes", "browser"] });
+    act(() => result.current.show("browser"));
+    act(() => result.current.setBrowserExpanded(true));
+    expect(result.current.isBrowserExpanded).toBe(true);
+
+    act(() => result.current.show("changes"));
+    expect(result.current.isBrowserExpanded).toBe(false);
+
+    act(() => result.current.show("browser"));
+    act(() => result.current.setBrowserExpanded(true));
+    act(() => result.current.close());
+    expect(result.current.isBrowserExpanded).toBe(false);
+  });
+
   it("opens the last tab, or Changes first in a repository", () => {
     setWindowWidth(1440);
     const repo = renderInspector(true);

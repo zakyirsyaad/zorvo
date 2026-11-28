@@ -1,12 +1,44 @@
 //! Pages an agent makes and Zorvo shows: versioned copies kept per session.
 //! Design: `docs/superpowers/specs/2026-11-16-artifacts-design.md`.
 
+pub mod canvas;
+pub mod canvas_export;
+pub mod canvas_shell;
+pub mod canvas_view;
+pub mod design_system;
+pub mod ds_canvas;
+pub mod ds_commands;
+pub mod ds_content;
+pub mod ds_markdown;
+pub mod ds_preview;
+pub mod ds_protocol;
+pub mod ds_shell;
+pub mod ds_source;
+pub mod ds_store;
+pub mod ds_tokens;
+pub mod ds_tokens_css;
+pub mod ds_view;
+pub mod motion;
+pub mod motion_capture;
+pub mod motion_commands;
+pub mod motion_encode;
+pub mod motion_pixels;
+pub mod motion_protocol;
+pub mod motion_render;
+pub mod motion_store;
+pub mod motion_tools;
 pub mod page_script;
 pub mod picks;
 pub mod protocol;
+pub mod render;
 pub mod source;
 pub mod store;
 pub mod view;
+pub mod visual_clean;
+pub mod visual_commands;
+pub mod visual_export;
+pub mod visual_wrapper;
+pub mod visuals;
 
 #[cfg(test)]
 pub(crate) mod test_support {

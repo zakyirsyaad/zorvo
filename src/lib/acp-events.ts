@@ -543,8 +543,9 @@ function settleTools(tools: ToolExecution[] | undefined): ToolExecution[] | unde
  *
  * Tools still running keep their real state: a live turn can end while one is
  * genuinely running (the user stopped it, or it runs in the background).
+ * `stopReason` `end_turn` marks the last reply `endedNormally`.
  */
-export function closeTurn(messages: ChatMessage[], now: number = Date.now()): ChatMessage[] {
+export function closeTurn(messages: ChatMessage[], now: number = Date.now(), stopReason?: string): ChatMessage[] {
   const lastIndex = messages.length - 1;
   return messages.map((message, index) => {
     const card = isPendingRequest(message.actionCard)
@@ -559,6 +560,8 @@ export function closeTurn(messages: ChatMessage[], now: number = Date.now()): Ch
       ...message,
       actionCard: card,
       ...(isLastReply ? { isComplete: true } : {}),
+      // Only a turn that ended on its own gets a next-step box; Stop, a failure or an exit has its own notice.
+      ...(isLastReply && stopReason === 'end_turn' ? { endedNormally: true as const } : {}),
       ...(completedAt === undefined ? {} : { completedAt }),
     };
   });

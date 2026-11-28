@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   catalogSections,
-  formatAvailableFrom,
   formatCheckedAgo,
   matchesQuery,
   pendingUpdates,
@@ -107,10 +106,7 @@ describe("statusLine", () => {
     expect(statusLine(makeCatalogAgent({ id: "a", name: "A", status: "not_installed" }), plan, true)).toBe(
       "Not installed · Install adds Node.js 24.11.1 (50 MB) and OpenCode 1.19.3",
     );
-    expect(
-      statusLine(makeCatalogAgent({ id: "a", name: "A", status: "waiting", availableFrom: Date.UTC(2026, 9, 27, 12) / 1000 }), null),
-    ).toBe("Available from Oct 27");
-    expect(statusLine(makeCatalogAgent({ id: "a", name: "A", status: "waiting", availableFrom: null }), null)).toBe(
+    expect(statusLine(makeCatalogAgent({ id: "a", name: "A", status: "waiting" }), null)).toBe(
       "Not available yet",
     );
     expect(statusLine(makeCatalogAgent({ id: "a", name: "A", status: "unsupported" }), null)).toBe("Not available for this Mac");
@@ -265,10 +261,6 @@ describe("pendingUpdates", () => {
 });
 
 describe("time formatting", () => {
-  it("formats the availability date", () => {
-    expect(formatAvailableFrom(Date.UTC(2026, 9, 27, 12) / 1000)).toBe("Oct 27");
-  });
-
   it("formats how long ago a check ran", () => {
     const now = 1_000_000;
     expect(formatCheckedAgo(now - 2 * 3600, now)).toBe("2 hours ago");

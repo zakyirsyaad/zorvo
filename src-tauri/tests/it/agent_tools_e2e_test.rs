@@ -52,8 +52,12 @@ fn rig(tag: &str) -> Rig {
 }
 
 fn mcp_agent(rig: &Rig) -> (zorvo_lib::acp::manager::AcpLaunch, PathBuf) {
+    let call = json!({ "tool": "start_worker", "args": { "agent": "qwen", "task": "x" } });
+    mcp_agent_calling(rig, &call)
+}
+
+fn mcp_agent_calling(rig: &Rig, call: &Value) -> (zorvo_lib::acp::manager::AcpLaunch, PathBuf) {
     let log = rig.dir.join("mcp.log");
-    let call = json!({ "tool": "delegate", "args": { "agent": "qwen", "task": "x" } });
     let launch = fake_agent_with(&[
         ("FAKE_ACP_MCP_CALL", &call.to_string()),
         ("FAKE_ACP_MCP_LOG", log.to_str().unwrap()),
@@ -82,7 +86,7 @@ fn the_fake_agent_calls_a_tool_through_the_bridge_and_gets_the_answer() {
 
     let call = rig.calls.recv_timeout(WAIT).expect("a tool call");
     assert_eq!(call.session_id, "s1");
-    assert_eq!(call.tool, "delegate");
+    assert_eq!(call.tool, "start_worker");
     rig.tools.respond(&call.call_id, true, "started");
 
     wait_for(&rx, |e| agent_text(e).as_deref() == Some("mcp:started"));
@@ -100,6 +104,104 @@ fn the_fake_agent_calls_a_tool_through_the_bridge_and_gets_the_answer() {
     );
     assert_eq!(entries[2]["result"]["content"][0]["text"], "started");
     manager.stop("s1");
+    rig.tools.shutdown();
+}
+
+fn tool_names_in(entry: &Value) -> Vec<String> {
+    entry["result"]["tools"]
+        .as_array()
+        .expect("tools/list result")
+        .iter()
+        .filter_map(|t| t["name"].as_str().map(str::to_string))
+        .collect()
+}
+
+#[test]
+fn a_worker_reaches_done_through_the_bridge() {
+    let rig = rig("worker-done");
+    let store = store_with_tools(&rig.dir, true);
+    let (manager, rx) = manager();
+    bind_processes(&manager, &rig.tools);
+    let call = json!({ "tool": "done", "args": { "outcome": "succeeded", "summary": "ok" } });
+    let (launch, log) = mcp_agent_calling(&rig, &call);
+    let tools = tools_for_session(&rig.tools, &store, "w1", "qwen-code", true, true).unwrap();
+    manager
+        .start("w1", &cwd(), &launch, tools.servers)
+        .expect("start");
+    manager.prompt("w1", "mcp", &[]).unwrap();
+
+    let emitted = rig.calls.recv_timeout(WAIT).expect("a tool call");
+    assert_eq!(emitted.session_id, "w1");
+    assert_eq!(emitted.tool, "done");
+    assert_eq!(
+        emitted.args,
+        json!({ "outcome": "succeeded", "summary": "ok" })
+    );
+    rig.tools.respond(&emitted.call_id, true, "recorded");
+
+    wait_for(&rx, |e| agent_text(e).as_deref() == Some("mcp:recorded"));
+    let entries = logged(&log);
+    assert_eq!(tool_names_in(&entries[1]), vec!["done"]);
+    assert!(entries[0]["result"].get("instructions").is_none());
+    manager.stop("w1");
+    rig.tools.shutdown();
+}
+
+#[test]
+fn a_worker_cannot_call_any_other_tool_through_the_bridge() {
+    let rig = rig("worker-other");
+    let store = store_with_tools(&rig.dir, true);
+    for (n, tool) in ["start_worker", "show_artifact", "start_session"]
+        .into_iter()
+        .enumerate()
+    {
+        let (manager, rx) = manager();
+        bind_processes(&manager, &rig.tools);
+        let call = json!({ "tool": tool, "args": { "agent": "qwen", "task": "x", "path": "a.html", "brief": "x" } });
+        let (launch, log) = mcp_agent_calling(&rig, &call);
+        let id = format!("w{n}");
+        let tools = tools_for_session(&rig.tools, &store, &id, "qwen-code", true, true).unwrap();
+        manager
+            .start(&id, &cwd(), &launch, tools.servers)
+            .expect("start");
+        manager.prompt(&id, "mcp", &[]).unwrap();
+
+        wait_for(&rx, |e| {
+            agent_text(e).is_some_and(|t| t.contains("Unknown tool."))
+        });
+        assert!(
+            rig.calls.recv_timeout(Duration::from_millis(300)).is_err(),
+            "{tool} emitted a call"
+        );
+        assert_eq!(tool_names_in(&logged(&log)[1]), vec!["done"]);
+        let _ = fs::remove_file(&log);
+        manager.stop(&id);
+    }
+    rig.tools.shutdown();
+}
+
+#[test]
+fn a_worker_gets_no_tools_when_the_setting_is_off_or_it_was_not_asked_for() {
+    let rig = rig("worker-gate");
+    let off = store_with_tools(&rig.dir.join("off"), false);
+    let on = store_with_tools(&rig.dir.join("on"), true);
+    // The setting is off: nothing, not even computer use.
+    let cu = store_with(&rig.dir.join("cu"), false, true);
+    for store in [&off, &cu] {
+        let none = tools_for_session(&rig.tools, store, "w", "qwen-code", true, true).unwrap();
+        assert_eq!(none.servers, json!([]));
+        assert_eq!(none.path, None);
+    }
+    // Not asked for tools at all: a worker flag changes nothing.
+    let none = tools_for_session(&rig.tools, &on, "w", "qwen-code", false, true).unwrap();
+    assert_eq!(none.servers, json!([]));
+    assert_eq!(none.path, None);
+    // A worker has the agent tools but, even with the setting on, no computer use (its
+    // capabilities are asserted in the unit tests of agent_tools::commands).
+    let both = store_with(&rig.dir.join("both"), true, true);
+    let worker = tools_for_session(&rig.tools, &both, "w2", "qwen-code", true, true).unwrap();
+    assert_eq!(worker.path, Some(ToolsPath::Mcp));
+    assert!(worker.agent_tools);
     rig.tools.shutdown();
 }
 
@@ -174,12 +276,12 @@ fn store_with(dir: &std::path::Path, agent_tools: bool, computer_use: bool) -> A
 fn computer_use_alone_still_passes_zorvos_server() {
     let rig = rig("cu-alone");
     let store = store_with(&rig.dir, false, true);
-    let mcp = tools_for_session(&rig.tools, &store, "s1", "qwen-code", true).unwrap();
+    let mcp = tools_for_session(&rig.tools, &store, "s1", "qwen-code", true, false).unwrap();
     assert_eq!(mcp.servers[0]["name"], "zorvo");
     assert_eq!(mcp.path, Some(ToolsPath::Mcp));
     // The server is there, but not the agent tools: nothing may tell this agent to show a page.
     assert!(!mcp.agent_tools);
-    let command = tools_for_session(&rig.tools, &store, "s2", "pi-acp", true).unwrap();
+    let command = tools_for_session(&rig.tools, &store, "s2", "pi-acp", true, false).unwrap();
     assert_eq!(command.path, Some(ToolsPath::Command));
     assert!(!command.agent_tools);
     let none = tools_for_session(
@@ -188,6 +290,7 @@ fn computer_use_alone_still_passes_zorvos_server() {
         "s3",
         "qwen-code",
         true,
+        false,
     )
     .unwrap();
     assert_eq!(none.path, None);
@@ -233,7 +336,7 @@ fn command_agent(
     let env_log = rig.dir.join("env.log");
     let params_log = rig.dir.join("params.log");
     let run_log = rig.dir.join("run.log");
-    let call = json!({ "tool": "delegate", "args": { "agent": "qwen", "task": "x" } });
+    let call = json!({ "tool": "start_worker", "args": { "agent": "qwen", "task": "x" } });
     let mut flags = vec![
         ("FAKE_ACP_ENV_LOG", env_log.to_str().unwrap().to_string()),
         (
@@ -253,12 +356,12 @@ fn tools_for_session_picks_the_path_by_agent_and_setting() {
     let rig = rig("pick");
     let on = store_with_tools(&rig.dir, true);
 
-    let command = tools_for_session(&rig.tools, &on, "s1", "pi-acp", true).unwrap();
+    let command = tools_for_session(&rig.tools, &on, "s1", "pi-acp", true, false).unwrap();
     assert_eq!(command.servers, json!([]));
     assert_eq!(command.env.len(), 3);
     assert_eq!(command.path, Some(ToolsPath::Command));
 
-    let mcp = tools_for_session(&rig.tools, &on, "s2", "qwen-code", true).unwrap();
+    let mcp = tools_for_session(&rig.tools, &on, "s2", "qwen-code", true, false).unwrap();
     assert_eq!(mcp.servers[0]["name"], "zorvo");
     assert!(mcp.env.is_empty());
     assert_eq!(mcp.path, Some(ToolsPath::Mcp));
@@ -268,7 +371,7 @@ fn tools_for_session_picks_the_path_by_agent_and_setting() {
     let off = store_with_tools(&rig.dir.join("off"), false);
     for (store, asked) in [(&on, false), (&off, true)] {
         for agent in ["pi-acp", "qwen-code"] {
-            let none = tools_for_session(&rig.tools, store, "s3", agent, asked).unwrap();
+            let none = tools_for_session(&rig.tools, store, "s3", agent, asked, false).unwrap();
             assert_eq!(none.servers, json!([]), "{agent} asked={asked}");
             assert!(none.env.is_empty(), "{agent} asked={asked}");
             assert_eq!(none.path, None, "{agent} asked={asked}");
@@ -284,7 +387,7 @@ fn a_command_path_session_gets_the_variables_and_no_server() {
     let (manager, _rx) = manager();
     bind_processes(&manager, &rig.tools);
     let (launch, env_log, params_log, _) = command_agent(&rig, &[]);
-    let tools = tools_for_session(&rig.tools, &store, "s1", "pi-acp", true).unwrap();
+    let tools = tools_for_session(&rig.tools, &store, "s1", "pi-acp", true, false).unwrap();
     let launch = with_tools_env(launch, &tools.env);
     manager
         .start("s1", &cwd(), &launch, tools.servers)
@@ -306,7 +409,7 @@ fn an_mcp_session_gets_the_server_and_no_variables() {
     let (manager, _rx) = manager();
     bind_processes(&manager, &rig.tools);
     let (launch, env_log, params_log, _) = command_agent(&rig, &[]);
-    let tools = tools_for_session(&rig.tools, &store, "s1", "qwen-code", true).unwrap();
+    let tools = tools_for_session(&rig.tools, &store, "s1", "qwen-code", true, false).unwrap();
     let launch = with_tools_env(launch, &tools.env);
     manager
         .start("s1", &cwd(), &launch, tools.servers)
@@ -328,7 +431,7 @@ fn the_fake_agent_runs_zorvo_tools_and_gets_the_answer() {
     let (manager, rx) = manager();
     bind_processes(&manager, &rig.tools);
     let (launch, _, _, run_log) = command_agent(&rig, &[]);
-    let tools = tools_for_session(&rig.tools, &store, "s1", "pi-acp", true).unwrap();
+    let tools = tools_for_session(&rig.tools, &store, "s1", "pi-acp", true, false).unwrap();
     manager
         .start(
             "s1",
@@ -341,7 +444,7 @@ fn the_fake_agent_runs_zorvo_tools_and_gets_the_answer() {
 
     let call = rig.calls.recv_timeout(WAIT).expect("a tool call");
     assert_eq!(call.session_id, "s1");
-    assert_eq!(call.tool, "delegate");
+    assert_eq!(call.tool, "start_worker");
     assert_eq!(call.args, json!({ "agent": "qwen", "task": "x" }));
     rig.tools.respond(&call.call_id, true, "started");
 
@@ -358,7 +461,7 @@ fn the_fake_agent_runs_zorvo_tools_and_gets_the_answer() {
 fn an_entry_already_in_the_launch_environment_cannot_replace_the_three_variables() {
     let rig = rig("cmdevil");
     let store = store_with_tools(&rig.dir, true);
-    let tools = tools_for_session(&rig.tools, &store, "s1", "pi-acp", true).unwrap();
+    let tools = tools_for_session(&rig.tools, &store, "s1", "pi-acp", true, false).unwrap();
     let (mut launch, ..) = command_agent(&rig, &[]);
     launch
         .env
@@ -401,4 +504,33 @@ fn bind_processes(
             tools.bind_process(session, process);
         }
     }));
+}
+
+#[test]
+fn the_fake_agent_shows_a_visual_through_the_bridge() {
+    let rig = rig("visual");
+    let (manager, rx) = manager();
+    bind_processes(&manager, &rig.tools);
+    let call =
+        json!({ "tool": "show_visual", "args": { "title": "Flow", "code": "<svg><rect/></svg>" } });
+    let (launch, log) = mcp_agent_calling(&rig, &call);
+    manager
+        .start("v1", &cwd(), &launch, rig.tools.servers_for("v1", true))
+        .expect("start");
+    manager.prompt("v1", "mcp", &[]).unwrap();
+
+    let emitted = rig.calls.recv_timeout(WAIT).expect("a tool call");
+    assert_eq!(emitted.tool, "show_visual");
+    assert_eq!(emitted.args["title"], "Flow");
+    assert_eq!(emitted.args["code"], "<svg><rect/></svg>");
+    rig.tools
+        .respond(&emitted.call_id, true, "{\"shown\":true}");
+
+    wait_for(&rx, |e| {
+        agent_text(e).as_deref() == Some("mcp:{\"shown\":true}")
+    });
+    let entries = logged(&log);
+    assert!(tool_names_in(&entries[1]).contains(&"show_visual".to_string()));
+    manager.stop("v1");
+    rig.tools.shutdown();
 }

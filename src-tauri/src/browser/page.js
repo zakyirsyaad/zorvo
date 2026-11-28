@@ -199,6 +199,7 @@
             return result({scrolled:true});
           }
           case 'click': el=target(a); if(a.button && a.button!=='left') el.dispatchEvent(new MouseEvent(a.button==='right'?'contextmenu':'auxclick',{bubbles:true,button:a.button==='right'?2:1})); else { el.click(); if(a.count===2){el.click();el.dispatchEvent(new MouseEvent('dblclick',{bubbles:true,detail:2}));} } return result({clicked:true, trusted:false});
+          case 'upload_target': el=target(a); return result({fileInput: el instanceof HTMLInputElement && el.type==='file' && !el.disabled});
           case 'fill': fill(target(a), bounded(a.value ?? a.text, 100000)); return result({filled:true,trusted:false});
           case 'select': {
             el=target(a); if (!(el instanceof HTMLSelectElement)) throw new Error('The element is not a select.');

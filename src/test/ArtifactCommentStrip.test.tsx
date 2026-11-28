@@ -39,6 +39,8 @@ function state(overrides: Partial<ArtifactCommentsState> = {}): ArtifactComments
     cancelCandidate: vi.fn(),
     saveCandidate: vi.fn(() => "saved" as const),
     missing: new Set(),
+    startArtboardComment: vi.fn(),
+    canvasMissing: new Map(),
     editComment: vi.fn(),
     deleteComment: vi.fn(),
     clearSent: vi.fn(),
@@ -47,7 +49,7 @@ function state(overrides: Partial<ArtifactCommentsState> = {}): ArtifactComments
 }
 
 function review(overrides: Partial<AddArtifactReview> = {}): AddArtifactReview {
-  return { inMessage: new Set(), blockedReason: undefined, add: vi.fn(), ...overrides };
+  return { inMessage: new Set(), blockedReason: undefined, add: vi.fn(), addCanvas: vi.fn(), ...overrides };
 }
 
 function strip(comments: ArtifactCommentsState, addReview: AddArtifactReview = review(), shownVersion = 3) {
@@ -220,5 +222,29 @@ describe("ArtifactCommentStrip", () => {
     strip(state({ comments: [comment("c1", { version: 2 })], missing: new Set([1]) }));
 
     expect(within(rows()[0]).queryByText(/Not found on the page/)).toBeNull();
+  });
+
+  it("on a canvas, names the artboard and says a comment was not found on it", () => {
+    const key = "c-0123456789abcdef";
+    const hash = "b".repeat(64);
+    const onBoard = comment("c1", { artifactId: key, version: 0, canvas: { key, artboardId: "pay-b", fileHash: hash } });
+    const canvasSource = {
+      entry: { key, folder: "/w/api/design", relative: "design", title: "Checkout", shownAt: 1, artboards: 1 },
+      canvas: { title: "Checkout", sections: [{ id: "pay", title: "Payment", artboards: [{ id: "pay-b", title: "Payment B", file: "pay-b.html", width: 1, height: 1, group: null }] }] },
+      boards: [{ id: "pay-b", sha256: hash }],
+    };
+
+    render(
+      <ArtifactCommentStrip
+        canvasSource={canvasSource}
+        cwd="/w/api"
+        comments={state({ comments: [onBoard], canvasMissing: new Map([["pay-b", new Set([1])]]) })}
+        addReview={review()}
+      />,
+    );
+
+    expect(screen.getByRole("region", { name: "Comments on this canvas" })).toBeTruthy();
+    expect(within(rows()[0]).getByText(/Payment B · Element "In grouping 44%"/)).toBeTruthy();
+    expect(within(rows()[0]).getByText(/Not found on the artboard/)).toBeTruthy();
   });
 });

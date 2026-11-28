@@ -2,8 +2,8 @@
 // hydrates what is already there. After `next build`, this removes that runtime from each page
 // in out/ (script tags, their preloads and the inline flight data), so the only JavaScript a visitor
 // downloads is the landing page's motion script, /motion.js (scripts/motion/, built by
-// scripts/build-motion.mjs), which never hydrates anything. Structured data (`application/ld+json`)
-// is data, not script, and stays.
+// scripts/build-motion.mjs), which never hydrates anything, and Vercel's two measuring scripts
+// (INSIGHT_SCRIPTS). Structured data (`application/ld+json`) is data, not script, and stays.
 import { realpathSync } from "node:fs";
 import { readdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -15,25 +15,35 @@ import { parse, serialize } from "parse5";
 /** @param {Node} node @param {string} name */
 const attr = (node, name) => ("attrs" in node ? node.attrs.find((entry) => entry.name === name)?.value : undefined);
 
-/** The one script the site keeps: the motion bundle, by its exact address and with no inline code. */
+/** The motion bundle, kept by its exact address and with no inline code. */
 export const MOTION_SCRIPT = "/motion.js";
 
-/** The motion script's own tag: `src` is exactly MOTION_SCRIPT, it is classic (not a module), and it has no body. */
-function isMotionScript(/** @type {Node} */ node) {
-  if (node.nodeName !== "script" || attr(node, "src") !== MOTION_SCRIPT) return false;
+/**
+ * Vercel Web Analytics and Speed Insights. Vercel serves both from the site's own origin once they are
+ * turned on for the project, and they report back to that origin, so the Content Security Policy
+ * (`script-src 'self'`, `connect-src 'self'`) needs no new host. Their React components would do
+ * nothing here: the runtime that mounts them is what this script removes.
+ */
+export const INSIGHT_SCRIPTS = ["/_vercel/insights/script.js", "/_vercel/speed-insights/script.js"];
+
+const KEPT_SCRIPTS = new Set([MOTION_SCRIPT, ...INSIGHT_SCRIPTS]);
+
+/** A kept script's own tag: `src` is exactly one of KEPT_SCRIPTS, it is classic (not a module), and it has no body. */
+function isKeptScript(/** @type {Node} */ node) {
+  if (node.nodeName !== "script" || !KEPT_SCRIPTS.has(attr(node, "src") ?? "")) return false;
   const type = attr(node, "type");
   const hasBody = "childNodes" in node && node.childNodes.length > 0;
   return !hasBody && (type === undefined || type === "text/javascript");
 }
 
-/** A script that runs, or a hint to fetch one; structured data and the motion script are kept. */
+/** A script that runs, or a hint to fetch one; structured data and the kept scripts stay. */
 function isRuntime(/** @type {Node} */ node) {
   if (node.nodeName === "script") {
-    if (isMotionScript(node)) return false;
+    if (isKeptScript(node)) return false;
     return attr(node, "type") !== "application/ld+json";
   }
   if (node.nodeName === "link") {
-    if (attr(node, "href") === MOTION_SCRIPT) return false;
+    if (KEPT_SCRIPTS.has(attr(node, "href") ?? "")) return false;
     return attr(node, "rel") === "modulepreload" || attr(node, "as") === "script";
   }
   return false;
@@ -72,7 +82,7 @@ export function scriptsOf(html) {
     if ("content" in node) walk(node.content);
     if (!("childNodes" in node)) return;
     for (const child of node.childNodes) {
-      if (child.nodeName === "script") found.push({ isKept: attr(child, "type") === "application/ld+json" || isMotionScript(child) });
+      if (child.nodeName === "script") found.push({ isKept: attr(child, "type") === "application/ld+json" || isKeptScript(child) });
       walk(child);
     }
   };
@@ -99,7 +109,7 @@ async function main() {
     const { html, removed } = stripPage(await readFile(file, "utf8"));
     // Parse the result again: anything still runnable means a form this does not know, so stop the build.
     if (stripPage(html).removed > 0) throw new Error(`${file} still has a script after stripping`);
-    if (scriptsOf(html).some((script) => !script.isKept)) throw new Error(`${file} has a script other than the motion script`);
+    if (scriptsOf(html).some((script) => !script.isKept)) throw new Error(`${file} has a script the site does not keep`);
     if (removed === 0) continue;
     await writeFile(file, html);
     pages++;

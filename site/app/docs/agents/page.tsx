@@ -139,7 +139,7 @@ export default function AgentsPage() {
 
       <H3 id="versions">Versions and updates</H3>
       <P>
-        A new version is offered a week after it was published, and never one the registry has withdrawn. Zorvo keeps
+        A new version is offered as soon as the ACP registry lists it, and never one the registry has withdrawn. Zorvo keeps
         the version an agent started with until you click <B>Update</B>. When an update is offered, Agents in Settings&apos; navigation
         shows a count, and a notice tells you once per version.
       </P>

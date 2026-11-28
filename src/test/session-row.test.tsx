@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, onTestFinished } from "vitest";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { SessionTree, type SessionListContext } from "../components/sidebar/SessionList";
 import { CONFIRM_DELETE_MS } from "../components/sidebar/SessionMenu";
@@ -53,6 +53,12 @@ afterEach(() => vi.useRealTimers());
 
 describe("SessionRow", () => {
   it("shows a pull request's state and number in the time's place, and the time when there is none", () => {
+    // Midday, so "2 hours ago" never crosses midnight into a date.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 10, 20, 12, 0, 0));
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
     const withPr = session({ id: "s-pr", name: "Fix transcript save interval", createdAt: Date.now() - 2 * 3_600_000 });
     const without = session({ id: "s-none", name: "Add GitHub connection", createdAt: Date.now() - 2 * 3_600_000 });
     const pullRequest = {
@@ -78,7 +84,8 @@ describe("SessionRow", () => {
 
     const { row: plainRow } = renderRow(without, { pullRequestOf });
     expect(within(plainRow).queryByRole("img", { name: /^Pull request/ })).toBeNull();
-    expect(within(plainRow).getByText(/ago|h$/)).toBeInTheDocument();
+    // Two hours back is "Yesterday" when the test runs before 02:00.
+    expect(within(plainRow).getByText(/ago|h$|^Yesterday$/)).toBeInTheDocument();
   });
 
   it("shows the whole line a shortened name was cut from on hover, but a name you gave as you gave it", () => {
@@ -239,6 +246,13 @@ describe("SessionRow", () => {
     // The actions keep their room: they never shrink, and the text column can.
     expect(within(row).getByTestId("session-row-actions")).toHaveClass("shrink-0");
     expect(within(row).getByText(long.name).closest("button")).toHaveClass("min-w-0");
+  });
+
+  it("marks a session whose agent may use apps on this Mac, and no other", () => {
+    const { row } = renderRow(session(), { usesComputer: (sessionId) => sessionId === session().id });
+    expect(within(row).getByLabelText("Can use apps on your Mac")).toBeInTheDocument();
+    const { row: plain } = renderRow(session({ id: "another-session" }), { usesComputer: () => false });
+    expect(within(plain).queryByLabelText("Can use apps on your Mac")).toBeNull();
   });
 
   it("marks a session that runs in its own worktree at the start of its subtitle", () => {

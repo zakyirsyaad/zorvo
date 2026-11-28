@@ -13,10 +13,11 @@ import {
 } from '../lib/agent-tool-card';
 import {
   DECLINED,
+  DONE_RECORDED,
+  NOT_A_WORKER,
   NO_SESSION,
   NO_SUCH_HANDLE,
   UNREADABLE,
-  delegateResultText,
   listAgentsText,
   openedResultText,
   otherFolders,
@@ -26,27 +27,40 @@ import {
   parseToolCall,
   resolveAgent,
   resolveFolder,
-  sessionGetsAgentTools,
   statusRefusal,
+  workerSentText,
+  workerStartedText,
   type AgentToolCall,
   type DelegateState,
   type KnownFolder,
-  type ListedDelegate,
   type ListedOpened,
+  type ListedWorker,
 } from '../lib/agent-tools';
 import type { MentionAgentStatus } from '../lib/delegation';
 import { createId } from '../lib/ids';
-import { ARTIFACT_GUIDE, ARTIFACT_REFUSALS, parseShown, shownResultText, type ShownArtifact } from '../lib/artifacts';
-import { withArtifactCard } from '../lib/artifact-card';
+import { CANVAS_REFUSALS, canvasResultText, parseCanvasRead } from '../lib/canvas';
+import { MOTION_PARSE_ERROR, MOTION_REFUSALS, motionResultText, parseMotionRead, parseVideoEntry, videoResultText } from '../lib/motion';
+import { toolsRoleOf } from '../lib/workers';
+import { ARTIFACT_REFUSALS, parseShown, shownResultText, type ShownArtifact } from '../lib/artifacts';
+import { withArtifactCard, withCanvasCard, withDesignSystemCard, withMotionCard, withVideoCard } from '../lib/artifact-card';
+import { VISUAL_REFUSALS, VISUAL_SHOWN_TEXT, parseVisualEntry } from '../lib/visuals';
+import { withVisualPart } from '../lib/visual-part';
+import { parseNextStep } from '../lib/next-step';
+import { WRAP_UP_SHOWN_TEXT, withNextStep } from '../lib/next-step-part';
 import { escapeVisible } from '../lib/visible-text';
 import type { AgentProfile, ChatMessage, Session } from '../types';
 import type { GiveTaskResult } from './useDelegation';
+import type { StartWorkerInput, StartWorkerResult } from '../lib/delegation-helpers';
+import { workerByHandle } from '../lib/workers';
 import type { OpenRequest, OpenResult } from './useOpenedSessions';
 import { useLatest } from './useLatest';
 import { useBrowserToolCards } from './useBrowserToolCards';
+import { guideAnswer, showDesignSystem } from '../lib/design-system-tool';
 
 /** Answered when something went wrong on Zorvo's side; never the error itself, which could hold the task. */
 const FAILED = 'Zorvo could not do that.';
+/** A canvas.json refusal: `<field path>: <rule>`; it names a field and repeats nothing the agent wrote. */
+const CANVAS_PARSE_ERROR = /^[A-Za-z0-9_.[\]]*: [^\n]{1,300}$/;
 
 export interface AgentToolsDeps {
   sessions: readonly Session[];
@@ -54,14 +68,20 @@ export interface AgentToolsDeps {
   /** An agent's install and sign-in state, as the @ list shows it. */
   statusOf: (agentId: string) => MentionAgentStatus;
   /** The session's open delegates, for `list_agents`. */
-  delegatesOf: (sessionId: string) => ListedDelegate[];
-  giveTask: (sourceId: string, agentId: string, task: string, options: { byAgent: true }) => Promise<GiveTaskResult>;
+  /** The session's open workers, oldest first, for `list_agents`. */
+  workersOf: (sessionId: string) => ListedWorker[];
+  startWorker: (coordinatorId: string, input: StartWorkerInput) => Promise<StartWorkerResult>;
+  /** Writes a worker's `done` on its link; false when it has no open task. */
+  recordDone: (workerId: string, done: { result: 'succeeded' | 'failed'; summary: string; files?: string[] }) => boolean;
+  sendToWorker: (coordinatorId: string, workerId: string, task: string) => Promise<GiveTaskResult>;
   /** The folders Zorvo knows: where else a session may be opened. */
   workspaces: readonly KnownFolder[];
   openSession: (openerId: string, request: OpenRequest) => Promise<OpenResult>;
   /** The sessions this session opened, for `list_agents`. */
   openedOf: (sessionId: string) => ListedOpened[];
   updateMessages: (sessionId: string, update: (prev: ChatMessage[]) => ChatMessage[]) => void;
+  /** Lands the agent's streamed text that still waits for a frame, so what is added next goes after it. */
+  flushUpdates?: () => void;
   onAttention: (sessionId: string, reason: 'needs-answer') => void;
   /** A session's messages, loaded from disk when it was not opened in this run. Rejects when unreadable. */
   messagesOf: (sessionId: string) => Promise<readonly ChatMessage[]>;
@@ -71,16 +91,18 @@ export interface AgentToolsDeps {
   /** Tells the user what an agent is not told: why Zorvo itself failed. */
   onNotice?: (message: string) => void;
   /** An agent showed a page: the window decides whether anything opens. */
-  onArtifactShown: (sessionId: string, shown: ShownArtifact) => void;
+  onArtifactShown: (sessionId: string, shown: ShownArtifact | { kind: 'canvas' | 'motion' | 'video' | 'design-system'; key: string }) => void;
 }
 
-/** A `delegate` or `start_session` call that waits for the user's answer on a card. */
+/** A `start_worker`, `send` or `start_session` call that waits for the user's answer on a card. */
 interface WaitingCall extends WaitingTask {
   callId: string;
   /** A new session's name, when the agent gave one. */
   title?: string;
   /** A new session in another folder Zorvo knows. */
   folderPath?: string;
+  /** For `send`: the worker's session. */
+  workerId?: string;
 }
 
 /** A session in another folder has a card of its own, asked every time. */
@@ -109,7 +131,7 @@ function respond(callId: string, ok: boolean, text: string): void {
 
 /**
  * Answers the tool calls agents make to Zorvo's tool server. `list_agents`
- * is answered at once; the first `delegate` of a session shows a card, and
+ * is answered at once; the first `start_worker` of a session shows a card, and
  * after Allow that session's calls run without one (memory only: a reload asks
  * again). Main window only: a popout would answer the same call a second time.
  * Decisions read refs, so they hold in the tick a call or an answer arrives.
@@ -143,23 +165,56 @@ export function useAgentTools(deps: AgentToolsDeps): {
   const [, setRevision] = useState(0);
   const bump = useCallback(() => setRevision((current) => current + 1), []);
 
-  const runDelegate = useCallback(
+  const runStartWorker = useCallback(
     async (sessionId: string, call: WaitingCall): Promise<void> => {
       try {
-        const result = await latest.current.giveTask(sessionId, call.targetId, call.task, { byAgent: true });
-        if (result.ok) {
-          const text = delegateResultText({
-            kind: result.kind,
-            sessionName: result.sessionName,
-            agentName: call.targetName,
-            // A delegate is named by its agent's id: a session holds one per agent.
-            handle: call.targetId,
-          });
-          respond(call.callId, true, text);
-        } else {
-          // A failure inside Zorvo is not explained to an agent: its cause could hold a path.
-          respond(call.callId, false, result.isInternal === true || result.reason === '' ? FAILED : result.reason);
+        const result = await latest.current.startWorker(sessionId, {
+          agentId: call.targetId,
+          task: call.task,
+          ...(call.title !== undefined ? { title: call.title } : {}),
+          hasOwnWorktree: call.hasOwnWorktree === true,
+          byAgent: true,
+          isCancelled: () => endedApproved.current.has(call.callId),
+        });
+        if (!result.ok && result.detail !== undefined) {
+          // The agent is told only that it did not work; the cause is the user's to see.
+          const current = latest.current;
+          const caller = current.sessions.find((candidate) => candidate.id === sessionId);
+          const callerName = current.agents.find((candidate) => candidate.id === caller?.profileId)?.name ?? 'The agent';
+          current.onNotice?.(`${callerName} could not start a ${call.targetName} worker: ${result.detail}`);
         }
+        respond(
+          call.callId,
+          result.ok,
+          result.ok
+            ? workerStartedText({ handle: result.handle, sessionName: result.sessionName, folder: result.folder })
+            : result.isInternal === true || result.reason === ''
+              ? FAILED
+              : result.reason,
+        );
+      } catch {
+        respond(call.callId, false, FAILED);
+      }
+    },
+    [latest],
+  );
+
+  const runSend = useCallback(
+    async (sessionId: string, call: WaitingCall): Promise<void> => {
+      try {
+        const result = await latest.current.sendToWorker(sessionId, call.workerId ?? '', call.task);
+        if (!result.ok && result.detail !== undefined) {
+          latest.current.onNotice?.(`${call.targetName} could not take a further task: ${result.detail}`);
+        }
+        respond(
+          call.callId,
+          result.ok,
+          result.ok
+            ? workerSentText({ handle: call.handle ?? '', sessionName: result.sessionName })
+            : result.isInternal === true || result.reason === ''
+              ? FAILED
+              : result.reason,
+        );
       } catch {
         respond(call.callId, false, FAILED);
       }
@@ -208,14 +263,16 @@ export function useAgentTools(deps: AgentToolsDeps): {
       try {
         if (endedApproved.current.has(call.callId)) return;
         begun.current.add(call.callId);
-        await (call.kind === 'delegate' ? runDelegate(sessionId, call) : runOpen(sessionId, call));
+        if (call.kind === 'start_worker') await runStartWorker(sessionId, call);
+        else if (call.kind === 'send') await runSend(sessionId, call);
+        else await runOpen(sessionId, call);
       } finally {
         approved.current.delete(call.callId);
         endedApproved.current.delete(call.callId);
         begun.current.delete(call.callId);
       }
     },
-    [runDelegate, runOpen],
+    [runStartWorker, runSend, runOpen],
   );
 
   /** The card for what waits now, on the session's reply or in the place of the one it had. */
@@ -225,6 +282,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
         { cardId: entry.cardId, sessionId: session.id, callerName: entry.callerName, folder: entry.folder, now: Date.now() },
         entry.calls,
       );
+      // A new card goes after the reply's text, which was sent before this call and may still wait for its frame.
+      if (isNew) latest.current.flushUpdates?.();
       latest.current.updateMessages(session.id, (prev) =>
         isNew
           ? withToolCard(prev, card, { sessionId: session.id, now: Date.now(), createId })
@@ -265,11 +324,16 @@ export function useAgentTools(deps: AgentToolsDeps): {
     [latest, runCall, showCard, bump],
   );
 
-  const handleDelegate = useCallback(
+  const handleStartWorker = useCallback(
     (session: Session, call: AgentToolCall) => {
       const current = latest.current;
-      const { agent, task } = call.args as Record<string, unknown>;
-      if (typeof agent !== 'string' || typeof task !== 'string') {
+      const { agent, task, title, worktree } = call.args as Record<string, unknown>;
+      const isReadable =
+        typeof agent === 'string' &&
+        typeof task === 'string' &&
+        (title === undefined || typeof title === 'string') &&
+        (worktree === undefined || worktree === 'current' || worktree === 'new');
+      if (!isReadable) {
         respond(call.callId, false, FAILED);
         return;
       }
@@ -285,7 +349,42 @@ export function useAgentTools(deps: AgentToolsDeps): {
         respond(call.callId, false, refusal);
         return;
       }
-      enqueue(session, { callId: call.callId, kind: 'delegate', targetName, targetId: resolved.id, task });
+      enqueue(session, {
+        callId: call.callId,
+        kind: 'start_worker',
+        targetName,
+        targetId: resolved.id,
+        task,
+        ...(typeof title === 'string' ? { title } : {}),
+        ...(worktree === 'new' ? { hasOwnWorktree: true } : {}),
+      });
+    },
+    [latest, enqueue],
+  );
+
+  const handleSend = useCallback(
+    (session: Session, call: AgentToolCall) => {
+      const current = latest.current;
+      const { handle, message } = call.args as Record<string, unknown>;
+      if (typeof handle !== 'string' || typeof message !== 'string') {
+        respond(call.callId, false, FAILED);
+        return;
+      }
+      const worker = workerByHandle(session.id, handle, current.sessions);
+      if (worker === undefined) {
+        respond(call.callId, false, NO_SUCH_HANDLE);
+        return;
+      }
+      const targetName = current.agents.find((candidate) => candidate.id === worker.profileId)?.name ?? worker.profileId;
+      enqueue(session, {
+        callId: call.callId,
+        kind: 'send',
+        targetName,
+        targetId: worker.profileId,
+        task: message,
+        workerId: worker.id,
+        handle,
+      });
     },
     [latest, enqueue],
   );
@@ -350,6 +449,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
         now: Date.now(),
       });
       folderCards.current.set(cardId, { sessionId: session.id, call: { ...waitingCall, folderPath: place.path } });
+      // As for the session's card: the reply's text lands first.
+      current.flushUpdates?.();
       current.updateMessages(session.id, (prev) =>
         withToolCard(prev, card, { sessionId: session.id, now: Date.now(), createId }),
       );
@@ -357,6 +458,76 @@ export function useAgentTools(deps: AgentToolsDeps): {
       bump();
     },
     [latest, enqueue, bump],
+  );
+
+  /** `show_artifact` with `kind: "canvas"`: the backend reads the folder and its files; a parse error is the agent's to fix. */
+  const handleShowCanvas = useCallback(
+    async (session: Session, call: AgentToolCall, path: string) => {
+      try {
+        const read = parseCanvasRead(await invoke('canvas_show', { sessionId: session.id, cwd: session.cwd, path }));
+        if (read === null) {
+          respond(call.callId, false, FAILED);
+          return;
+        }
+        // As for a visual: the reply's text was sent before this call, so it lands before the card.
+        latest.current.flushUpdates?.();
+        latest.current.updateMessages(session.id, (prev) => withCanvasCard(prev, read, { sessionId: session.id, now: Date.now(), createId }));
+        latest.current.onArtifactShown(session.id, { kind: 'canvas', key: read.entry.key });
+        respond(call.callId, true, canvasResultText(read));
+      } catch (error) {
+        const text = typeof error === 'string' ? error : '';
+        if (CANVAS_REFUSALS.has(text) || CANVAS_PARSE_ERROR.test(text)) {
+          respond(call.callId, false, text);
+          return;
+        }
+        respond(call.callId, false, FAILED);
+        latest.current.onNotice?.('Zorvo could not show the canvas an agent made.');
+      }
+    },
+    [latest],
+  );
+
+  /**
+   * `show_artifact` with `kind: "motion"` or `"video"`: the backend reads the composition (or checks the
+   * video file) inside the session's folder and remembers it; nothing is copied.
+   */
+  const handleShowMedia = useCallback(
+    async (session: Session, call: AgentToolCall, path: string, kind: 'motion' | 'video', title: string) => {
+      try {
+        const args = { sessionId: session.id, cwd: session.cwd, path, ...(title === '' ? {} : { title }) };
+        const answer = kind === 'motion' ? await invoke('motion_show', args) : await invoke('video_show', args);
+        latest.current.flushUpdates?.();
+        if (kind === 'motion') {
+          const read = parseMotionRead(answer);
+          if (read === null) {
+            respond(call.callId, false, FAILED);
+            return;
+          }
+          latest.current.updateMessages(session.id, (prev) => withMotionCard(prev, read, { sessionId: session.id, now: Date.now(), createId }));
+          latest.current.onArtifactShown(session.id, { kind: 'motion', key: read.entry.key });
+          respond(call.callId, true, motionResultText(read));
+          return;
+        }
+        const entry = parseVideoEntry(answer);
+        if (entry === null) {
+          respond(call.callId, false, FAILED);
+          return;
+        }
+        latest.current.updateMessages(session.id, (prev) => withVideoCard(prev, entry, { sessionId: session.id, now: Date.now(), createId }));
+        latest.current.onArtifactShown(session.id, { kind: 'video', key: entry.key });
+        respond(call.callId, true, videoResultText(entry));
+      } catch (error) {
+        const text = typeof error === 'string' ? error : '';
+        if (MOTION_REFUSALS.has(text) || MOTION_PARSE_ERROR.test(text)) {
+          respond(call.callId, false, text);
+          return;
+        }
+        // Never the error itself: it can name a folder the agent was not told about.
+        respond(call.callId, false, FAILED);
+        latest.current.onNotice?.(kind === 'motion' ? 'Zorvo could not show the motion an agent made.' : 'Zorvo could not show the video an agent made.');
+      }
+    },
+    [latest],
   );
 
   /**
@@ -370,8 +541,30 @@ export function useAgentTools(deps: AgentToolsDeps): {
         respond(call.callId, false, 'path is required.');
         return;
       }
+      if (args.kind === 'canvas') {
+        await handleShowCanvas(session, call, args.path);
+        return;
+      }
+      if (args.kind === 'design-system') {
+        const path = args.path;
+        const shown = await showDesignSystem(() => invoke('design_system_show', { sessionId: session.id, cwd: session.cwd, path }));
+        if (shown.ok) {
+          latest.current.flushUpdates?.();
+          const read = shown.read;
+          latest.current.updateMessages(session.id, (prev) => withDesignSystemCard(prev, read, { sessionId: session.id, now: Date.now(), createId }));
+          latest.current.onArtifactShown(session.id, { kind: 'design-system', key: shown.read.entry.key });
+        } else if (shown.notice) {
+          latest.current.onNotice?.(shown.notice);
+        }
+        respond(call.callId, shown.ok, shown.text);
+        return;
+      }
       // A title is shown in Zorvo's own interface, so its control and bidi characters are spelled out.
       const title = typeof args.title === 'string' ? escapeVisible(args.title).trim() : '';
+      if (args.kind === 'motion' || args.kind === 'video') {
+        await handleShowMedia(session, call, args.path, args.kind, title);
+        return;
+      }
       try {
         const answer = await invoke('artifact_show', {
           sessionId: session.id,
@@ -385,6 +578,8 @@ export function useAgentTools(deps: AgentToolsDeps): {
           return;
         }
         if (shown.isNewVersion) {
+          // As for a visual: the reply's text was sent before this call, so it lands before the card.
+          latest.current.flushUpdates?.();
           latest.current.updateMessages(session.id, (prev) =>
             withArtifactCard(prev, shown, { sessionId: session.id, now: Date.now(), createId }),
           );
@@ -400,6 +595,67 @@ export function useAgentTools(deps: AgentToolsDeps): {
         // Never the error itself: it can name a folder the agent was not told about.
         respond(call.callId, false, FAILED);
         latest.current.onNotice?.('Zorvo could not show the page an agent made.');
+      }
+    },
+    [latest, handleShowCanvas, handleShowMedia],
+  );
+
+  /**
+   * `wrap_up`: the agent's recap, question, pick and replies go on its turn's last reply, where the
+   * next-step box reads them. No card and no grant: it only adds words under the agent's own reply.
+   */
+  const handleWrapUp = useCallback(
+    (session: Session, call: AgentToolCall) => {
+      const step = parseNextStep(call.args);
+      if (step === null || step.recap === undefined) {
+        respond(call.callId, false, FAILED);
+        return;
+      }
+      // Kept as the agent sent them, so the limits hold again on reload; the box spells them out as it draws.
+      const shown = {
+        recap: step.recap,
+        ...(step.ask ? { ask: step.ask } : {}),
+        ...(step.pick ? { pick: step.pick } : {}),
+        ...(step.replies ? { replies: step.replies } : {}),
+      };
+      // The reply's own text may still wait for its frame: it was sent before this call, so it lands first.
+      latest.current.flushUpdates?.();
+      latest.current.updateMessages(session.id, (prev) => withNextStep(prev, shown, { sessionId: session.id, now: Date.now(), createId }));
+      respond(call.callId, true, WRAP_UP_SHOWN_TEXT);
+    },
+    [latest],
+  );
+
+  /**
+   * `show_visual`: the backend cleans and keeps the markup, and the reply gets a part that names
+   * it. No card and no grant, like a page: nothing in a visual runs, and it only reaches the user
+   * who is already here.
+   */
+  const handleShowVisual = useCallback(
+    async (session: Session, call: AgentToolCall) => {
+      const args = (typeof call.args === 'object' && call.args !== null ? call.args : {}) as Record<string, unknown>;
+      // A title is shown in Zorvo's own interface, so its control and bidi characters are spelled out.
+      const title = typeof args.title === 'string' ? escapeVisible(args.title).trim() : '';
+      const source = typeof args.code === 'string' ? { code: args.code } : typeof args.path === 'string' ? { path: args.path } : {};
+      try {
+        const entry = parseVisualEntry(await invoke('visual_show', { sessionId: session.id, cwd: session.cwd, title, ...source }));
+        if (entry === null) {
+          respond(call.callId, false, FAILED);
+          return;
+        }
+        // The reply's own text may still wait for its frame: it was sent before this call, so it lands first.
+        latest.current.flushUpdates?.();
+        latest.current.updateMessages(session.id, (prev) => withVisualPart(prev, entry, { sessionId: session.id, now: Date.now(), createId }));
+        respond(call.callId, true, VISUAL_SHOWN_TEXT);
+      } catch (error) {
+        const text = typeof error === 'string' ? error : '';
+        if (VISUAL_REFUSALS.has(text)) {
+          respond(call.callId, false, text);
+          return;
+        }
+        // Never the error itself: it can name a folder the agent was not told about.
+        respond(call.callId, false, FAILED);
+        latest.current.onNotice?.('Zorvo could not show the visual an agent made.');
       }
     },
     [latest],
@@ -448,6 +704,33 @@ export function useAgentTools(deps: AgentToolsDeps): {
     [latest],
   );
 
+  const handleDone = useCallback(
+    (session: Session, role: ReturnType<typeof toolsRoleOf>, call: AgentToolCall) => {
+      if (role !== 'worker') {
+        respond(call.callId, false, NOT_A_WORKER);
+        return;
+      }
+      const args = (typeof call.args === 'object' && call.args !== null ? call.args : {}) as Record<string, unknown>;
+      const { outcome, summary, files } = args;
+      const isValid =
+        (outcome === 'succeeded' || outcome === 'failed') &&
+        typeof summary === 'string' &&
+        summary.trim() !== '' &&
+        (files === undefined || (Array.isArray(files) && files.every((file) => typeof file === 'string')));
+      if (!isValid) {
+        respond(call.callId, false, FAILED);
+        return;
+      }
+      const recorded = latest.current.recordDone(session.id, {
+        result: outcome as 'succeeded' | 'failed',
+        summary: summary as string,
+        ...(files !== undefined ? { files: files as string[] } : {}),
+      });
+      respond(call.callId, recorded, recorded ? DONE_RECORDED : NOT_A_WORKER);
+    },
+    [latest],
+  );
+
   const handleCall = useCallback(
     (payload: unknown) => {
       const call = parseToolCall(payload);
@@ -457,7 +740,17 @@ export function useAgentTools(deps: AgentToolsDeps): {
         const session = current.sessions.find((candidate) => candidate.id === call.sessionId);
         // A session whose agent has exited makes no calls: whatever still holds its token is not it.
         const isLive = session !== undefined && session.status !== 'terminated';
-        if (session === undefined || !isLive || !sessionGetsAgentTools(session, current.sessions)) {
+        const role = session === undefined || !isLive ? null : toolsRoleOf(session, current.sessions);
+        if (session === undefined || !isLive) {
+          respond(call.callId, false, NO_SESSION);
+          return;
+        }
+        // A worker may call `done` and nothing else; a session with another role or none has no task to report on.
+        if (call.tool === 'done') {
+          handleDone(session, role, call);
+          return;
+        }
+        if (role !== 'coordinator') {
           respond(call.callId, false, NO_SESSION);
           return;
         }
@@ -473,15 +766,19 @@ export function useAgentTools(deps: AgentToolsDeps): {
             true,
             listAgentsText({
               agents,
-              delegates: current.delegatesOf(session.id),
+              workers: current.workersOf(session.id),
               opened: current.openedOf(session.id),
               folders: otherFolders(current.workspaces, ownFolderOf(session)),
             }),
           );
           return;
         }
-        if (call.tool === 'delegate') {
-          handleDelegate(session, call);
+        if (call.tool === 'start_worker') {
+          handleStartWorker(session, call);
+          return;
+        }
+        if (call.tool === 'send') {
+          handleSend(session, call);
           return;
         }
         if (call.tool === 'start_session') {
@@ -493,11 +790,22 @@ export function useAgentTools(deps: AgentToolsDeps): {
           return;
         }
         if (call.tool === 'artifact_guide') {
-          respond(call.callId, true, ARTIFACT_GUIDE);
+          const kind = (call.args as Record<string, unknown> | null)?.kind;
+          void guideAnswer(kind, () => invoke('design_systems_list', { sessionId: session.id, cwd: session.cwd })).then((text) =>
+            respond(call.callId, true, text),
+          );
           return;
         }
         if (call.tool === 'show_artifact') {
           void handleShowArtifact(session, call);
+          return;
+        }
+        if (call.tool === 'show_visual') {
+          void handleShowVisual(session, call);
+          return;
+        }
+        if (call.tool === 'wrap_up') {
+          handleWrapUp(session, call);
           return;
         }
         respond(call.callId, false, FAILED);
@@ -505,7 +813,7 @@ export function useAgentTools(deps: AgentToolsDeps): {
         respond(call.callId, false, FAILED);
       }
     },
-    [latest, handleDelegate, handleStartSession, handleOwned, handleShowArtifact, handleBrowserCall],
+    [latest, handleDone, handleStartWorker, handleSend, handleStartSession, handleOwned, handleShowArtifact, handleShowVisual, handleWrapUp, handleBrowserCall],
   );
 
   /** A call ended without our answer (timeout, cancel, session stop): it no longer waits. */

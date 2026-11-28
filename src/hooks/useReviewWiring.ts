@@ -1,7 +1,10 @@
+import { DESIGN_SYSTEM_QUOTE_RULE, designSystemHeading, designSystemMessage } from '../lib/design-system-comments';
+import type { DesignSystemEntry } from '../lib/design-system-read';
 import type { RefObject } from 'react';
 import { flushSync } from 'react-dom';
 import type { ComposerHandle } from '../components/ComposerDock';
-import { artifactHeading, artifactMessage, type CheckedArtifactComment } from '../lib/artifact-comments';
+import { artifactHeading, artifactMessage, canvasHeading, canvasMessage, CANVAS_QUOTE_RULE, type CheckedArtifactComment } from '../lib/artifact-comments';
+import type { Canvas, CanvasEntry } from '../lib/canvas';
 import { runOfSession } from '../lib/compare-run';
 import type { ReviewOwner } from '../lib/composer-state';
 import { asUnsent, reviewHeading, reviewMessage, type CheckedComment, type MessageContext } from '../lib/review-comments';
@@ -27,6 +30,10 @@ export interface AddArtifactReview {
   /** Why nothing can be added now; undefined when it can. The same reasons as the diff's. */
   blockedReason: string | undefined;
   add: (checked: readonly CheckedArtifactComment[], artifact: Artifact, cwd: string) => void;
+  /** The same for comments on a canvas's artboards: a heading per artboard, in canvas order. */
+  addCanvas: (checked: readonly CheckedArtifactComment[], entry: CanvasEntry, canvas: Canvas, cwd: string) => void;
+  /** The same for comments on a design system: a heading, then the comments by what they are on. */
+  addDesignSystem?: (checked: readonly CheckedArtifactComment[], entry: DesignSystemEntry) => void;
 }
 
 type ArtifactCommentsChange = (prev: ArtifactComment[]) => ArtifactComment[];
@@ -52,6 +59,8 @@ export interface ReviewWiring {
   blocksSend: boolean;
   /** The composer holds another session's comments, so nothing of `sessionId`'s may join them. */
   isHeldFor: (sessionId: string) => boolean;
+  /** A canvas's Pick and Build: leaves an expanded canvas first, which hides the composer, then puts the text in. */
+  insertCanvasText: (text: string) => void;
   sendFrom: (sessionId: string, text: string) => void;
   /** Puts back the slot of a message a secret review held, so its comments still go with it. */
   rearm: (slot: ReviewSlot) => void;
@@ -145,6 +154,41 @@ export function useReviewWiring({
     message.addArtifact(session.id, ids, artifact.id);
   };
 
+  const addCanvas: AddArtifactReview['addCanvas'] = (checked, entry, canvas, cwd) => {
+    const composer = composerRef.current;
+    if (!session || !composer || blockedReason || checked.length === 0) return;
+    flushSync(() => collapseArtifact?.());
+    // The message may already end with this canvas's first artboard: its heading is not written again.
+    const first = canvas.sections
+      .flatMap((section) => section.artboards)
+      .find((board) => checked.some(({ comment }) => comment.canvas?.artboardId === board.id));
+    // Comments of removed artboards have no artboard to continue; their group always gets its heading.
+    const heading = first ? canvasHeading(entry, canvas, first, cwd) + CANVAS_QUOTE_RULE : '';
+    const isContinued = first ? !message.needsArtifactHeading(session.id, `${entry.key}/${first.id}`, heading) : false;
+    const { text, lastArtboardId } = canvasMessage(checked, entry, canvas, cwd, first && isContinued ? first.id : null);
+    composer.insertText(text);
+    const ids = checked.map(({ comment }) => comment.id);
+    changeArtifact(session.id, ids, unsent);
+    message.addArtifact(session.id, ids, `${entry.key}/${lastArtboardId ?? first?.id ?? ''}`);
+  };
+
+  const addDesignSystem: NonNullable<AddArtifactReview['addDesignSystem']> = (checked, entry) => {
+    const composer = composerRef.current;
+    if (!session || !composer || blockedReason || checked.length === 0) return;
+    flushSync(() => collapseArtifact?.());
+    const heading = designSystemHeading(entry) + DESIGN_SYSTEM_QUOTE_RULE;
+    const withHeading = message.needsArtifactHeading(session.id, entry.key, heading);
+    composer.insertText(designSystemMessage(checked, entry, withHeading));
+    const ids = checked.map(({ comment }) => comment.id);
+    changeArtifact(session.id, ids, unsent);
+    message.addArtifact(session.id, ids, entry.key);
+  };
+
+  const insertCanvasText = (text: string) => {
+    flushSync(() => collapseArtifact?.());
+    composerRef.current?.insertText(text);
+  };
+
   const owner = blocksSend && slot ? sessions.find((candidate) => candidate.id === slot.sessionId) : undefined;
   // A run's sessions share one title, so only the agent tells them apart: in the run, and once archived out of it.
   // A Pick's winner keeps its id, but it is a plain session again and the sidebar lists it by title.
@@ -164,7 +208,7 @@ export function useReviewWiring({
       },
     },
     addReview: { inMessage, blockedReason, add },
-    addArtifactReview: { inMessage: message.inMessageArtifact, blockedReason, add: addArtifact },
+    addArtifactReview: { inMessage: message.inMessageArtifact, blockedReason, add: addArtifact, addCanvas, addDesignSystem },
     forget: message.forget,
     slot,
     reviewOwner: blocksSend
@@ -172,6 +216,7 @@ export function useReviewWiring({
       : undefined,
     blocksSend,
     isHeldFor: message.isHeldFor,
+    insertCanvasText,
     sendFrom,
     rearm,
     onComposerText,

@@ -115,7 +115,8 @@ export default function TroubleshootingPage() {
 
       <H2 id="blocked">The app is blocked on first open</H2>
       <P>
-        The build is not signed yet. See <DocLink href="/docs/install#download">Download and open</DocLink>.
+        Zorvo is signed and notarized from 0.14.1, and macOS opens it without a warning. An older version is not
+        signed: download the latest, or see <DocLink href="/docs/install#download">Download and open</DocLink>.
       </P>
     </DocsShell>
   );

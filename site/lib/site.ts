@@ -2,10 +2,14 @@ import appPackage from "../../package.json";
 import { LINKS } from "./links";
 
 export const SITE_NAME = "Zorvo";
+/** Zorvo's account on X, named on the cards X draws for a shared link. */
+export const X_HANDLE = "@zorvolabs";
+/** The version the Download button fetches: the app's own package version. */
+export const APP_VERSION: string = appPackage.version;
 // The tab and search result name the app by what people search for; the tagline stays the h1.
 export const SITE_TITLE = "Zorvo: a Mac app for Claude Code, Codex and Qwen Code";
 export const SITE_DESCRIPTION =
-  "Free, open-source Mac app for Claude Code, Codex, Qwen Code and every ACP registry agent. Compare agents on one prompt and review their diffs. No API keys.";
+  "Free, open-source Mac app for Claude Code, Codex, Qwen Code and dozens more coding agents. Compare agents on one prompt and review their diffs. No API keys.";
 
 /** The card shown when a page is shared, drawn by app/og.png/route.tsx at build time. */
 export const OG_IMAGE = { url: "/og.png", type: "image/png", width: 1200, height: 630, alt: SITE_TITLE } as const;
@@ -49,6 +53,6 @@ export function softwareApplication(url: URL = siteUrl()) {
     isAccessibleForFree: true,
     license: "https://www.apache.org/licenses/LICENSE-2.0",
     offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-    publisher: { "@type": "Organization", name: SITE_NAME, url: url.href, sameAs: [LINKS.repository] },
+    publisher: { "@type": "Organization", name: SITE_NAME, url: url.href, sameAs: [LINKS.repository, LINKS.x, LINKS.discord] },
   };
 }

@@ -349,6 +349,33 @@ describe("TerminalSignInDialog", () => {
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
 
+  it.each([
+    [false, "I've signed in", "Finish in the terminal or the browser it opens. Press I've signed in when you are done."],
+    [true, "I'm done", "Pick with ↑ ↓ and Return in the terminal. Press I'm done when the setup is finished."],
+  ] as const)("offers Cancel and a done button while a login with onDone runs (setup: %s)", (isSetup, label, copy) => {
+    const onClose = vi.fn();
+    const onDone = vi.fn();
+    render(
+      <TerminalSignInDialog
+        state={{ terminalId: "signin-1", agentName: "Qwen Code", methodName: "Setup", phase: "running", isSetup }}
+        output={createPtyOutputStore()}
+        onClose={onClose}
+        onDone={onDone}
+        onInput={() => {}}
+        onResize={() => {}}
+      />,
+    );
+    expect(screen.getByText(copy)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: label }));
+    expect(onDone).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(2);
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+
   it("shows the error with Try again and Close when failed", () => {
     const { onTryAgain, onClose } = renderDialog("failed", "The sign-in ended with code 1");
     expect(screen.getByText("The sign-in ended with code 1")).toBeTruthy();

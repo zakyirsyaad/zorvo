@@ -41,7 +41,7 @@ pub const ACP_EVENT: &str = "acp-event";
 pub fn event_payload(event: &AcpEvent) -> Value {
     match event {
         AcpEvent::Update { session_id, update } => {
-            json!({ "sessionId": session_id, "kind": "update", "update": update })
+            json!({ "sessionId": session_id, "kind": "update", "update": without_images(update) })
         }
         AcpEvent::PermissionRequest {
             session_id,
@@ -77,6 +77,61 @@ pub fn event_payload(event: &AcpEvent) -> Value {
     }
 }
 
+/// Whether `value` is an image content block, bare or wrapped as ACP wraps a
+/// tool's content (`{ type: "content", content: { type: "image" } }`).
+fn is_image_block(value: &Value) -> bool {
+    let is_image = |block: &Value| block["type"] == "image" && block["data"].is_string();
+    is_image(value) || (value["type"] == "content" && is_image(&value["content"]))
+}
+
+fn drop_images(value: &mut Value) {
+    match value {
+        Value::Array(items) => {
+            items.retain(|item| !is_image_block(item));
+            items.iter_mut().for_each(drop_images);
+        }
+        Value::Object(fields) => fields.values_mut().for_each(drop_images),
+        _ => {}
+    }
+}
+
+/// A tool update without its images: the webview shows none (a screenshot an
+/// agent took of the user's apps stays out of the page and its transcript),
+/// and the text the tool returned stays. Other updates pass as they are.
+fn without_images(update: &Value) -> Value {
+    let is_tool_update = matches!(
+        update["sessionUpdate"].as_str(),
+        Some("tool_call" | "tool_call_update")
+    );
+    if !is_tool_update {
+        return update.clone();
+    }
+    let mut stripped = update.clone();
+    for key in ["content", "rawOutput"] {
+        if let Some(part) = stripped.get_mut(key) {
+            // Some agents send a tool's raw output as JSON inside a string.
+            let unpacked = part
+                .as_str()
+                .filter(|text| text.contains("\"image\""))
+                .and_then(|text| serde_json::from_str::<Value>(text).ok())
+                .filter(|parsed| parsed.is_object() || parsed.is_array());
+            if let Some(mut parsed) = unpacked {
+                if is_image_block(&parsed) {
+                    parsed = Value::Null;
+                } else {
+                    drop_images(&mut parsed);
+                }
+                *part = Value::String(parsed.to_string());
+            } else if is_image_block(part) {
+                *part = Value::Null;
+            } else {
+                drop_images(part);
+            }
+        }
+    }
+    stripped
+}
+
 /// Resolves how to launch an installed ACP agent for `profile_id` (a legacy
 /// id is mapped first), at the version in `versions` when the catalog has it.
 fn launch_for(profile_id: &str, versions: &BTreeMap<String, String>) -> Result<AcpLaunch, String> {
@@ -88,9 +143,7 @@ fn resolved_profile(
     profile_id: &str,
     versions: &BTreeMap<String, String>,
 ) -> Result<AgentProfile, String> {
-    with_system_tools(|catalog, tools| {
-        profile_to_launch(catalog, tools, profile_id, versions, registry::unix_now())
-    })
+    with_system_tools(|catalog, tools| profile_to_launch(catalog, tools, profile_id, versions))
 }
 
 /// How to launch `profile` with the user's environment and the registry's variables.
@@ -110,17 +163,16 @@ fn launch_of(profile: AgentProfile) -> Result<AcpLaunch, String> {
 }
 
 /// The profile that launches `profile_id` (a legacy id is mapped first) from
-/// `catalog` and `tools` at time `now`.
+/// `catalog` and `tools`.
 fn profile_to_launch(
     catalog: &registry::Catalog,
     tools: &SystemTools,
     profile_id: &str,
     versions: &BTreeMap<String, String>,
-    now: u64,
 ) -> Result<AgentProfile, String> {
     let id = canonical_agent_id(profile_id);
-    agent_profile_from(catalog, tools, id, versions, now).ok_or_else(|| {
-        match catalog.unsupported_agent_name(id, versions, now) {
+    agent_profile_from(catalog, tools, id, versions).ok_or_else(|| {
+        match catalog.unsupported_agent_name(id, versions) {
             Some(name) => format!("{name} is not available for this Mac"),
             None => format!("Unknown agent profile '{profile_id}'"),
         }
@@ -324,6 +376,7 @@ pub fn acp_start_session(
     cwd: String,
     profile_id: String,
     agent_tools: bool,
+    worker_tools: Option<bool>,
     private_model_id: Option<String>,
     private_own_key: Option<bool>,
     private_session_cap: Option<u64>,
@@ -340,7 +393,14 @@ pub fn acp_start_session(
     )?;
     // A private session gets no agent tools: its launch already carries the credits server.
     let wants_tools = agent_tools && private_model_id.is_none();
-    let session_tools = tools_for_session(&tools, &store, &session_id, &profile_id, wants_tools)?;
+    let session_tools = tools_for_session(
+        &tools,
+        &store,
+        &session_id,
+        &profile_id,
+        wants_tools,
+        worker_tools.unwrap_or(false),
+    )?;
     let launch = with_tools_env(launch, &session_tools.env);
     let opened = manager.start(&session_id, &cwd, &launch, session_tools.servers);
     note_if_private(
@@ -420,12 +480,20 @@ pub fn acp_reopen_session(
     profile_id: String,
     acp_session_id: String,
     agent_tools: bool,
+    worker_tools: Option<bool>,
     private_model_id: Option<String>,
     private_own_key: Option<bool>,
     private_session_cap: Option<u64>,
 ) -> Result<StartedSession, String> {
     let wants_tools = agent_tools && private_model_id.is_none();
-    let session_tools = tools_for_session(&tools, &store, &session_id, &profile_id, wants_tools)?;
+    let session_tools = tools_for_session(
+        &tools,
+        &store,
+        &session_id,
+        &profile_id,
+        wants_tools,
+        worker_tools.unwrap_or(false),
+    )?;
     let opened = open_session(
         &private,
         &acp_session_id,
@@ -480,7 +548,8 @@ pub fn acp_import_session(
     acp_session_id: String,
     agent_tools: bool,
 ) -> Result<StartedSession, String> {
-    let session_tools = tools_for_session(&tools, &store, &session_id, &profile_id, agent_tools)?;
+    let session_tools =
+        tools_for_session(&tools, &store, &session_id, &profile_id, agent_tools, false)?;
     let opened = open_session(
         &private,
         &acp_session_id,
@@ -538,6 +607,7 @@ fn fork_in_workspace(
     // A fork lives in its source's process, so it cannot be given an
     // environment: it gets the MCP entry, which a command-path agent ignores.
     let session_tools = servers_for_session(tools, store, session_id, agent_tools)?;
+    tools.copy_profile(source_session_id, session_id);
     let opened = manager.fork(source_session_id, session_id, cwd, session_tools.servers);
     with_tools_path(
         tools,
@@ -820,6 +890,16 @@ pub fn acp_context_usage(
     session_id: String,
 ) -> Result<crate::acp::context_usage::ContextBreakdown, String> {
     manager.context_usage(&session_id)
+}
+
+/// The agents Qwen Code runs in the background for the session. Only Qwen
+/// Code answers; the webview sends nothing but the session id.
+#[tauri::command(async)]
+pub fn acp_agent_tasks(
+    manager: State<'_, AcpManager>,
+    session_id: String,
+) -> Result<crate::acp::agent_tasks::AgentTasks, String> {
+    manager.agent_tasks(&session_id)
 }
 
 /// The newest API error Qwen Code logged for the session since `since` (Unix

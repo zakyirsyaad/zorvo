@@ -5,13 +5,13 @@
 
   --color-bg: #0a0a0b;
   --color-surface-1: #111113;
-  --color-surface-2: #18181b;
+  --color-surface-2: #111113;
   --color-surface-3: #1f1f23;
   --color-surface-hover: #27272a;
   /* The window behind the sidebar and the sheets; also wells (code, inputs) on a sheet. */
   --color-ground: #0a0a0b;
   /* The raised panels: chat, inspector. In light mode these two are the reverse of bg and surface-1. */
-  --color-sheet: #111113;
+  --color-sheet: #0c0c0d;
   /* A translucent fill: chips, agent tiles, segmented tracks. */
   --color-chip: rgba(255, 255, 255, 0.06);
   --color-overlay: rgba(0, 0, 0, 0.7);
@@ -87,6 +87,13 @@
   --animate-menu-in: menu-in var(--transition-duration-menu) var(--ease-soft);
   --animate-panel-in: fade-in var(--transition-duration-panel) var(--ease-soft);
   --animate-appear: fade-in var(--transition-duration-appear) ease-out;
+  /* The one loop besides a spinner: the Zorvo symbol while an agent works. Its chevrons light in turn
+     (the second 200ms after the first) and its cursor blinks; Reduce motion leaves it still and whole. */
+  --animate-working-chevron: working-light 1.4s ease-in-out infinite;
+  /* The second chevron: the same light 200ms later. Its own token, since the `animation` shorthand of an
+     `animate-*` class would reset a separate `animation-delay` to 0; `backwards` keeps it dim while it waits. */
+  --animate-working-chevron-late: working-light 1.4s ease-in-out 200ms infinite backwards;
+  --animate-working-cursor: working-blink 1s steps(1, end) infinite;
 
   @keyframes menu-in {
     from {
@@ -96,6 +103,20 @@
   }
   @keyframes fade-in {
     from {
+      opacity: 0;
+    }
+  }
+  @keyframes working-light {
+    0%,
+    100% {
+      opacity: 0.3;
+    }
+    40% {
+      opacity: 1;
+    }
+  }
+  @keyframes working-blink {
+    50% {
       opacity: 0;
     }
   }

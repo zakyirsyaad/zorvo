@@ -1,7 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { AcpEngine, FirstMessage } from './session-engine/useAcpEngine';
-import { buildForkHandoff, buildForkPrompt, FORK_FIRST_MESSAGE } from '../lib/fork-handoff';
+import { buildForkHandoff, buildForkPrompt, buildRewindContext, FORK_FIRST_MESSAGE } from '../lib/fork-handoff';
 import { createId } from '../lib/ids';
+import { copyForkVisuals } from '../lib/visual-fork';
 import type { SessionSpec, StartSessionOptions } from '../lib/session-start';
 import type { AcpChoices } from '../lib/acp-draft';
 import type { AgentProfile, ChatMessage, Session } from '../types';
@@ -29,14 +30,18 @@ export interface ForkOptions {
   uncappedPrivate?: boolean;
   /** A fresh private process paid by Zorvo credits, even from an own-key session. */
   creditsPrivate?: boolean;
+  /** What the user typed for the new agent: shown as its first message in place of the standard continue line. */
+  firstMessage?: { text: string; attachments?: readonly string[] };
 }
 
 /**
  * Forks the open session at a message. From the latest message, an agent
  * that supports it forks its own live session. Otherwise the conversation is
  * written to a handoff file and the new agent is asked, in one line, to read it.
+ * Resolves whether the new session was started (a refusal after that, such as a sign-in, is the new
+ * session's to handle), so a caller can give back a message that did not go out.
  */
-export function useSessionFork(deps: SessionForkDeps): (messageId: string, options?: ForkOptions) => Promise<void> {
+export function useSessionFork(deps: SessionForkDeps): (messageId: string, options?: ForkOptions) => Promise<boolean> {
   const { source, agents, transcripts, acp, recordSession, startSession, onNotice } = deps;
 
   return async (messageId: string, options?: ForkOptions) => {
@@ -49,11 +54,11 @@ export function useSessionFork(deps: SessionForkDeps): (messageId: string, optio
           ? `${agent?.name ?? 'That agent'} is not installed, so the session cannot continue there.`
           : 'The agent for this session is not installed, so it cannot be forked.',
       );
-      return;
+      return false;
     }
     const messages = transcripts[source.id] ?? [];
     const index = messages.findIndex((m) => m.id === messageId);
-    if (index < 0) return;
+    if (index < 0) return false;
 
     const isLatest = index === messages.length - 1;
     const spec: SessionSpec = {
@@ -80,6 +85,8 @@ export function useSessionFork(deps: SessionForkDeps): (messageId: string, optio
           }
         : {}),
     };
+    // The fork starts with its source's messages, and visuals are kept per session.
+    const visualPaths = spec.id !== undefined ? await copyForkVisuals(source.id, spec.id, spec.initialMessages ?? []) : {};
     // A native fork needs the source agent alive; after it exited, fall back to a handoff. A new
     // uncapped or credits-paid session must be a fresh process: a native fork would keep the
     // source's capped token, or its own-key token when the source paid with the user's key.
@@ -92,7 +99,7 @@ export function useSessionFork(deps: SessionForkDeps): (messageId: string, optio
       acp.canFork(source.id)
     ) {
       void acp.fork(source.id, recordSession(spec));
-      return;
+      return true;
     }
 
     try {
@@ -102,14 +109,25 @@ export function useSessionFork(deps: SessionForkDeps): (messageId: string, optio
         agentName: sourceAgent?.name ?? source.profileId,
         cwd: source.cwd,
         createdAt: Date.now(),
+        visualPaths,
       });
       const handoffPath = await invoke<string>('write_fork_handoff', { handoffId: spec.id, content });
       // The path stays hidden: the chat shows only the short continue message.
-      const first = { text: FORK_FIRST_MESSAGE, context: buildForkPrompt(handoffPath) };
+      const continuesWithAnother = agent.id !== source.profileId;
+      const first: FirstMessage = {
+        text: options?.firstMessage?.text ?? FORK_FIRST_MESSAGE,
+        ...(options?.firstMessage?.attachments?.length ? { attachments: options.firstMessage.attachments } : {}),
+        // A message the user typed is to be answered; the standard continue line only asks the agent to get ready.
+        context: options?.firstMessage ? buildRewindContext(handoffPath) : buildForkPrompt(handoffPath),
+        // Marks where another agent took the conversation over, for the line above this message.
+        ...(continuesWithAnother ? { marks: { continuedFrom: { sessionId: source.id, agentId: source.profileId, toAgentId: agent.id } } } : {}),
+      };
       if (options?.choices) startSession(spec, first, { choices: options.choices });
       else startSession(spec, first);
+      return true;
     } catch (error) {
       onNotice(`Could not fork the session: ${String(error)}`);
+      return false;
     }
   };
 }

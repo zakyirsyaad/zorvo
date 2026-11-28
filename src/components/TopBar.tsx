@@ -1,18 +1,4 @@
-import {
-  Archive,
-  ChevronLeft,
-  ChevronRight,
-  Columns3,
-  ExternalLink,
-  Folder,
-  GitBranch,
-  MoreHorizontal,
-  PanelLeft,
-  PanelRight,
-  Pencil,
-  ShieldCheck,
-  Split,
-  Unlink, ShieldOff } from "lucide-react";
+import { Archive, ChevronLeft, ChevronRight, CircleStop, Columns3, ExternalLink, Folder, GitBranch, MoreHorizontal, PanelLeft, PanelRight, Pencil, ShieldCheck, ShieldOff, Split, Unlink } from "lucide-react";
 import { Fragment, useId, useState, type Ref } from "react";
 import { Chip } from "./ui/Chip";
 import { IconButton } from "./ui/IconButton";
@@ -82,6 +68,7 @@ function MoreOptionsMenu({
   delegationEnds,
   onStopAllowingDelegation,
   onStopAllowingBrowser,
+  onStopComputerUse,
   triggerRef,
 }: {
   onPopout?: () => void;
@@ -98,6 +85,8 @@ function MoreOptionsMenu({
   /** Takes back the session's leave to give other agents tasks without asking; shown only while it has it. */
   onStopAllowingDelegation?: () => void;
   onStopAllowingBrowser?: () => void;
+  /** Ends what the session's agent may use on this Mac; absent while it holds no grant. */
+  onStopComputerUse?: () => void;
   /** The ⋯ button, which takes focus back when the dialog its Delegate item opened closes. */
   triggerRef?: Ref<HTMLButtonElement>;
 }) {
@@ -121,6 +110,9 @@ function MoreOptionsMenu({
       : []),
     ...(onStopAllowingBrowser !== undefined
       ? [{ label: "Stop allowing browser access", run: onStopAllowingBrowser, Icon: ShieldOff }]
+      : []),
+    ...(onStopComputerUse !== undefined
+      ? [{ label: "Stop computer use", run: onStopComputerUse, Icon: CircleStop }]
       : []),
     { label: "Archive", run: onArchive, Icon: Archive },
   ].filter(
@@ -228,6 +220,8 @@ export interface TopBarProps {
   /** Takes back the session's leave to give other agents tasks without asking; shown only while it has it. */
   onStopAllowingDelegation?: () => void;
   onStopAllowingBrowser?: () => void;
+  /** Ends what the session's agent may use on this Mac; absent while it holds no grant. */
+  onStopComputerUse?: () => void;
   /** The ⋯ button, which takes focus back when a dialog its item opened closes. */
   moreButtonRef?: Ref<HTMLButtonElement>;
   /** Opens or closes the inspector (changes, activity, files, terminal); the button is hidden when absent. */
@@ -274,6 +268,7 @@ export function TopBar({
   delegationEnds,
   onStopAllowingDelegation,
   onStopAllowingBrowser,
+  onStopComputerUse,
   moreButtonRef,
   onToggleInspector,
   isInspectorOpen = false,
@@ -416,6 +411,7 @@ export function TopBar({
           delegationEnds={delegationEnds}
           onStopAllowingDelegation={onStopAllowingDelegation}
           onStopAllowingBrowser={onStopAllowingBrowser}
+          onStopComputerUse={onStopComputerUse}
           triggerRef={moreButtonRef}
         />
       </div>

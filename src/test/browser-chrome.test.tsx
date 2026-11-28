@@ -27,6 +27,20 @@ function Toolbar({ options = {} }: { options?: Partial<ComponentProps<typeof Bro
 }
 
 describe("browser page chrome", () => {
+  it("expands the browser over the chat and shrinks it back", () => {
+    const onToggleExpanded = vi.fn();
+    const { rerender } = render(<BrowserToolbar {...toolbarProps({ onToggleExpanded })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Expand browser" }));
+    expect(onToggleExpanded).toHaveBeenCalledTimes(1);
+    rerender(<BrowserToolbar {...toolbarProps({ onToggleExpanded, isExpanded: true })} />);
+    expect(screen.getByRole("button", { name: "Shrink browser" })).toBeInTheDocument();
+  });
+
+  it("offers no Expand where nothing can expand it", () => {
+    render(<BrowserToolbar {...toolbarProps()} />);
+    expect(screen.queryByRole("button", { name: "Expand browser" })).toBeNull();
+  });
+
   it("puts page actions in the six-item menu and closes it after an action", () => {
     const onZoom = vi.fn();
     const onCopyLink = vi.fn();

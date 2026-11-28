@@ -1,9 +1,13 @@
+import type { DesignSystemEntry } from './design-system-read';
+import { isMotionKey, isVideoKey } from './motion';
 import type { Artifact, ArtifactCard, ArtifactVersion, Session } from '../types';
+import type { CanvasEntry } from './canvas';
 import { isArchived } from './session-helpers';
 import guide from './artifact-guide.md?raw';
+import craft from './design-craft.md?raw';
 
-/** What `artifact_guide` answers: how to make a page that reads well in Zorvo. */
-export const ARTIFACT_GUIDE: string = guide;
+/** What `artifact_guide` answers: how to make a page that reads well in Zorvo, then how to design it well. */
+export const ARTIFACT_GUIDE: string = guide + craft;
 
 /**
  * The sentences the backend refuses a page with. They are written for the
@@ -26,13 +30,17 @@ export interface ShownArtifact {
   isNewVersion: boolean;
 }
 
-/** The artifact the viewer shows; a `version` of null follows the newest. */
-export interface ViewedArtifact {
-  artifactId: string;
-  version: number | null;
-}
+/** The artifact the viewer shows (a `version` of null follows the newest), or a canvas. */
+export type ViewedArtifact =
+  | { artifactId: string; version: number | null; canvasKey?: undefined; motionKey?: undefined; videoKey?: undefined; designSystemKey?: undefined }
+  | { canvasKey: string; artifactId?: undefined; version?: undefined; motionKey?: undefined; videoKey?: undefined; designSystemKey?: undefined }
+  | { motionKey: string; artifactId?: undefined; version?: undefined; canvasKey?: undefined; videoKey?: undefined; designSystemKey?: undefined }
+  | { videoKey: string; artifactId?: undefined; version?: undefined; canvasKey?: undefined; motionKey?: undefined; designSystemKey?: undefined }
+  | { designSystemKey: string; artifactId?: undefined; version?: undefined; canvasKey?: undefined; motionKey?: undefined; videoKey?: undefined };
 
 const ARTIFACT_ID = /^a-[0-9a-f]{16}$/;
+const CANVAS_KEY = /^c-[0-9a-f]{16}$/;
+const DESIGN_SYSTEM_KEY = /^d-[0-9a-f]{16}$/;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -83,6 +91,26 @@ export function parseShown(value: unknown): ShownArtifact | null {
 /** A card saved in a transcript, or null when it does not fit. */
 export function parseArtifactCard(value: unknown): ArtifactCard | null {
   if (!isObject(value)) return null;
+  if (value.kind === 'motion') {
+    const { motionKey, title, duration, formats } = value;
+    if (!isMotionKey(motionKey) || typeof title !== 'string' || typeof duration !== 'number' || !Number.isFinite(duration) || !isCount(formats)) return null;
+    return { kind: 'motion', motionKey, title, duration, formats };
+  }
+  if (value.kind === 'video') {
+    const { videoKey, title } = value;
+    if (!isVideoKey(videoKey) || typeof title !== 'string') return null;
+    return { kind: 'video', videoKey, title };
+  }
+  if (value.kind === 'design-system') {
+    const { designSystemKey, title, tokens, components } = value;
+    if (typeof designSystemKey !== 'string' || !DESIGN_SYSTEM_KEY.test(designSystemKey) || typeof title !== 'string' || !isCount(tokens) || !isCount(components)) return null;
+    return { kind: 'design-system', designSystemKey, title, tokens, components };
+  }
+  if (value.kind === 'canvas') {
+    const { canvasKey, title, artboards } = value;
+    if (typeof canvasKey !== 'string' || !CANVAS_KEY.test(canvasKey) || typeof title !== 'string' || !isCount(artboards)) return null;
+    return { kind: 'canvas', canvasKey, title, artboards };
+  }
   const { artifactId, title, version } = value;
   if (!isArtifactId(artifactId) || typeof title !== 'string' || !isCount(version) || version === 0) return null;
   return { artifactId, title, version };
@@ -105,11 +133,17 @@ export function versionLabel(version: number, artifact: Artifact): string {
 export function shownArtifactOf(
   artifacts: readonly Artifact[],
   viewed: ViewedArtifact | null,
-  /** Other rows the Output tab lists (the files the agent made): with any, a single page waits in the list. */
+  /** Other rows the Artifacts tab lists (the files the agent made): with any, a single page waits in the list. */
   otherRows = 0,
 ): Artifact | undefined {
   if (viewed) return artifacts.find((artifact) => artifact.id === viewed.artifactId);
   return artifacts.length === 1 && otherRows === 0 ? artifacts[0] : undefined;
+}
+
+/** The canvas the viewer shows: the one viewed, else the only row when it is a canvas. Kept equal to `ArtifactsPanel`'s choice. */
+export function shownCanvasOf(canvases: readonly CanvasEntry[], viewed: ViewedArtifact | null, otherRows: number): CanvasEntry | undefined {
+  if (viewed?.canvasKey) return canvases.find((canvas) => canvas.key === viewed.canvasKey);
+  return canvases.length === 1 && otherRows === 0 ? canvases[0] : undefined;
 }
 
 export function hasVersion(artifact: Artifact | undefined, version: number): boolean {
@@ -137,46 +171,82 @@ export function openingFor(input: {
   return followsNewest ? 'replace' : 'none';
 }
 
-export function cardState(card: ArtifactCard, artifacts: readonly Artifact[]): 'open' | 'removed' {
-  return artifacts.some((artifact) => artifact.id === card.artifactId) ? 'open' : 'removed';
+/**
+ * What the window does when an agent shows a canvas: one of the session on screen opens in the tab,
+ * unless it is the one shown already (its viewer reads it again by itself).
+ */
+export function canvasOpeningFor(input: { isOnScreen: boolean; key: string; viewed: ViewedArtifact | null }): 'show-tab' | 'none' {
+  if (!input.isOnScreen || input.viewed?.canvasKey === input.key) return 'none';
+  return 'show-tab';
 }
 
-/** One line of the gallery: an artifact with the session it belongs to. */
-export interface GalleryRow {
+/** The id a card names: an artifact's id or a canvas's key (they never look alike). */
+export function cardIdOf(card: ArtifactCard): string {
+  switch (card.kind) {
+    case 'canvas':
+      return card.canvasKey;
+    case 'motion':
+      return card.motionKey;
+    case 'video':
+      return card.videoKey;
+    case 'design-system':
+      return card.designSystemKey;
+    default:
+      return card.artifactId;
+  }
+}
+
+export function cardState(card: ArtifactCard, artifacts: readonly Artifact[]): 'open' | 'removed' {
+  return artifacts.some((artifact) => artifact.id === cardIdOf(card)) ? 'open' : 'removed';
+}
+
+interface GalleryRowBase {
   sessionId: string;
   sessionName: string;
   /** The session's agent, for its logo. */
   profileId: string;
   agentName: string;
   isArchived: boolean;
-  artifact: Artifact;
-  /** When its newest version was shown. */
+  /** When its newest version (or the canvas) was shown. */
   at: number;
 }
 
-/** Every listed session's artifacts, the most recently changed first. */
+/** One line of the gallery: an artifact or a canvas, with the session it belongs to. */
+export type GalleryRow = GalleryRowBase &
+  ({ kind?: 'page'; artifact: Artifact } | { kind: 'canvas'; canvas: CanvasEntry } | { kind: 'design-system'; system: DesignSystemEntry });
+
+export function rowTitle(row: GalleryRow): string {
+  if (row.kind === 'design-system') return row.system.title;
+  return row.kind === 'canvas' ? row.canvas.title : row.artifact.title;
+}
+
+/** Every listed session's artifacts and canvases, the most recently changed first. */
 export function galleryRows(
   sessions: readonly Session[],
   bySession: ReadonlyMap<string, readonly Artifact[]>,
   agentNameOf: (profileId: string) => string,
+  canvasesBySession: ReadonlyMap<string, readonly CanvasEntry[]> = new Map(),
+  designSystemsBySession: ReadonlyMap<string, readonly DesignSystemEntry[]> = new Map(),
 ): GalleryRow[] {
   return sessions
-    .flatMap((session) =>
-      (bySession.get(session.id) ?? []).map((artifact) => ({
+    .flatMap((session): GalleryRow[] => {
+      const base = {
         sessionId: session.id,
         sessionName: session.name,
         profileId: session.profileId,
         agentName: agentNameOf(session.profileId),
         isArchived: isArchived(session),
-        artifact,
-        at: newestAt(artifact),
-      })),
-    )
+      };
+      const pages = (bySession.get(session.id) ?? []).map((artifact) => ({ ...base, artifact, at: newestAt(artifact) }));
+      const canvases = (canvasesBySession.get(session.id) ?? []).map((canvas) => ({ ...base, kind: 'canvas' as const, canvas, at: canvas.shownAt }));
+      const systems = (designSystemsBySession.get(session.id) ?? []).map((system) => ({ ...base, kind: 'design-system' as const, system, at: system.shownAt }));
+      return [...pages, ...canvases, ...systems];
+    })
     .sort((a, b) => b.at - a.at);
 }
 
 export function filterGallery(rows: readonly GalleryRow[], query: string): GalleryRow[] {
   const needle = query.trim().toLowerCase();
   if (needle === '') return [...rows];
-  return rows.filter((row) => row.artifact.title.toLowerCase().includes(needle));
+  return rows.filter((row) => rowTitle(row).toLowerCase().includes(needle));
 }

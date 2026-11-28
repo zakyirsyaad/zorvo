@@ -348,9 +348,6 @@ fn a_launch_without_the_login_path_falls_back_to_the_process_path() {
     assert_eq!(path_of(&launch), Some("/zorvo/node/bin:/usr/bin:/bin"));
 }
 
-/// Later than every version in the bundle, so each one is old enough.
-const FIXED_NOW: u64 = 4_000_000_000;
-
 #[test]
 fn a_legacy_id_launches_its_registry_agent() {
     let scratch = Scratch::new("legacy");
@@ -373,7 +370,7 @@ fn a_legacy_id_launches_its_registry_agent() {
             npm_globals: &npm,
             installed: &no_install,
         };
-        profile_to_launch(&catalog, &tools, "claude-code", &BTreeMap::new(), FIXED_NOW)
+        profile_to_launch(&catalog, &tools, "claude-code", &BTreeMap::new())
             .expect("claude-code is known")
             .version
             .expect("a registry agent has a version")
@@ -394,7 +391,7 @@ fn a_legacy_id_launches_its_registry_agent() {
         installed: &installed,
     };
 
-    let profile = profile_to_launch(&catalog, &tools, "claude-code", &BTreeMap::new(), FIXED_NOW)
+    let profile = profile_to_launch(&catalog, &tools, "claude-code", &BTreeMap::new())
         .expect("claude-code is known");
     assert_eq!(profile.id, "claude-acp");
     let launch = launch_from(profile, BTreeMap::new, None, |id, version| {
@@ -421,14 +418,7 @@ fn an_unknown_profile_id_is_named_in_the_error() {
         installed: &installed,
     };
 
-    let err = profile_to_launch(
-        &catalog,
-        &tools,
-        "no-such-agent",
-        &BTreeMap::new(),
-        FIXED_NOW,
-    )
-    .unwrap_err();
+    let err = profile_to_launch(&catalog, &tools, "no-such-agent", &BTreeMap::new()).unwrap_err();
 
     assert!(
         err.contains("Unknown agent profile 'no-such-agent'"),
@@ -470,8 +460,7 @@ fn an_agent_not_built_for_this_mac_is_refused_by_name() {
         installed: &installed,
     };
 
-    let err =
-        profile_to_launch(&catalog, &tools, "linuxy", &BTreeMap::new(), FIXED_NOW).unwrap_err();
+    let err = profile_to_launch(&catalog, &tools, "linuxy", &BTreeMap::new()).unwrap_err();
 
     assert_eq!(err, "Linuxy is not available for this Mac");
 }
@@ -766,4 +755,67 @@ fn a_private_session_is_checked_against_the_workspaces_like_any_other() {
         );
     }
     assert!(harness.api.calls().is_empty());
+}
+
+#[test]
+fn a_tool_update_reaches_the_webview_without_its_images() {
+    let payload = event_payload(&AcpEvent::Update {
+        session_id: "s-1".into(),
+        update: json!({
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": "t-1",
+            "content": [
+                { "type": "content", "content": { "type": "text", "text": "AXButton" } },
+                { "type": "content", "content": { "type": "image", "data": "AAAA", "mimeType": "image/jpeg" } }
+            ],
+            "rawOutput": { "content": [
+                { "type": "text", "text": "AXButton" },
+                { "type": "image", "data": "AAAA", "mimeType": "image/jpeg" }
+            ] }
+        }),
+    });
+
+    let update = &payload["update"];
+    assert_eq!(update["toolCallId"], "t-1");
+    assert_eq!(update["content"].as_array().unwrap().len(), 1);
+    assert_eq!(update["content"][0]["content"]["text"], "AXButton");
+    assert_eq!(update["rawOutput"]["content"].as_array().unwrap().len(), 1);
+    assert!(!payload.to_string().contains("AAAA"));
+}
+
+#[test]
+fn a_raw_output_that_is_json_in_a_string_loses_its_images_too() {
+    let raw = json!({ "content": [
+        { "type": "text", "text": "AXButton" },
+        { "type": "image", "data": "AAAA", "mimeType": "image/jpeg" }
+    ] })
+    .to_string();
+    let payload = event_payload(&AcpEvent::Update {
+        session_id: "s-1".into(),
+        update: json!({ "sessionUpdate": "tool_call_update", "rawOutput": raw }),
+    });
+
+    let kept = payload["update"]["rawOutput"].as_str().unwrap();
+    assert!(kept.contains("AXButton"));
+    assert!(!kept.contains("AAAA"));
+
+    // Plain text that only mentions the word stays as it is.
+    let plain = event_payload(&AcpEvent::Update {
+        session_id: "s-1".into(),
+        update: json!({ "sessionUpdate": "tool_call_update", "rawOutput": "an \"image\" of it" }),
+    });
+    assert_eq!(plain["update"]["rawOutput"], "an \"image\" of it");
+}
+
+#[test]
+fn an_update_that_is_not_a_tools_keeps_its_images() {
+    let update = json!({
+        "sessionUpdate": "user_message_chunk",
+        "content": { "type": "image", "data": "AAAA", "mimeType": "image/png" }
+    });
+    let payload = event_payload(&AcpEvent::Update {
+        session_id: "s-1".into(),
+        update: update.clone(),
+    });
+    assert_eq!(payload["update"], update);
 }

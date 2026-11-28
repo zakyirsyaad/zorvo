@@ -1,3 +1,5 @@
+import { isVisualId, isVisualKind } from './visuals';
+import { parseNextStep } from './next-step';
 import { invoke } from '@tauri-apps/api/core';
 import {
   TRANSPORT_ACP,
@@ -5,6 +7,9 @@ import {
   type ChatMessagePart,
   type ToolExecution,
   type DelegationLink,
+  type WorkerLastTurn,
+  type WorkerOutcome,
+  type WorkerTurnEnd,
   type OpenedByLink,
   type DiffRow,
   type MessageVerification,
@@ -14,7 +19,9 @@ import {
   type ToolDetail,
 } from '../types';
 import { markElicitationsUnanswered } from './acp-elicitation';
+import { firstChars } from './session-helpers';
 import { settlePermissionCards } from './acp-events';
+import { withoutSettledIcons } from './computer-use-card';
 import { diffDetail } from './diff-rows';
 import { normalizeAppearance } from './appearance';
 import type { AgentOptions } from './acp-draft';
@@ -22,6 +29,7 @@ import { validArtifactComments } from './artifact-comments';
 import { validReviewComments } from './review-comments';
 import { validAgentWork } from './agent-work';
 import { parseArtifactCard } from './artifacts';
+import { WORKER_STATES, type WorkerState } from './workers';
 import { toCommands, toConfigOptions, toModels, toModes } from '../hooks/useAcpSessions';
 
 export const STATE_VERSION = 2;
@@ -108,6 +116,49 @@ function isOpenedByLink(value: unknown): value is OpenedByLink {
   return isObject(value) && typeof value.sessionId === 'string' && value.sessionId !== '' && Number.isFinite(value.at);
 }
 
+const WORKER_HANDLE = /^worker-[1-9][0-9]*$/;
+const MAX_WORKER_SUMMARY = 2000;
+const MAX_WORKER_FILES = 50;
+const MAX_WORKER_REASON = 300;
+const TURN_ENDS: readonly string[] = ['finished', 'failed', 'cancelled', 'exited'];
+
+function validOutcome(value: unknown): WorkerOutcome | undefined {
+  if (!isObject(value) || (value.result !== 'succeeded' && value.result !== 'failed') || typeof value.at !== 'number' || !Number.isFinite(value.at)) {
+    return undefined;
+  }
+  return {
+    result: value.result,
+    at: value.at,
+    ...(typeof value.summary === 'string' ? { summary: firstChars(value.summary, MAX_WORKER_SUMMARY) } : {}),
+    ...(Array.isArray(value.files) ? { files: value.files.filter((file): file is string => typeof file === 'string').slice(0, MAX_WORKER_FILES) } : {}),
+  };
+}
+
+function validLastTurn(value: unknown): WorkerLastTurn | undefined {
+  if (!isObject(value) || typeof value.endedAt !== 'number' || !Number.isFinite(value.endedAt) || typeof value.how !== 'string' || !TURN_ENDS.includes(value.how)) {
+    return undefined;
+  }
+  return {
+    endedAt: value.endedAt,
+    how: value.how as WorkerTurnEnd,
+    ...(typeof value.reason === 'string' ? { reason: firstChars(value.reason, MAX_WORKER_REASON) } : {}),
+  };
+}
+
+/** The link with each worker field kept only when it is well formed. */
+function withValidWorkerFields(link: DelegationLink): DelegationLink {
+  const { handle, outcome, lastTurn, reportedAt, ...rest } = link;
+  const validOutcomeValue = validOutcome(outcome);
+  const validLastTurnValue = validLastTurn(lastTurn);
+  return {
+    ...rest,
+    ...(typeof handle === 'string' && WORKER_HANDLE.test(handle) ? { handle } : {}),
+    ...(validOutcomeValue ? { outcome: validOutcomeValue } : {}),
+    ...(validLastTurnValue ? { lastTurn: validLastTurnValue } : {}),
+    ...(typeof reportedAt === 'number' && Number.isFinite(reportedAt) ? { reportedAt } : {}),
+  };
+}
+
 /** A link to the session that delegated a task: both texts non-empty, its times numeric. */
 function isDelegationLink(value: unknown): value is DelegationLink {
   return (
@@ -145,7 +196,7 @@ function withValidFields(session: Session): Session {
     ...(typeof historyElsewhere === 'boolean' ? { historyElsewhere } : {}),
     ...(typeof titleSource === 'string' && titleSource !== '' ? { titleSource } : {}),
     ...(compareRunId == null || typeof compareRunId === 'string' ? { compareRunId } : {}),
-    ...(delegatedFrom === null || isDelegationLink(delegatedFrom) ? { delegatedFrom } : {}),
+    ...(delegatedFrom === null ? { delegatedFrom } : isDelegationLink(delegatedFrom) ? { delegatedFrom: withValidWorkerFields(delegatedFrom) } : {}),
     ...(isOpenedByLink(openedBy) ? { openedBy: withValidHandle(openedBy) } : {}),
     ...(comments.length > 0 ? { reviewComments: comments } : {}),
     ...(pageComments.length > 0 ? { artifactComments: pageComments } : {}),
@@ -322,6 +373,7 @@ export function saveAppState(state: PersistedState): Promise<void> {
 function isMessagePart(value: unknown): value is ChatMessagePart {
   if (!isObject(value)) return false;
   if (value.kind === 'text') return typeof value.text === 'string';
+  if (value.kind === 'visual') return isVisualId(value.id) && typeof value.title === 'string' && isVisualKind(value.visualKind);
   return (
     value.kind === 'tools' &&
     Array.isArray(value.toolIds) &&
@@ -379,16 +431,30 @@ function withValidVerification(message: ChatMessage): ChatMessage {
     : message;
 }
 
-/** A report or task mark keeps a non-empty agent name and, when it is a string, the agent's id. */
+/** A report or task mark keeps a non-empty agent name and, when they are strings, the agent's id and a report's worker handle. */
 function withValidAgentMark(message: ChatMessage, key: 'delegationReport' | 'delegationTask'): ChatMessage {
   if (!(key in message)) return message;
   const { [key]: mark, ...rest } = message;
   if (!isObject(mark)) return rest as ChatMessage;
-  const { agentName, agentId } = mark;
+  const { agentName, agentId, handle } = mark as { agentName?: unknown; agentId?: unknown; handle?: unknown };
   if (typeof agentName !== 'string' || agentName === '') return rest as ChatMessage;
-  return typeof agentId === 'string'
-    ? ({ ...rest, [key]: { agentName, agentId } } as ChatMessage)
-    : ({ ...rest, [key]: { agentName } } as ChatMessage);
+  const kept = {
+    agentName,
+    ...(typeof agentId === 'string' ? { agentId } : {}),
+    ...(key === 'delegationReport' && typeof handle === 'string' ? { handle } : {}),
+  };
+  return { ...rest, [key]: kept } as ChatMessage;
+}
+
+/** A next step keeps the fields that fit (`parseNextStep`); the end mark only as `true`. */
+function withValidNextStep(message: ChatMessage): ChatMessage {
+  const { nextStep, endedNormally, ...rest } = message;
+  const step = nextStep === undefined ? null : parseNextStep(nextStep);
+  return {
+    ...(rest as ChatMessage),
+    ...(step ? { nextStep: step } : {}),
+    ...(endedNormally === true ? { endedNormally: true as const } : {}),
+  };
 }
 
 /** An artifact card keeps its three fields when they fit, else the message goes on without it. */
@@ -399,8 +465,44 @@ function withValidArtifactCard(message: ChatMessage): ChatMessage {
   return card === null ? (rest as ChatMessage) : { ...rest, artifactCard: card };
 }
 
+const MAX_REPORTED_WORKERS = 50;
+
+/** A worker report mark keeps its well-formed entries (the first of a repeated handle, at most 50); a mark left with none is dropped. */
+function withValidWorkerReport(message: ChatMessage): ChatMessage {
+  if (!('workerReport' in message)) return message;
+  const { workerReport, ...rest } = message;
+  const list = isObject(workerReport) ? (workerReport as { workers?: unknown }).workers : undefined;
+  if (!Array.isArray(list)) return rest as ChatMessage;
+  const workers = list
+    .flatMap((item): NonNullable<ChatMessage['workerReport']>['workers'] => {
+      if (!isObject(item)) return [];
+      const { agentName, agentId, handle, state } = item as Record<string, unknown>;
+      if (typeof agentName !== 'string' || typeof handle !== 'string') return [];
+      if (typeof state !== 'string' || !(WORKER_STATES as readonly string[]).includes(state)) return [];
+      return [{ agentName, ...(typeof agentId === 'string' ? { agentId } : {}), handle, state: state as WorkerState }];
+    })
+    .filter((worker, index, all) => all.findIndex((other) => other.handle === worker.handle) === index)
+    .slice(0, MAX_REPORTED_WORKERS);
+  return workers.length === 0 ? (rest as ChatMessage) : { ...rest, workerReport: { workers } };
+}
+
+/** A continued-from mark keeps both ids when they are non-empty strings, else the message goes on without it. */
+function withValidContinuedFrom(message: ChatMessage): ChatMessage {
+  if (!('continuedFrom' in message)) return message;
+  const { continuedFrom, ...rest } = message;
+  if (!isObject(continuedFrom)) return rest as ChatMessage;
+  const { sessionId, agentId, toAgentId } = continuedFrom as { sessionId?: unknown; agentId?: unknown; toAgentId?: unknown };
+  if (typeof sessionId !== 'string' || sessionId === '' || typeof agentId !== 'string' || agentId === '') {
+    return rest as ChatMessage;
+  }
+  const taker = typeof toAgentId === 'string' && toAgentId !== '' ? { toAgentId } : {};
+  return { ...rest, continuedFrom: { sessionId, agentId, ...taker } } as ChatMessage;
+}
+
 function withValidDelegationReport(message: ChatMessage): ChatMessage {
-  return withValidAgentMark(withValidAgentMark(message, 'delegationReport'), 'delegationTask');
+  return withValidContinuedFrom(
+    withValidWorkerReport(withValidAgentMark(withValidAgentMark(message, 'delegationReport'), 'delegationTask')),
+  );
 }
 
 /**
@@ -511,9 +613,9 @@ export function normalizeTranscript(raw: unknown): ChatMessage[] {
   return raw.flatMap((entry): ChatMessage[] => {
     if (!isMessage(entry)) return [];
     const raw = withOnlyTools(entry);
-    const message = withValidArtifactCard(
+    const message = withValidNextStep(withValidArtifactCard(
       withValidSubagentFields(withValidVerification(withValidDelegationReport(withReadableDiffs(withValidEndTime(raw))))),
-    );
+    ));
     if (!('parts' in message)) return [message];
     const { parts, ...rest } = message;
     const isWellFormed = Array.isArray(parts) && parts.length > 0 && parts.every(isMessagePart);
@@ -524,7 +626,7 @@ export function normalizeTranscript(raw: unknown): ChatMessage[] {
 export async function loadTranscript(sessionId: string): Promise<ChatMessage[]> {
   const messages = await invoke<unknown>('load_transcript', { sessionId });
   // Nothing runs after a restart, so no request saved as waiting can be answered.
-  return settlePermissionCards(markElicitationsUnanswered(normalizeTranscript(messages)));
+  return withoutSettledIcons(settlePermissionCards(markElicitationsUnanswered(normalizeTranscript(messages))));
 }
 
 /** Resolves with the size the backend wrote, in bytes. */

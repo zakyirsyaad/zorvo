@@ -8,6 +8,7 @@ export interface BrowserTab {
   canGoBack: boolean;
   canGoForward: boolean;
   zoomFactor?: number;
+  blockedPopup?: string | null;
 }
 
 export interface BrowserVisit {

@@ -22,6 +22,7 @@ import {
   Users,
   X,
 } from "lucide-react";
+import type { PullRequestStatus } from "../../hooks/usePullRequest";
 import { useNow } from "../../hooks/useNow";
 import type { TaskTab } from "../../hooks/useTaskTabs";
 import { fileNameOf } from "../../lib/attachments";
@@ -30,7 +31,7 @@ import { fileNameAndFolder, pathInFolder, type CreatedFile } from "../../lib/cre
 import { LOOK_STYLE, pullRequestLine, pullRequestLook, type PullRequestLook } from "../../lib/pull-request-look";
 import { formatRelativeTime } from "../../lib/relative-time";
 import { newestVersion } from "../../lib/artifacts";
-import { pillParts, SECTION_CAP, type Overview, type OverviewTask } from "../../lib/session-overview";
+import { pillRunning, SECTION_CAP, type Overview, type OverviewTask } from "../../lib/session-overview";
 import { ImagePreviewDialog } from "../composer/ImagePreviewDialog";
 import { IconButton } from "../ui/IconButton";
 
@@ -108,6 +109,8 @@ const TASK_ICON = { subagent: Users, shell: Terminal } as const;
 
 /** The mark at a task's start: work in progress spins, a question waits, the end says how it went. */
 function TaskState({ task }: { task: OverviewTask }) {
+  // A quiet agent is not working as far as anyone can tell: no spinner, the same mark as a task that waits.
+  if (task.status === "Quiet") return <CircleAlert aria-hidden="true" className="size-3.5 shrink-0 text-status-attention" />;
   if (task.state === "running") return <LoaderCircle aria-hidden="true" className="size-3.5 shrink-0 text-status-running motion-safe:animate-spin" />;
   if (task.state === "needs-you") return <CircleAlert aria-hidden="true" className="size-3.5 shrink-0 text-status-attention" />;
   if (task.state === "failed") return <X aria-hidden="true" className="size-3.5 shrink-0 text-danger" />;
@@ -119,14 +122,9 @@ function TaskRowOf({ task, onOpen }: { task: OverviewTask; onOpen: (tab: TaskTab
   const now = useNow(1000, isLive && task.startedAt !== undefined);
   const elapsed = isLive && task.startedAt !== undefined ? formatElapsed(now - task.startedAt) : undefined;
   const Kind = TASK_ICON[task.kind];
-  const statusWord = task.state === "failed" ? "Failed" : task.state === "needs-you" ? "Needs you" : undefined;
-  return (
-    <button
-      type="button"
-      aria-label={`Open ${task.title}. ${task.kind === "subagent" ? "Subagent" : "Shell command"}, ${task.status.toLowerCase()}.`}
-      onClick={() => onOpen(task.tab)}
-      className={ROW}
-    >
+  const statusWord = task.state === "failed" ? "Failed" : task.state === "needs-you" ? "Needs you" : task.status === "Quiet" ? "Quiet" : undefined;
+  const label = (
+    <>
       <TaskState task={task} />
       <Label name={task.title} detail={task.detail} isMono={task.kind === "shell"} />
       {statusWord ? (
@@ -136,6 +134,27 @@ function TaskRowOf({ task, onOpen }: { task: OverviewTask; onOpen: (tab: TaskTab
       ) : (
         <Kind aria-hidden="true" className={ICON} />
       )}
+    </>
+  );
+  const { tab } = task;
+  // A background agent has no tab to open, so its row is plain text, not a control that does nothing.
+  if (tab === undefined) {
+    return (
+      <div className={STILL_ROW} title={task.detail ? `${task.title}: ${task.detail}` : task.title}>
+        {label}
+        <span className="sr-only">{`Subagent, ${task.status.toLowerCase()}.`}</span>
+      </div>
+    );
+  }
+  return (
+    <button
+      type="button"
+      aria-label={`Open ${task.title}. ${task.kind === "subagent" ? "Subagent" : "Shell command"}, ${task.status.toLowerCase()}.`}
+      onClick={() => onOpen(tab)}
+      title={task.fullTitle}
+      className={ROW}
+    >
+      {label}
     </button>
   );
 }
@@ -278,7 +297,6 @@ export function OverviewCard({
       <OverviewPill
         ref={pillRef}
         overview={overview}
-        changes={changes}
         onExpand={() => {
           // Floating only takes effect on a narrow sheet; a wide one docks the card as before.
           setIsFloating(true);
@@ -340,9 +358,9 @@ export function OverviewCard({
     ...overview.files.map((file) => <FileRow key={file.path} file={file} filesRoot={filesRoot} onOpenFile={onOpenFile} />),
   ];
 
-  const pullRequest = overview.pullRequest;
-  const look = pullRequest ? pullRequestLook(pullRequest) : null;
-  const PullRequestIcon = look ? PULL_REQUEST_ICON[look] : GitPullRequest;
+  const pullRequestRows = overview.pullRequests.map((pullRequest) => (
+    <PullRequestRow key={pullRequest.url} pullRequest={pullRequest} onOpenUrl={onOpenUrl} />
+  ));
 
   return (
     <>
@@ -352,7 +370,6 @@ export function OverviewCard({
           <OverviewPill
             ref={pillRef}
             overview={overview}
-            changes={changes}
             onExpand={() => {
               setIsFloating(true);
               focusNextRef.current = "collapse";
@@ -363,11 +380,12 @@ export function OverviewCard({
       <section
         aria-label="Session overview"
         onKeyDown={closeOnEscape}
-        className={`max-h-[calc(100%-2rem)] w-80 shrink-0 flex-col self-start overflow-y-auto rounded-xl border border-border bg-surface-2 ${
-          // Floating only while the sheet is narrow: widened again, the open card docks beside the chat.
+        className={`w-72 shrink-0 flex-col overflow-y-auto @min-[900px]:self-stretch @min-[900px]:border-l @min-[900px]:border-border ${
+          // Docked, it is a full-height panel with a hairline beside the chat, so the chat sits centred in its own pane.
+          // Floating only while the sheet is narrow, as a card over the chat; widened again, it docks.
           isFloating
-            ? "flex @min-[900px]:mt-4 @min-[900px]:mr-4 @max-[900px]:absolute @max-[900px]:top-4 @max-[900px]:right-4 @max-[900px]:z-30 @max-[900px]:shadow-popover"
-            : "mt-4 mr-4 hidden @min-[900px]:flex"
+            ? "flex @max-[900px]:absolute @max-[900px]:top-4 @max-[900px]:right-4 @max-[900px]:z-30 @max-[900px]:max-h-[calc(100%-2rem)] @max-[900px]:self-start @max-[900px]:rounded-xl @max-[900px]:border @max-[900px]:border-border @max-[900px]:bg-surface-2 @max-[900px]:shadow-popover"
+            : "hidden @min-[900px]:flex"
         }`}
       >
         <Section
@@ -395,7 +413,7 @@ export function OverviewCard({
             ))}
           </Section>
         )}
-        <Section id="overview-output" title="Output" count={outputRows.length}>
+        <Section id="overview-output" title="Artifacts" count={outputRows.length}>
           {outputRows.length > 0
             ? outputRows
             : [
@@ -404,21 +422,13 @@ export function OverviewCard({
                 </p>,
               ]}
         </Section>
-        {pullRequest && look && (
-          <Section id="overview-pull-request" title="Pull request">
-            {[
-              <button
-                key="pull-request"
-                type="button"
-                aria-label={`Open pull request ${pullRequest.number} in your browser. ${pullRequestLine(pullRequest)}.`}
-                onClick={() => onOpenUrl(pullRequest.url)}
-                className={ROW}
-              >
-                <PullRequestIcon aria-hidden="true" className={`size-3.5 shrink-0 ${LOOK_STYLE[look]}`} />
-                <Label name={pullRequest.title} detail={`#${pullRequest.number} · ${pullRequestLine(pullRequest)}`} />
-                <ExternalLink aria-hidden="true" className={ICON} />
-              </button>,
-            ]}
+        {pullRequestRows.length > 0 && (
+          <Section
+            id="overview-pull-request"
+            title={pullRequestRows.length > 1 ? "Pull requests" : "Pull request"}
+            count={pullRequestRows.length > 1 ? pullRequestRows.length : undefined}
+          >
+            {pullRequestRows}
           </Section>
         )}
       </section>
@@ -427,29 +437,42 @@ export function OverviewCard({
   );
 }
 
-/** The folded card: what runs and what changed, in one line; a click opens the card again. */
-function OverviewPill({ overview, changes, onExpand, ref }: {
+/** One pull request of the session; a click opens it on GitHub. */
+function PullRequestRow({ pullRequest, onOpenUrl }: { pullRequest: PullRequestStatus; onOpenUrl: (url: string) => void }) {
+  const look = pullRequestLook(pullRequest);
+  const PullRequestIcon = PULL_REQUEST_ICON[look];
+  return (
+    <button
+      type="button"
+      aria-label={`Open pull request ${pullRequest.number} in your browser. ${pullRequestLine(pullRequest)}.`}
+      onClick={() => onOpenUrl(pullRequest.url)}
+      className={ROW}
+    >
+      <PullRequestIcon aria-hidden="true" className={`size-3.5 shrink-0 ${LOOK_STYLE[look]}`} />
+      <Label name={pullRequest.title} detail={`#${pullRequest.number} · ${pullRequestLine(pullRequest)}`} />
+      <ExternalLink aria-hidden="true" className={ICON} />
+    </button>
+  );
+}
+
+/** The folded card: what runs, if anything, and nothing else; a click opens the card again. */
+function OverviewPill({ overview, onExpand, ref }: {
   overview: Overview;
-  changes: OverviewCardProps["changes"];
   onExpand: () => void;
   ref?: Ref<HTMLButtonElement>;
 }) {
-  const parts = pillParts(overview.runningCount, changes ?? null);
-  const hasChanges = parts.added > 0 || parts.removed > 0;
-  const said = [parts.running, hasChanges ? `${parts.added} lines added, ${parts.removed} removed` : null].filter(Boolean).join(", ");
+  const running = pillRunning(overview.runningCount);
   return (
     <button
       ref={ref}
       type="button"
-      aria-label={said ? `Expand session overview: ${said}` : "Expand session overview"}
+      aria-label={running ? `Expand session overview: ${running}` : "Expand session overview"}
       aria-expanded="false"
       onClick={onExpand}
       className="focus-ring mt-4 mr-4 flex h-8 shrink-0 items-center gap-2 self-start rounded-full border border-border bg-surface-2 pr-2 pl-2.5 text-ui-sm text-fg-secondary transition-colors hover:bg-surface-hover"
     >
       <PanelRight aria-hidden="true" className="size-3.5 text-fg-muted" />
-      {parts.running ?? (hasChanges ? null : "Overview")}
-      {parts.running && hasChanges && <span aria-hidden="true" className="h-3.5 w-px bg-border" />}
-      {hasChanges && <ChangeCounts added={parts.added} removed={parts.removed} />}
+      {running ?? "Overview"}
       <ChevronDown aria-hidden="true" className="size-3.5 text-fg-muted" />
     </button>
   );

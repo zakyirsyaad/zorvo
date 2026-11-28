@@ -28,8 +28,10 @@ function setup(extra?: (command: string, args?: Record<string, unknown>) => Prom
   const messages: Record<string, ChatMessage[]> = {};
   const onAttention = vi.fn();
   const deps: AgentToolsDeps = {
-    sessions: [session], agents: fakeProfiles, statusOf: () => 'ready', delegatesOf: () => [],
-    giveTask: async () => ({ ok: false, reason: 'unused' }), workspaces: [],
+    sessions: [session], agents: fakeProfiles, statusOf: () => 'ready', workersOf: () => [],
+    startWorker: async () => ({ ok: false, reason: 'unused' }),
+    recordDone: () => false,
+    sendToWorker: async () => ({ ok: false, reason: 'unused' }), workspaces: [],
     openSession: async () => ({ ok: false, reason: 'unused' }), openedOf: () => [],
     updateMessages: (id, update) => { messages[id] = update(messages[id] ?? []); }, onAttention,
     messagesOf: async id => messages[id] ?? [], stateOf: () => 'idle', stopTurn: vi.fn(), onArtifactShown: vi.fn(),

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { ALLOW_SESSION, browserCard, replaceToolCard, settleToolCard, withToolCard } from '../lib/agent-tool-card';
+import { ALLOW_ONCE, ALLOW_SESSION, browserCard, browserFileCard, replaceToolCard, settleToolCard, withToolCard } from '../lib/agent-tool-card';
 import { DECLINED, type AgentToolCall } from '../lib/agent-tools';
 import { createId } from '../lib/ids';
 import type { AgentProfile, ChatMessage, Session } from '../types';
@@ -28,6 +28,7 @@ export function useBrowserToolCards(deps: Dependencies) {
   const latest = useLatest(deps);
   const calls = useRef(new Map<string, AgentToolCall>());
   const waiting = useRef(new Map<string, Waiting>());
+  const fileCards = useRef(new Map<string, { sessionId: string; call: AgentToolCall }>());
   const answering = useRef(new Set<string>());
   const observedSessions = useRef(new Set<string>());
   const revision = useRef(0);
@@ -59,10 +60,45 @@ export function useBrowserToolCards(deps: Dependencies) {
   const execute = useCallback(async (call: AgentToolCall) => {
     if (!calls.current.has(call.callId)) return;
     try {
-      const result = await invoke('browser_agent_execute', { callId: call.callId });
+      const result = await invoke<unknown>('browser_agent_execute', { callId: call.callId });
+      if (!calls.current.has(call.callId)) return;
+      const approval =
+        result && typeof result === 'object'
+          ? (result as { requiresFileApproval?: { url?: unknown; paths?: unknown } }).requiresFileApproval
+          : undefined;
+      if (
+        approval &&
+        typeof approval.url === 'string' &&
+        Array.isArray(approval.paths) &&
+        approval.paths.every((path) => typeof path === 'string')
+      ) {
+        const current = latest.current;
+        const session = current.sessions.find((item) => item.id === call.sessionId);
+        if (!session) {
+          respond(call, false, 'The session ended.');
+          return;
+        }
+        const cardId = createId('act');
+        fileCards.current.set(cardId, { sessionId: session.id, call });
+        const card = browserFileCard({
+          cardId,
+          sessionId: session.id,
+          folder: session.cwd,
+          callerName: current.agents.find((agent) => agent.id === session.profileId)?.name ?? 'The agent',
+          destination: approval.url,
+          paths: approval.paths as string[],
+          now: Date.now(),
+        });
+        current.updateMessages(session.id, (messages) =>
+          withToolCard(messages, card, { sessionId: session.id, now: Date.now(), createId }),
+        );
+        current.onAttention(session.id, 'needs-answer');
+        bump();
+        return;
+      }
       respond(call, true, JSON.stringify(result));
     } catch (error) { respond(call, false, String(error)); }
-  }, [respond]);
+  }, [bump, latest, respond]);
   const handleCall = useCallback((session: Session, call: AgentToolCall): boolean => {
     if (call.tool !== 'browser' && call.tool !== 'browser_guide') return false;
     if (calls.current.has(call.callId)) return true;
@@ -87,6 +123,12 @@ export function useBrowserToolCards(deps: Dependencies) {
   }, [bump, execute, latest, project, respond, show]);
   const handleEnded = useCallback((callId: string) => {
     calls.current.delete(callId);
+    for (const [cardId, fileEntry] of fileCards.current) {
+      if (fileEntry.call.callId !== callId) continue;
+      fileCards.current.delete(cardId);
+      latest.current.updateMessages(fileEntry.sessionId, messages => settleToolCard(messages, cardId, 'withdrawn'));
+      bump();
+    }
     for (const [sessionId, entry] of waiting.current) {
       if (!entry.calls.some(call => call.callId === callId)) continue;
       const remaining = entry.calls.filter(call => call.callId !== callId);
@@ -103,6 +145,30 @@ export function useBrowserToolCards(deps: Dependencies) {
     }
   }, [bump, latest, show]);
   const chooseCard = useCallback((sessionId: string, cardId: string, optionId: string): boolean => {
+    const fileEntry = fileCards.current.get(cardId);
+    if (fileEntry && fileEntry.sessionId === sessionId) {
+      if (answering.current.has(cardId)) return true;
+      answering.current.add(cardId);
+      const allow = optionId === ALLOW_ONCE;
+      void (async () => {
+        try {
+          await invoke('browser_file_permission', { callId: fileEntry.call.callId, allow });
+          if (!fileCards.current.delete(cardId)) return;
+          latest.current.updateMessages(sessionId, messages => settleToolCard(messages, cardId, allow ? 'approved' : 'rejected'));
+          bump();
+          if (allow) await execute(fileEntry.call);
+          else respond(fileEntry.call, false, DECLINED);
+        } catch {
+          latest.current.onNotice?.('File upload permission could not be changed. Try again.');
+          if (fileCards.current.delete(cardId)) {
+            latest.current.updateMessages(sessionId, messages => settleToolCard(messages, cardId, 'rejected'));
+            respond(fileEntry.call, false, 'File upload permission could not be changed.');
+            bump();
+          }
+        } finally { answering.current.delete(cardId); }
+      })();
+      return true;
+    }
     const entry = waiting.current.get(sessionId);
     if (!entry || entry.cardId !== cardId) return false;
     if (answering.current.has(cardId)) return true;
@@ -148,6 +214,7 @@ export function useBrowserToolCards(deps: Dependencies) {
     mounted.current = true;
     const currentCalls = calls.current;
     const currentWaiting = waiting.current;
+    const currentFileCards = fileCards.current;
     const stop = listen<{ sessionId: string; allow: boolean }>('browser-permission-changed', event => {
       if (typeof event.payload.sessionId !== 'string' || typeof event.payload.allow !== 'boolean') return;
       revision.current++;
@@ -157,6 +224,7 @@ export function useBrowserToolCards(deps: Dependencies) {
       mounted.current = false;
       currentCalls.clear();
       currentWaiting.clear();
+      currentFileCards.clear();
       void stop.then(unlisten => unlisten?.());
     };
   }, [project]);
@@ -179,5 +247,6 @@ export function useBrowserToolCards(deps: Dependencies) {
   }, [deps.sessions, handleEnded, latest]);
   return { handleCall, handleEnded, chooseCard, revokeGrant,
     hasGrant: (sessionId: string) => status[sessionId] === true,
-    isWaiting: (sessionId: string) => waiting.current.has(sessionId) };
+    isWaiting: (sessionId: string) =>
+      waiting.current.has(sessionId) || [...fileCards.current.values()].some(entry => entry.sessionId === sessionId) };
 }

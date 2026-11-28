@@ -15,6 +15,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 import App from "../App";
+import { MCP_PATH_CONTEXT } from "../lib/agent-tools-context";
 
 type TauriInternals = { invoke: (cmd: string, args?: Record<string, unknown>) => Promise<unknown> };
 type InvokeCall = [string, Record<string, unknown> | undefined, ...unknown[]];
@@ -392,6 +393,36 @@ describe("ACP sessions in the app", () => {
     expect(screen.queryByText(/failed \d+ times in a row/)).toBeNull();
   });
 
+  it("continues with another agent picked in the composer, the typed message first", async () => {
+    const spy = await renderWithQwen();
+    const sessionId = await startQwenSession(spy);
+    await acpEvent({
+      sessionId,
+      kind: "update",
+      update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "I am stuck" } },
+    });
+    await acpEvent({ sessionId, kind: "turn-end", stopReason: "end_turn" });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^Agent: / }));
+    });
+    const other = screen.getAllByRole("menuitemradio").find((row) => row.getAttribute("aria-checked") === "false" && !row.hasAttribute("disabled"));
+    expect(other).toBeDefined();
+    await act(async () => {
+      fireEvent.click(other as HTMLElement);
+    });
+    // Once on screen and once in the always-mounted live region.
+    expect(screen.getAllByText(/Your message starts a new .+ session that continues this one\./)).toHaveLength(2);
+
+    await send("Take over and fix it");
+
+    await waitFor(() => expect(callsTo(spy, "acp_start_session")).toHaveLength(2));
+    const [, startArgs] = callsTo(spy, "acp_start_session")[1];
+    expect(startArgs?.profileId).not.toBe(callsTo(spy, "acp_start_session")[0][1]?.profileId);
+    await waitFor(() => expect(callsTo(spy, "acp_prompt").some(([, args]) => JSON.stringify(args).includes("Take over and fix it"))).toBe(true));
+    expect(callsTo(spy, "write_fork_handoff")).toHaveLength(1);
+  });
+
   it("forks a live ACP session natively from its latest reply", async () => {
     const spy = await renderWithQwen();
     const sessionId = await startQwenSession(spy);
@@ -406,6 +437,10 @@ describe("ACP sessions in the app", () => {
     const reply = screen.getByText("Here is the plan").closest("[data-testid^='chat-message-']") as HTMLElement;
     await act(async () => {
       fireEvent.click(within(reply).getByRole("button", { name: "Fork from here" }));
+    });
+    // With other agents in use Fork is a menu; its first row forks with the session's own agent.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: /^Fork with / }));
     });
 
     const [, forkArgs] = callsTo(spy, "acp_fork_session")[0];
@@ -631,9 +666,10 @@ describe("ACP sessions in the app", () => {
 
     await send("second");
 
-    // The session's first message and "first"; "second" waits.
+    // The session's first message and "first"; "second" waits in the queue above the composer.
     expect(callsTo(spy, "acp_prompt")).toHaveLength(2);
-    expect((screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement).value).toBe("second");
+    expect((screen.getByRole("textbox", { name: "Prompt" }) as HTMLTextAreaElement).value).toBe("");
+    expect(within(screen.getByRole("list", { name: "Queued messages" })).getByText("second")).toBeDefined();
   });
 
   it("remembers the options an agent reported, for the composer before the next session", async () => {
@@ -937,6 +973,22 @@ describe("ACP sessions in the app", () => {
     expect(sidebar.getByText("Parser walkthrough")).toBeDefined();
   });
 
+  it("keeps the first message as the name when the agent's title is cut from Zorvo's hidden note", async () => {
+    const spy = await renderWithQwen();
+    await send("explain the parser");
+    const sidebar = within(screen.getByRole("complementary"));
+    const [, startArgs] = callsTo(spy, "acp_start_session")[0];
+
+    await acpEvent({
+      sessionId: String(startArgs?.sessionId),
+      kind: "update",
+      update: { sessionUpdate: "session_info_update", title: `${MCP_PATH_CONTEXT.slice(0, 120)}…` },
+    });
+
+    expect(sidebar.getByText("explain the parser")).toBeDefined();
+    expect(sidebar.queryByText(/the app this session runs in/)).toBeNull();
+  });
+
   it("names a new session after its first message and keeps that name", async () => {
     const spy = await renderWithQwen();
     await act(async () => {
@@ -1000,6 +1052,8 @@ describe("ACP sessions in the app", () => {
     await send("hello");
 
     const panel = within(await screen.findByRole("region", { name: "Sign in to Qwen Code" }));
+    // ChatGPT is the one method Zorvo can run, so it leads; the key method folds under it.
+    fireEvent.click(panel.getByRole("button", { name: "Other ways to sign in (1)" }));
     expect(panel.getByText("Use an API key to authenticate")).toBeDefined();
     // The message waits in the composer, to be sent again after signing in.
     expect(prompt().value).toBe("hello");
@@ -1118,6 +1172,10 @@ describe("ACP sessions in the app", () => {
     const reply = screen.getByText("Here is the plan").closest("[data-testid^='chat-message-']") as HTMLElement;
     await act(async () => {
       fireEvent.click(within(reply).getByRole("button", { name: "Fork from here" }));
+    });
+    // With other agents in use Fork is a menu; its first row forks with the session's own agent.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: /^Fork with / }));
     });
 
     await waitFor(() => expect(callsTo(spy, "write_fork_handoff")).toHaveLength(1));
@@ -1341,8 +1399,10 @@ describe("ACP sessions in the app", () => {
     await waitFor(() => expect(callsTo(spy, "acp_set_mode")).toHaveLength(1));
     await send("second");
 
+    // Nothing is queued while the session starts: the text stays in the box, as it always did.
     expect(callsTo(spy, "acp_prompt")).toHaveLength(0);
     expect(prompt().value).toBe("second");
+    expect(screen.queryByRole("list", { name: "Queued messages" })).toBeNull();
     await act(async () => {
       finishSetMode();
     });

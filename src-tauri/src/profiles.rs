@@ -87,26 +87,23 @@ impl AgentProfile {
 ///
 /// Uses the cached user environment to avoid launching the login shell multiple times.
 pub fn agent_profiles(versions: &BTreeMap<String, String>) -> Vec<AgentProfile> {
-    with_system_tools(|catalog, tools| catalog.profiles(tools, versions, registry::unix_now()))
+    with_system_tools(|catalog, tools| catalog.profiles(tools, versions))
 }
 
 /// The one profile [`agent_profiles`] would give for `id`, resolving only that
 /// agent rather than every one; `None` for an unknown id.
 pub fn agent_profile(id: &str, versions: &BTreeMap<String, String>) -> Option<AgentProfile> {
-    with_system_tools(|catalog, tools| {
-        agent_profile_from(catalog, tools, id, versions, registry::unix_now())
-    })
+    with_system_tools(|catalog, tools| agent_profile_from(catalog, tools, id, versions))
 }
 
-/// [`agent_profile`] from a given catalog and system at time `now`.
+/// [`agent_profile`] from a given catalog and system.
 pub fn agent_profile_from(
     catalog: &registry::Catalog,
     tools: &SystemTools,
     id: &str,
     versions: &BTreeMap<String, String>,
-    now: u64,
 ) -> Option<AgentProfile> {
-    catalog.profile(id, tools, versions, now)
+    catalog.profile(id, tools, versions)
 }
 
 /// Runs `f` with the catalog and what this machine has: the user's login-shell
@@ -132,7 +129,7 @@ pub(crate) fn with_system_tools<R>(f: impl FnOnce(&registry::Catalog, &SystemToo
 /// The registry agent's name at the version [`install_steps_for`] would plan,
 /// read without probing the machine; `None` for an id the catalog cannot offer.
 pub fn agent_name(id: &str, versions: &BTreeMap<String, String>) -> Option<String> {
-    registry::catalog().agent_name(id, versions, registry::unix_now())
+    registry::catalog().agent_name(id, versions)
 }
 
 /// The registry agent's name and what an install of it would do, at the
@@ -143,7 +140,5 @@ pub fn install_steps_for(
     id: &str,
     versions: &BTreeMap<String, String>,
 ) -> Option<(String, Vec<PlannedStep>)> {
-    with_system_tools(|catalog, tools| {
-        catalog.planned_steps_for(id, tools, versions, registry::unix_now())
-    })
+    with_system_tools(|catalog, tools| catalog.planned_steps_for(id, tools, versions))
 }

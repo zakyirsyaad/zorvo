@@ -45,6 +45,8 @@ export interface SidebarProps {
   pullRequestOf?: (session: Session) => PullRequestStatus | null;
   /** True while a session's agent waits for the user to answer a permission request. */
   isSessionWaiting?: (sessionId: string) => boolean;
+  /** The session's agent may use apps on this Mac: its row shows a mark. */
+  usesComputer?: (sessionId: string) => boolean;
   /** Stops the agent's current turn; offered only while it works. */
   onStopSession?: (sessionId: string) => void;
   onDeleteSession?: (sessionId: string) => void;
@@ -58,7 +60,7 @@ export interface SidebarProps {
   isHidden?: boolean;
   /** Hides the sidebar; the button is absent without it. */
   onHide?: () => void;
-  /** How many pages the sessions' agents have shown; the Output entry shows while there is one. */
+  /** How many pages the sessions' agents have shown; the Artifacts entry shows while there is one. */
   artifactCount?: number;
   /** The gallery is what the main sheet shows. */
   isGalleryOpen?: boolean;
@@ -136,6 +138,7 @@ export function Sidebar({
   isSessionBusy = () => false,
   pullRequestOf,
   isSessionWaiting = () => false,
+  usesComputer,
   onStopSession,
   onDeleteSession,
   onRenameSession,
@@ -198,6 +201,7 @@ export function Sidebar({
     agentNameOf,
     isSessionBusy,
     isSessionWaiting,
+    usesComputer,
     onSelectSession,
     onOpenRun,
     onStopSession,
@@ -232,13 +236,13 @@ export function Sidebar({
         <div className="px-2 pb-1.5">
           <button
             type="button"
-            aria-label={`Output, ${artifactCount}`}
+            aria-label={`Artifacts, ${artifactCount}`}
             aria-current={isGalleryOpen ? "page" : undefined}
             onClick={onOpenGallery}
             className={`focus-ring flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-surface-hover ${isGalleryOpen ? "bg-surface-hover text-fg" : ""}`}
           >
             <PanelsTopLeft size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
-            <span className="flex-1">Output</span>
+            <span className="flex-1">Artifacts</span>
             <span className="text-caption text-fg-subtle">{artifactCount}</span>
           </button>
         </div>

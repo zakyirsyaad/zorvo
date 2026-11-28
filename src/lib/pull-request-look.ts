@@ -87,21 +87,22 @@ export function pullRequestOnBranch(folder: FolderPullRequests, branch: string |
 }
 
 /**
- * The newest pull request the agent made itself: one whose address `gh pr create` printed, else
- * one whose head is a branch it made (`agentWorkOf`). An agent often works in a worktree of its own
- * inside the folder, whose branch the folder's checkout never shows.
+ * Every pull request the agent made itself, newest first: those whose address `gh pr create`
+ * printed and those whose head is a branch it made (`agentWorkOf`). An agent often works in a
+ * worktree of its own inside the folder, whose branch the folder's checkout never shows.
  */
+export function pullRequestsOfWork(folder: FolderPullRequests, work: AgentWork | undefined): PullRequestStatus[] {
+  if (!work) return [];
+  const urls = new Set(work.pullRequestUrls.map((url) => url.toLowerCase()));
+  const branches = new Set(work.branches);
+  return folder.pullRequests
+    .filter((pullRequest) => urls.has(pullRequest.url.toLowerCase()) || branches.has(pullRequest.branch))
+    .sort((a, b) => b.number - a.number);
+}
+
+/** The newest pull request the agent made itself (`pullRequestsOfWork`). */
 export function pullRequestOfWork(folder: FolderPullRequests, work: AgentWork | undefined): PullRequestStatus | null {
-  if (!work) return null;
-  for (const url of [...work.pullRequestUrls].reverse()) {
-    const found = folder.pullRequests.find((pullRequest) => pullRequest.url.toLowerCase() === url.toLowerCase());
-    if (found) return found;
-  }
-  for (const branch of [...work.branches].reverse()) {
-    const found = pullRequestOnBranch(folder, branch);
-    if (found) return found;
-  }
-  return null;
+  return pullRequestsOfWork(folder, work)[0] ?? null;
 }
 
 /**

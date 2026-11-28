@@ -6,10 +6,13 @@ pub mod artifacts;
 pub mod attachment_paths;
 pub mod attachments;
 pub mod background_processes;
+pub mod branch_state;
 pub mod branches;
 pub mod browser;
 pub mod browser_commands;
+pub mod browser_upload;
 pub mod changes;
+pub mod checkpoints;
 pub mod computer_use;
 pub mod data_migration;
 pub mod diff_stats;
@@ -21,6 +24,7 @@ pub mod git_info;
 pub mod github;
 pub mod installer;
 pub mod instruction_files;
+pub mod media;
 pub mod navigation_guard;
 pub mod pasted_images;
 pub mod private_mode;
@@ -122,7 +126,7 @@ fn get_agent_catalog(
 ) -> Result<registry::catalog_view::AgentCatalog, String> {
     let versions = versions_in_use(&store);
     Ok(profiles::with_system_tools(|catalog, tools| {
-        catalog.catalog_view(tools, &versions, registry::unix_now())
+        catalog.catalog_view(tools, &versions)
     }))
 }
 
@@ -194,6 +198,7 @@ fn start_agent_tools(app: &AppHandle, data_dir: &std::path::Path) -> Arc<agent_t
                     let _ = calls.emit(AGENT_TOOL_CALL_EVENT, call);
                 },
                 move |call_id| {
+                    browser_commands::call_ended(&ended, &call_id);
                     let _ = ended.emit(
                         AGENT_TOOL_CALL_ENDED_EVENT,
                         serde_json::json!({ "callId": call_id }),
@@ -207,7 +212,49 @@ fn start_agent_tools(app: &AppHandle, data_dir: &std::path::Path) -> Arc<agent_t
     })
 }
 
-/// Ends every agent and terminal a previous UI left running. The UI calls this
+/// Starts what answers computer-use calls and joins it to the tool server.
+/// Its events go to the webview; an agent's name comes from the registry.
+fn start_screen_server(
+    app: &AppHandle,
+    state: Arc<computer_use::ComputerUse>,
+) -> Arc<computer_use::ScreenServer> {
+    let events = app.clone();
+    let names = app.clone();
+    let mut hooks = computer_use::Hooks::system(move |event, payload| {
+        use computer_use::server::{
+            ACTIVITY_EVENT, CHANGED_EVENT, NOTICE_EVENT, REQUEST_ENDED_EVENT, REQUEST_EVENT,
+        };
+        // Each event is emitted under its own name, never a name passed in.
+        let _ = match event {
+            REQUEST_EVENT => events.emit(REQUEST_EVENT, payload),
+            REQUEST_ENDED_EVENT => events.emit(REQUEST_ENDED_EVENT, payload),
+            CHANGED_EVENT => events.emit(CHANGED_EVENT, payload),
+            NOTICE_EVENT => events.emit(NOTICE_EVENT, payload),
+            ACTIVITY_EVENT => {
+                computer_use::pill::note(&events, payload.clone());
+                events.emit(ACTIVITY_EVENT, payload)
+            }
+            _ => Ok(()),
+        };
+    });
+    // The pill stays while a read runs, and counts down from its end.
+    let pill_owner = app.clone();
+    hooks.read_ended = Box::new(move || computer_use::pill::ended(&pill_owner));
+    hooks.agent_name = Box::new(move |profile_id| {
+        let versions = names
+            .state::<store::AppStore>()
+            .load_state()
+            .map(|state| state.settings.agent_versions)
+            .unwrap_or_default();
+        profiles::agent_name(profile_id, &versions)
+    });
+    let server = computer_use::ScreenServer::new(state, hooks);
+    server.attach(&app.state::<Arc<agent_tools::AgentTools>>());
+    server
+}
+
+/// Ends every agent and terminal a previous UI left running, and closes the native views it
+/// placed (`close_native_views`). The UI calls this
 /// when it loads: a webview reload leaves the backend (and its agents) running,
 /// but the new UI knows none of them and shows their sessions as ended, so they
 /// would only linger, holding sessions the UI may resume in a new process.
@@ -226,7 +273,9 @@ fn end_orphaned_sessions(
     private: State<'_, private_mode::service::PrivateMode>,
     tools: State<'_, Arc<agent_tools::AgentTools>>,
 ) -> usize {
-    browser::close_all(&app);
+    // The new page starts with no artifact box and no Browser panel; nothing it asks for later
+    // can be closed by this, since the closes run on the main thread in the order they come.
+    close_native_views(&app);
     #[cfg(all(target_os = "macos", debug_assertions))]
     browser::frontend_ready(&app);
     let terminals = pty.session_ids();
@@ -268,12 +317,17 @@ fn load_app_state(store: State<'_, AppStore>) -> Result<PersistedState, String> 
 fn save_app_state(
     store: State<'_, AppStore>,
     computer_use: State<'_, Arc<computer_use::ComputerUse>>,
+    screen: State<'_, Arc<computer_use::ScreenServer>>,
     state: PersistedState,
 ) -> Result<(), String> {
     store.save_state(&state)?;
     // The gate reads the switch on every call, so it follows each save. Off
-    // stops computer use at once.
-    computer_use.set_enabled(state.settings.computer_use && cfg!(target_os = "macos"));
+    // stops computer use at once, and ends what every session was allowed.
+    let is_on = state.settings.computer_use && cfg!(target_os = "macos");
+    computer_use.set_enabled(is_on);
+    if !is_on {
+        screen.switched_off();
+    }
     Ok(())
 }
 
@@ -482,6 +536,15 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(navigation_guard::plugin())
+        // Videos for the main webview: only tokens a command made, read in byte ranges off the
+        // main thread (`media.rs`).
+        .register_asynchronous_uri_scheme_protocol(media::SCHEME, |ctx, request, responder| {
+            let app = ctx.app_handle().clone();
+            std::thread::spawn(move || {
+                let tokens = app.state::<media::MediaTokens>();
+                responder.respond(media::respond(&tokens, &request));
+            });
+        })
         .manage(manager)
         .manage(acp_manager)
         .manage(app_update::PendingAppUpdate::default())
@@ -536,13 +599,46 @@ pub fn run() {
                 .state::<store::AppStore>()
                 .load_state()
                 .is_ok_and(|state| state.settings.computer_use && cfg!(target_os = "macos"));
-            app.manage(Arc::new(computer_use::ComputerUse::new(
-                computer_use_dir,
+            let screen_state = Arc::new(computer_use::ComputerUse::new(
+                computer_use_dir.clone(),
                 computer_use_on,
-            )));
-            app.manage(Arc::new(artifacts::store::ArtifactStore::new(
+            ));
+            app.manage(Arc::clone(&screen_state));
+            app.manage(computer_use::pill::Pill::default());
+            app.manage(start_screen_server(app.handle(), screen_state));
+            // Images left for command-path agents by sessions long gone.
+            std::thread::spawn(move || computer_use::images::sweep_old(&computer_use_dir));
+            let artifact_store = Arc::new(artifacts::store::ArtifactStore::new(
                 app.state::<store::AppStore>().root().join("artifacts"),
-            )));
+            ));
+            let known_workspaces = app.handle().clone();
+            let thumbs_dir = app.state::<store::AppStore>().root().join("canvas-thumbs");
+            // Pictures of canvas artboards, and those no shown canvas listed for a month.
+            let swept = thumbs_dir.clone();
+            std::thread::spawn(move || {
+                let _ = std::fs::create_dir_all(&swept);
+                artifacts::render::sweep_thumbs(&swept, std::time::SystemTime::now());
+            });
+            app.manage(artifacts::commands::Thumbs::default());
+            let served = Arc::new(artifacts::protocol::Served {
+                store: Arc::clone(&artifact_store),
+                thumbs: thumbs_dir,
+                is_known: Arc::new(move |path| {
+                    known_workspaces
+                        .state::<store::AppStore>()
+                        .is_known_workspace(path)
+                        .unwrap_or(false)
+                }),
+            });
+            app.manage(Arc::clone(&served));
+            app.manage(artifact_store);
+            // Motion renders: one worker thread, and `render_motion`/`render_status` answered by it.
+            let motion_renderer =
+                artifacts::motion_render::MotionRenderer::start(app.handle().clone(), served);
+            artifacts::motion_tools::MotionServer::new(Arc::clone(&motion_renderer))
+                .attach(&app.state::<Arc<agent_tools::AgentTools>>());
+            app.manage(motion_renderer);
+            app.manage(media::MediaTokens::default());
             if let Err(error) = migration {
                 report_migration_failure(app.handle(), &error);
             }
@@ -620,21 +716,61 @@ pub fn run() {
             browser_commands::browser_history_clear,
             browser_commands::browser_agent_execute,
             browser_commands::browser_permission,
+            browser_commands::browser_file_permission,
+            browser_commands::browser_close_session,
             browser_commands::browser_catalog,
             browser_commands::browser_permission_status,
             browser::browser_bounds,
             artifacts::commands::artifact_show,
+            artifacts::visual_commands::visual_show,
+            artifacts::visual_commands::visual_read,
+            artifacts::visual_commands::visual_sweep,
+            artifacts::visual_commands::visual_copy_session,
+            artifacts::visual_commands::visual_paths,
+            artifacts::visual_commands::visual_export,
+            artifacts::visual_commands::visual_copy_image,
             artifacts::commands::artifact_list,
+            artifacts::commands::canvas_show,
+            artifacts::ds_commands::design_systems_list,
+            artifacts::ds_commands::design_system_show,
+            artifacts::ds_commands::ds_read,
+            artifacts::ds_commands::ds_forget,
+            artifacts::ds_commands::ds_view_show,
+            artifacts::ds_commands::ds_view_apply,
+            artifacts::ds_commands::ds_source_state,
+            artifacts::ds_commands::ds_comment_mode,
+            artifacts::ds_commands::ds_view_marks,
+            artifacts::motion_commands::motion_show,
+            artifacts::motion_commands::video_show,
+            artifacts::motion_commands::motion_read,
+            artifacts::motion_commands::motion_view_show,
+            artifacts::motion_commands::motion_view_apply,
+            artifacts::motion_commands::motion_view_command,
+            artifacts::motion_commands::motion_export,
+            artifacts::motion_commands::motion_render_cancel,
+            artifacts::motion_commands::media_forget,
+            media::media_url_for_file,
+            media::media_url_for_video,
+            media::media_url_for_render,
+            artifacts::commands::canvas_read,
+            artifacts::commands::canvas_thumbs,
+            artifacts::commands::canvas_export,
+            artifacts::commands::canvas_forget,
             artifacts::commands::artifact_rename,
             artifacts::commands::artifact_delete,
             artifacts::commands::artifact_delete_session,
             artifacts::commands::artifact_export,
             artifacts::commands::artifact_view_show,
+            artifacts::commands::canvas_view_show,
+            artifacts::commands::canvas_view_apply,
+            artifacts::commands::canvas_view_command,
             artifacts::commands::artifact_view_bounds,
             artifacts::commands::artifact_view_hide,
             artifacts::commands::artifact_view_close,
             artifacts::commands::artifact_comment_mode,
             artifacts::commands::artifact_view_marks,
+            artifacts::commands::canvas_comment_mode,
+            artifacts::commands::canvas_view_marks,
             app_update::app_update_check,
             app_update::app_update_install,
             app_update::app_update_restart,
@@ -643,6 +779,10 @@ pub fn run() {
             computer_use::commands::computer_use_request_permissions,
             computer_use::commands::computer_use_open_pane,
             computer_use::commands::computer_use_reset_permissions,
+            computer_use::commands::computer_use_answer,
+            computer_use::commands::computer_use_state,
+            computer_use::commands::computer_use_revoke,
+            computer_use::commands::computer_use_pill_state,
             get_agent_profiles,
             refresh_login_env,
             get_agent_catalog,
@@ -663,6 +803,7 @@ pub fn run() {
             delete_transcript,
             windows::open_session_window,
             windows::reveal_in_finder,
+            windows::reveal_file_in_finder,
             windows::open_external_url,
             files::list_directory,
             files::open_path,
@@ -682,8 +823,12 @@ pub fn run() {
             changes::session_file_diff,
             diff_stats::session_diff_targets,
             diff_stats::session_diff_stats,
+            branch_state::session_branch_state,
             diff_stats::session_diff_stats_since,
             changes::commit_session_changes,
+            changes::discard_session_change,
+            checkpoints::create_turn_checkpoint,
+            checkpoints::restore_turn_checkpoint,
             worktrees::create_session_worktree,
             worktrees::remove_session_worktree,
             attachment_paths::worktree_attachment_paths,
@@ -713,6 +858,7 @@ pub fn run() {
             acp::commands::acp_set_config_option,
             acp::commands::acp_qwen_last_api_error,
             acp::commands::acp_context_usage,
+            acp::commands::acp_agent_tasks,
             instruction_files::instruction_files,
             acp::commands::acp_stop_session,
             agent_tools::commands::agent_tool_respond,
@@ -753,10 +899,49 @@ pub fn run() {
                 workspace_terminal::end_all_sessions(&pty);
                 app.state::<Arc<agent_tools::AgentTools>>().shutdown();
                 app.state::<Arc<computer_use::ComputerUse>>().stop_driver();
-                artifacts::view::close(app);
-                browser::close_all(app);
+                close_native_views(app);
             }
         });
+}
+
+/// Closes every native view drawn over the main webview: the artifact view and the Browser
+/// panel's pages. They belong to the page that placed them, so they go when Zorvo exits and
+/// when a reloaded page starts; otherwise a view stays drawn over the new page at its old
+/// place, with no box under it and nothing that could close it.
+fn close_native_views(app: &AppHandle) {
+    artifacts::view::close(app);
+    browser::close_all(app);
+}
+
+/// The native views have no test window to be drawn in here, so these read the wiring itself: a
+/// reload that left the artifact view on screen came from the sweep closing only some of them.
+#[cfg(test)]
+mod native_view_tests {
+    const SOURCE: &str = include_str!("lib.rs");
+
+    /// The body of the top-level `fn name`, up to the closing brace at the start of a line.
+    fn body_of(name: &str) -> &'static str {
+        let start = [format!("\nfn {name}("), format!("\npub fn {name}(")]
+            .iter()
+            .find_map(|head| SOURCE.find(head.as_str()))
+            .unwrap_or_else(|| panic!("no fn {name} in lib.rs"));
+        let rest = &SOURCE[start..];
+        let end = rest.find("\n}\n").expect("the end of the fn");
+        &rest[..end]
+    }
+
+    #[test]
+    fn a_reloaded_page_and_an_exit_close_the_same_native_views() {
+        assert!(body_of("end_orphaned_sessions").contains("close_native_views(&app);"));
+        assert!(body_of("run").contains("close_native_views(app);"));
+        let closes = body_of("close_native_views");
+        for call in ["artifacts::view::close(app);", "browser::close_all(app);"] {
+            assert!(
+                closes.contains(call),
+                "close_native_views does not call {call}"
+            );
+        }
+    }
 }
 
 #[cfg(all(test, target_os = "macos"))]

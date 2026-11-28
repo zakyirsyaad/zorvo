@@ -30,6 +30,9 @@ pub struct InstalledTools {
     /// Prerequisite command to the `bin` folder of its pinned install.
     pub prereq_bins: BTreeMap<String, PathBuf>,
     pub manifest: Option<RuntimeManifest>,
+    /// Where a user CLI an agent can run through (`registry::cli_launch`) was
+    /// found on `PATH`, to the version it reported.
+    pub cli_versions: BTreeMap<String, String>,
 }
 
 impl InstalledTools {
@@ -65,6 +68,7 @@ impl InstalledTools {
             agent_bins,
             prereq_bins,
             manifest: Some(manifest.clone()),
+            cli_versions: BTreeMap::new(),
         }
     }
 }

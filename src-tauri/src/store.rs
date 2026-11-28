@@ -333,6 +333,34 @@ pub struct ArtifactCommentRecord {
         skip_serializing_if = "Option::is_none"
     )]
     pub sent_at: Option<i64>,
+    /// Set for a comment on a canvas artboard, whose `artifact_id` is then the canvas key.
+    /// A comment whose `canvas` is not this shape is dropped, like one with a bad anchor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub canvas: Option<CanvasCommentRecord>,
+    /// Set for a comment on a design system, whose `artifact_id` is then the system key. A
+    /// comment whose `designSystem` is not this shape is dropped, as for `canvas`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub design_system: Option<DesignSystemCommentRecord>,
+}
+
+/// Which token, component or section a design system comment is on, and the hash of what it was
+/// written on. The UI checks the target's fields; here only the shape matters.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DesignSystemCommentRecord {
+    pub key: String,
+    pub target: serde_json::Map<String, serde_json::Value>,
+    pub hash: String,
+}
+
+/// Which artboard a canvas comment is on, and the hash of its file when it was written. All
+/// three are required; a field this version does not know is ignored, as the UI's reader does.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasCommentRecord {
+    pub key: String,
+    pub artboard_id: String,
+    pub file_hash: String,
 }
 
 /// One comment on a line of a session's diff. The UI checks the values of
@@ -393,8 +421,32 @@ pub struct OpenedByRecord {
     pub handle: Option<String>,
 }
 
-/// A delegated task: the session that delegated it, the task, and when it ran.
+/// How a worker's task ended: its result, when, and what it said and changed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerOutcomeRecord {
+    /// `succeeded` or `failed`.
+    pub result: String,
+    pub at: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub files: Option<Vec<String>>,
+}
+
+/// How a worker's last turn ended.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerLastTurnRecord {
+    pub ended_at: i64,
+    /// `finished`, `failed`, `cancelled` or `exited`.
+    pub how: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+/// A delegated task: the session that delegated it, the task, and when it ran.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DelegationLinkRecord {
     /// The session that delegated the task.
@@ -404,7 +456,37 @@ pub struct DelegationLinkRecord {
     pub started_at: i64,
     /// When the user ended the delegation; no report is sent after it.
     pub ended_at: Option<i64>,
+    /// What the opener's agent calls a worker (`worker-3`); none on other links.
+    #[serde(
+        default,
+        deserialize_with = "lenient_worker_handle",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub handle: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "lenient_worker_outcome",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub outcome: Option<WorkerOutcomeRecord>,
+    #[serde(
+        default,
+        deserialize_with = "lenient_worker_last_turn",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub last_turn: Option<WorkerLastTurnRecord>,
+    /// When the worker's report reached the opener.
+    #[serde(
+        default,
+        deserialize_with = "lenient_time",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub reported_at: Option<i64>,
 }
+
+const MAX_WORKER_SUMMARY_CHARS: usize = 2000;
+const MAX_WORKER_FILES: usize = 50;
+const MAX_WORKER_REASON_CHARS: usize = 300;
 
 /// Where the app keeps its data: the platform app-data dir, or a sibling
 /// `<identifier>.dev` folder for a dev build. Dev and release builds share an
@@ -465,6 +547,82 @@ fn lenient_delegation<'de, D: Deserializer<'de>>(
 ) -> Result<Option<DelegationLinkRecord>, D::Error> {
     let value = Option::<serde_json::Value>::deserialize(deserializer)?;
     Ok(value.and_then(|value| serde_json::from_value(value).ok()))
+}
+
+/// A worker handle (`worker-<n>`), or none when it is anything else.
+fn lenient_worker_handle<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .filter(|handle| is_worker_handle(handle)))
+}
+
+fn is_worker_handle(handle: &str) -> bool {
+    handle.strip_prefix("worker-").is_some_and(|digits| {
+        !digits.is_empty()
+            && !digits.starts_with('0')
+            && digits.bytes().all(|byte| byte.is_ascii_digit())
+    })
+}
+
+fn cut_chars(text: &str, max: usize) -> String {
+    text.chars().take(max).collect()
+}
+
+/// A worker's outcome, or none when its result or time is malformed; a bad
+/// summary or file list is dropped alone, and long ones are cut.
+fn lenient_worker_outcome<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<WorkerOutcomeRecord>, D::Error> {
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| {
+        let result = value.get("result")?.as_str()?;
+        if result != "succeeded" && result != "failed" {
+            return None;
+        }
+        Some(WorkerOutcomeRecord {
+            result: result.to_owned(),
+            at: value.get("at")?.as_i64()?,
+            summary: value
+                .get("summary")
+                .and_then(|summary| summary.as_str())
+                .map(|summary| cut_chars(summary, MAX_WORKER_SUMMARY_CHARS)),
+            files: value
+                .get("files")
+                .and_then(|files| files.as_array())
+                .map(|files| {
+                    files
+                        .iter()
+                        .filter_map(|file| file.as_str().map(str::to_owned))
+                        .take(MAX_WORKER_FILES)
+                        .collect()
+                }),
+        })
+    }))
+}
+
+/// A worker's last turn, or none when its time or ending is malformed; a bad
+/// reason is dropped alone, and a long one is cut.
+fn lenient_worker_last_turn<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<WorkerLastTurnRecord>, D::Error> {
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| {
+        let how = value.get("how")?.as_str()?;
+        if !["finished", "failed", "cancelled", "exited"].contains(&how) {
+            return None;
+        }
+        Some(WorkerLastTurnRecord {
+            ended_at: value.get("endedAt")?.as_i64()?,
+            how: how.to_owned(),
+            reason: value
+                .get("reason")
+                .and_then(|reason| reason.as_str())
+                .map(|reason| cut_chars(reason, MAX_WORKER_REASON_CHARS)),
+        })
+    }))
 }
 
 /// A saved usage total, or none when it is malformed or negative.
@@ -1046,6 +1204,59 @@ mod tests {
     }
 
     #[test]
+    fn keeps_a_canvas_comment_and_drops_a_bad_one() {
+        let mut canvas = artifact_comment_json("ac-1");
+        canvas["artifactId"] = serde_json::json!("c-0123456789abcdef");
+        canvas["version"] = serde_json::json!(0);
+        canvas["anchor"] = serde_json::json!({ "kind": "artboard" });
+        canvas["canvas"] = serde_json::json!({
+            "key": "c-0123456789abcdef",
+            "artboardId": "pay-b",
+            "fileHash": "ab".repeat(32),
+        });
+        let mut not_an_object = canvas.clone();
+        not_an_object["id"] = serde_json::json!("ac-2");
+        not_an_object["canvas"] = serde_json::json!("pay-b");
+        let mut missing_hash = canvas.clone();
+        missing_hash["id"] = serde_json::json!("ac-3");
+        missing_hash["canvas"]
+            .as_object_mut()
+            .expect("object")
+            .remove("fileHash");
+
+        let mut extra_field = canvas.clone();
+        extra_field["id"] = serde_json::json!("ac-5");
+        extra_field["canvas"]["later"] = serde_json::json!(true);
+
+        let record: SessionRecord = serde_json::from_value(session_json(serde_json::json!({
+            "artifactComments": [canvas.clone(), not_an_object, missing_hash, extra_field]
+        })))
+        .expect("deserialize");
+
+        let ids: Vec<&str> = record
+            .artifact_comments
+            .iter()
+            .map(|c| c.id.as_str())
+            .collect();
+        // An unknown field inside `canvas` is dropped, not the comment.
+        assert_eq!(ids, ["ac-1", "ac-5"]);
+        assert!(
+            serde_json::to_value(&record.artifact_comments[1]).expect("serialize")["canvas"]
+                .get("later")
+                .is_none()
+        );
+        let value = serde_json::to_value(&record).expect("serialize");
+        assert_eq!(value["artifactComments"][0], canvas);
+        // A page comment writes no `canvas` field.
+        let page: SessionRecord = serde_json::from_value(session_json(serde_json::json!({
+            "artifactComments": [artifact_comment_json("ac-4")]
+        })))
+        .expect("deserialize");
+        let value = serde_json::to_value(&page).expect("serialize");
+        assert!(value["artifactComments"][0].get("canvas").is_none());
+    }
+
+    #[test]
     fn an_empty_artifact_comments_list_is_not_written() {
         let value = serde_json::to_value(SessionRecord {
             id: "s-1".to_string(),
@@ -1201,6 +1412,7 @@ mod tests {
                 task: "Do it".to_string(),
                 started_at: 5,
                 ended_at: Some(9),
+                ..DelegationLinkRecord::default()
             }),
             ..SessionRecord::default()
         };
@@ -1210,6 +1422,125 @@ mod tests {
 
         assert_eq!(back, record);
         assert_eq!(value["delegatedFrom"]["sessionId"], "s-a");
+    }
+
+    #[test]
+    fn a_link_with_the_worker_fields_survives_a_save() {
+        let record = SessionRecord {
+            id: "s-1".to_string(),
+            delegated_from: Some(DelegationLinkRecord {
+                session_id: "s-a".to_string(),
+                task: "Do it".to_string(),
+                started_at: 5,
+                ended_at: None,
+                handle: Some("worker-2".to_string()),
+                outcome: Some(WorkerOutcomeRecord {
+                    result: "succeeded".to_string(),
+                    at: 9,
+                    summary: Some("Done".to_string()),
+                    files: Some(vec!["a.ts".to_string()]),
+                }),
+                last_turn: Some(WorkerLastTurnRecord {
+                    ended_at: 10,
+                    how: "finished".to_string(),
+                    reason: None,
+                }),
+                reported_at: Some(11),
+            }),
+            ..SessionRecord::default()
+        };
+
+        let value = serde_json::to_value(&record).expect("serialize");
+        let back: SessionRecord = serde_json::from_value(value.clone()).expect("deserialize");
+
+        assert_eq!(back, record);
+        assert_eq!(value["delegatedFrom"]["handle"], "worker-2");
+        assert_eq!(value["delegatedFrom"]["lastTurn"]["endedAt"], 10);
+        assert_eq!(value["delegatedFrom"]["reportedAt"], 11);
+    }
+
+    #[test]
+    fn a_malformed_worker_field_is_dropped_and_the_link_kept() {
+        let record: SessionRecord = serde_json::from_value(session_json(serde_json::json!({
+            "delegatedFrom": {
+                "sessionId": "s-a", "task": "Do it", "startedAt": 5,
+                "handle": 7,
+                "outcome": { "result": "maybe", "at": 9 },
+                "lastTurn": { "endedAt": "x", "how": "finished" },
+                "reportedAt": "soon"
+            }
+        })))
+        .expect("bad worker fields must not fail the record");
+
+        let link = record.delegated_from.expect("the link is kept");
+        assert_eq!(link.session_id, "s-a");
+        assert_eq!(link.handle, None);
+        assert_eq!(link.outcome, None);
+        assert_eq!(link.last_turn, None);
+        assert_eq!(link.reported_at, None);
+    }
+
+    #[test]
+    fn a_handle_of_another_shape_is_dropped() {
+        for handle in ["session-1", "worker-0", "worker-x", "Worker-1"] {
+            let record: SessionRecord = serde_json::from_value(session_json(serde_json::json!({
+                "delegatedFrom": { "sessionId": "s-a", "task": "x", "startedAt": 5, "handle": handle }
+            })))
+            .expect("deserialize");
+
+            assert_eq!(
+                record.delegated_from.expect("link").handle,
+                None,
+                "{handle}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_long_summary_reason_and_file_list_are_cut_on_load() {
+        let files: Vec<String> = (0..60).map(|i| format!("f{i}")).collect();
+        let record: SessionRecord = serde_json::from_value(session_json(serde_json::json!({
+            "delegatedFrom": {
+                "sessionId": "s-a", "task": "x", "startedAt": 5,
+                "outcome": { "result": "failed", "at": 9, "summary": "x".repeat(2500), "files": files },
+                "lastTurn": { "endedAt": 10, "how": "failed", "reason": "y".repeat(400) }
+            }
+        })))
+        .expect("deserialize");
+
+        let link = record.delegated_from.expect("link");
+        let outcome = link.outcome.expect("outcome");
+        assert_eq!(outcome.summary.expect("summary").chars().count(), 2000);
+        assert_eq!(outcome.files.expect("files").len(), 50);
+        assert_eq!(
+            link.last_turn
+                .expect("last turn")
+                .reason
+                .expect("reason")
+                .chars()
+                .count(),
+            300
+        );
+    }
+
+    #[test]
+    fn a_multibyte_summary_is_cut_by_characters() {
+        let record: SessionRecord = serde_json::from_value(session_json(serde_json::json!({
+            "delegatedFrom": {
+                "sessionId": "s-a", "task": "x", "startedAt": 5,
+                "outcome": { "result": "failed", "at": 9, "summary": "é".repeat(2500) }
+            }
+        })))
+        .expect("deserialize");
+
+        let summary = record
+            .delegated_from
+            .expect("link")
+            .outcome
+            .expect("outcome")
+            .summary
+            .expect("summary");
+        assert_eq!(summary.chars().count(), 2000);
     }
 
     #[test]
@@ -1231,5 +1562,34 @@ mod tests {
         let value = serde_json::to_value(SessionRecord::default()).expect("serialize");
 
         assert!(value.get("delegatedFrom").is_none(), "{value}");
+    }
+
+    #[test]
+    fn keeps_a_design_system_comment_and_drops_a_bad_one() {
+        let mut good = artifact_comment_json("ac-1");
+        good["artifactId"] = serde_json::json!("d-0123456789abcdef");
+        good["version"] = serde_json::json!(0);
+        good["anchor"] = serde_json::json!({ "kind": "system" });
+        good["designSystem"] = serde_json::json!({
+            "key": "d-0123456789abcdef",
+            "target": { "kind": "token", "name": "accent" },
+            "hash": "ab12",
+        });
+        let mut bad = good.clone();
+        bad["id"] = serde_json::json!("ac-2");
+        bad["designSystem"] =
+            serde_json::json!({ "key": "d-0123456789abcdef", "target": "accent" });
+        let record: SessionRecord = serde_json::from_value(session_json(serde_json::json!({
+            "artifactComments": [good.clone(), bad]
+        })))
+        .expect("deserialize");
+        let ids: Vec<&str> = record
+            .artifact_comments
+            .iter()
+            .map(|c| c.id.as_str())
+            .collect();
+        assert_eq!(ids, ["ac-1"]);
+        let value = serde_json::to_value(&record).expect("serialize");
+        assert_eq!(value["artifactComments"][0], good);
     }
 }

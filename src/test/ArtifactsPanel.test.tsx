@@ -68,7 +68,7 @@ describe("the list", () => {
 
     expect(screen.getByRole("heading", { name: "Session list performance" })).toBeTruthy();
     await waitFor(() => expect(calls("artifact_view_show")).toHaveLength(1));
-    expect(screen.queryByRole("button", { name: "Back to output" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Back to artifacts" })).toBeNull();
   });
 });
 
@@ -121,7 +121,7 @@ describe("the viewer", () => {
 
   it("goes back to the list", () => {
     const { props } = show(viewingReport);
-    fireEvent.click(screen.getByRole("button", { name: "Back to output" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to artifacts" }));
     expect(props.onView).toHaveBeenCalledWith(null);
   });
 
@@ -213,7 +213,7 @@ describe("the viewer", () => {
     rerender(<ArtifactsPanel {...props} isExpanded />);
 
     expect(screen.getByRole("button", { name: "Shrink" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Back to output" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Back to artifacts" })).toBeNull();
   });
 
   it("tells the user when the page cannot be shown", async () => {
@@ -398,12 +398,14 @@ describe("comments", () => {
     cancelCandidate: vi.fn(),
     saveCandidate: vi.fn(() => "saved" as const),
     missing: new Set<number>(),
+    startArtboardComment: vi.fn(),
+    canvasMissing: new Map(),
     editComment: vi.fn(),
     deleteComment: vi.fn(),
     clearSent: vi.fn(),
     ...overrides,
   });
-  const addReview = () => ({ inMessage: new Set<string>(), blockedReason: undefined, add: vi.fn() });
+  const addReview = () => ({ inMessage: new Set<string>(), blockedReason: undefined, add: vi.fn(), addCanvas: vi.fn() });
 
   it("Comment is off on an older version, with the reason", () => {
     show({ viewed: { artifactId: REPORT.id, version: 2 }, comments: commentsState(), addReview: addReview(), cwd: "/w" });
@@ -457,7 +459,7 @@ describe("comments", () => {
   });
 });
 
-describe("the Output tab's files and empty state", () => {
+describe("the Artifacts tab's files and empty state", () => {
   const MADE = [
     { path: "/w/zorvo/src/lib/pr-chip.ts", at: Date.now() - 6 * 60_000 },
     { path: "/elsewhere/notes.md", at: Date.now() - 7 * 60_000 },
@@ -466,14 +468,14 @@ describe("the Output tab's files and empty state", () => {
   it("says what will show there while the agent has made nothing", () => {
     show({ artifacts: [], files: [], agentName: "Claude Code" });
     expect(screen.getByText("Nothing yet. Pages and files Claude Code makes in this session show here.")).toBeTruthy();
-    expect(screen.queryByRole("list", { name: "Output" })).toBeNull();
+    expect(screen.queryByRole("list", { name: "Artifacts" })).toBeNull();
   });
 
   it("lists the files the agent made under its pages, and opens one inside the folder in the file viewer", () => {
     const onOpenFile = vi.fn();
     show({ artifacts: [REPORT], files: MADE, filesRoot: "/w/zorvo", onOpenFile });
 
-    const rows = within(screen.getByRole("list", { name: "Output" })).getAllByRole("listitem");
+    const rows = within(screen.getByRole("list", { name: "Artifacts" })).getAllByRole("listitem");
     expect(rows).toHaveLength(3);
     expect(rows[0].textContent).toContain(REPORT.title);
     expect(rows[1].textContent).toContain("pr-chip.ts");
@@ -488,14 +490,115 @@ describe("the Output tab's files and empty state", () => {
 
   it("says no time for a file whose time is not known", () => {
     show({ artifacts: [], files: [{ path: "/w/zorvo/src/replayed.ts", at: null }], filesRoot: "/w/zorvo" });
-    const row = within(screen.getByRole("list", { name: "Output" })).getByRole("listitem");
+    const row = within(screen.getByRole("list", { name: "Artifacts" })).getByRole("listitem");
     expect(row.textContent).toContain("New file · src");
     expect(row.textContent).not.toMatch(/ago|now/i);
   });
 
   it("opens a single page by itself only when no file is listed beside it", () => {
     show({ artifacts: [REPORT], files: MADE, filesRoot: "/w/zorvo" });
-    expect(screen.getByRole("list", { name: "Output" })).toBeTruthy();
+    expect(screen.getByRole("list", { name: "Artifacts" })).toBeTruthy();
   });
 });
 
+
+describe("canvases", () => {
+  const CANVAS_KEY = "c-0123456789abcdef";
+  const ENTRY = { key: CANVAS_KEY, folder: "/w/design/checkout", relative: "design/checkout", title: "Checkout", shownAt: 4_000, artboards: 12 };
+  const READ = {
+    entry: ENTRY,
+    canvas: { title: "Checkout", sections: [{ id: "flow", title: "Flow", artboards: [{ id: "cart", title: "Cart", file: "cart.html", width: 1440, height: 900, group: null }] }] },
+    error: null,
+    boards: [{ id: "cart", sha256: "a".repeat(64) }],
+  };
+
+  it("lists a canvas in the Artifacts tab and opens it", async () => {
+    spy.mockImplementation((cmd: string, args?: Record<string, unknown>) => (cmd === "canvas_read" ? Promise.resolve(READ) : fakeTauriInvoke(cmd, args)));
+    const { props, rerender } = show({ canvases: [ENTRY] });
+
+    const row = screen.getByRole("button", { name: /^Checkout/ });
+    expect(row.textContent).toContain("Canvas · 12 artboards · design/checkout");
+    fireEvent.click(row);
+    expect(props.onView).toHaveBeenCalledWith({ canvasKey: CANVAS_KEY });
+
+    rerender(<ArtifactsPanel {...props} canvases={[ENTRY]} viewed={{ canvasKey: CANVAS_KEY }} />);
+    await waitFor(() => expect(calls("canvas_view_show")).toHaveLength(1));
+    expect(calls("canvas_view_show")[0]).toEqual({ sessionId: "s-1", key: CANVAS_KEY, ...RECT });
+    expect(calls("artifact_view_show")).toEqual([]);
+  });
+
+  it("says when a canvas's folder is gone", () => {
+    show({ canvases: [{ ...ENTRY, folderGone: true }] });
+
+    // As in the artboard, a row whose folder is gone opens nothing: only its menu is left.
+    expect(screen.queryByRole("button", { name: /^Checkout/ })).toBeNull();
+    const row = within(screen.getByRole("list", { name: "Artifacts" }))
+      .getAllByRole("listitem")
+      .find((item) => item.textContent?.includes("Checkout"))!;
+    expect(row.textContent).toContain("Canvas · design/checkout");
+    expect(row.textContent).not.toContain("12 artboards");
+    expect(row.textContent).toContain("Folder not found");
+  });
+
+  it("removes a canvas from its menu", async () => {
+    const { props } = show({ canvases: [ENTRY] });
+
+    fireEvent.click(screen.getByRole("button", { name: "More actions for Checkout" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /^Remove/ }));
+
+    await waitFor(() => expect(calls("canvas_forget")).toEqual([{ sessionId: "s-1", key: CANVAS_KEY }]));
+    expect(props.onError).not.toHaveBeenCalled();
+  });
+
+  it("does not open a single page by itself while a canvas is listed", () => {
+    show({ artifacts: [REPORT], canvases: [ENTRY] });
+    expect(screen.getByRole("list", { name: "Artifacts" })).toBeTruthy();
+  });
+});
+
+describe("motions and videos", () => {
+  const MOTION = { key: "m-0123456789abcdef", folder: "/w/promo", relative: "promo", title: "Promo", shownAt: 5, duration: 15, formats: ["wide", "tall"] };
+  const VIDEO = { key: "v-0123456789abcdef", path: "/w/out/reel.mp4", relative: "out/reel.mp4", title: "Reel", shownAt: 4 };
+
+  it("lists them and opens each by its key", () => {
+    const { props } = show({ motions: [MOTION], videos: [VIDEO] });
+    expect(screen.getByText("Video · 15 s · 2 formats · promo")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Promo/ }));
+    expect(props.onView).toHaveBeenCalledWith({ motionKey: MOTION.key });
+    fireEvent.click(screen.getByRole("button", { name: /Reel/ }));
+    expect(props.onView).toHaveBeenCalledWith({ videoKey: VIDEO.key });
+  });
+
+  it("shows a motion's preview, formats and renders", async () => {
+    spy.mockImplementation((cmd: string, args?: Record<string, unknown>) => {
+      if (cmd === "motion_read") {
+        return Promise.resolve({
+          entry: MOTION,
+          title: "Promo",
+          duration: 15,
+          fps: 60,
+          poster: 5,
+          tracks: 1,
+          formats: [
+            { id: "wide", width: 1920, height: 1080, hasRender: true, isUpToDate: true },
+            { id: "tall", width: 1080, height: 1920, hasRender: false, isUpToDate: false },
+          ],
+          jobs: [],
+          error: null,
+          warnings: [],
+        });
+      }
+      return fakeTauriInvoke(cmd, args);
+    });
+    show({ artifacts: [], motions: [MOTION], viewed: { motionKey: MOTION.key } });
+    expect(await screen.findByRole("radio", { name: "wide" })).toBeTruthy();
+    expect(screen.getByText("Preview has no motion blur. Exports do.")).toBeTruthy();
+    expect(screen.getByText("Rendered")).toBeTruthy();
+    expect(screen.getByText("Not rendered")).toBeTruthy();
+    await waitFor(() => expect(calls("motion_view_show").length).toBeGreaterThan(0));
+    expect(calls("motion_view_show")[0]).toMatchObject({ sessionId: "s-1", key: MOTION.key, format: "wide" });
+    fireEvent.click(screen.getByRole("button", { name: "Play" }));
+    expect(calls("motion_view_command")).toContainEqual({ sessionId: "s-1", key: MOTION.key, name: "play" });
+    expect(screen.getByRole("button", { name: "Mute" })).toBeTruthy();
+  });
+});

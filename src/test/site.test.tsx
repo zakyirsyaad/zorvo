@@ -14,10 +14,15 @@ import QuickstartDocs from "../../site/app/docs/quickstart/page";
 import ReviewDocs from "../../site/app/docs/review/page";
 import SigningInDocs from "../../site/app/docs/signing-in/page";
 import DelegateDocs from "../../site/app/docs/delegate/page";
+import OutputDocs from "../../site/app/docs/output/page";
 import TerminalDocs from "../../site/app/docs/terminal/page";
 import TroubleshootingDocs from "../../site/app/docs/troubleshooting/page";
 import { DOCS_PAGES } from "../../site/lib/docs-nav";
 import { AGENT_LOGOS } from "../../site/lib/agent-logos";
+import { DOWNLOADS_FALLBACK, downloadCount, formatCount, latestVersion } from "../../site/lib/downloads";
+import { STRIP_AGENTS } from "../../site/lib/strip-agents";
+import { Voices } from "../../site/components/sections/Voices";
+import type { Voice } from "../../site/lib/voices";
 import { LINKS } from "../../site/lib/links";
 import robots from "../../site/app/robots";
 import sitemap from "../../site/app/sitemap";
@@ -104,22 +109,27 @@ describe("landing page", () => {
     return body.textContent ?? "";
   })();
 
-  it("has the twelve sections in order, the paid extra after the free app, and no pricing", () => {
+  it("has the seventeen sections in order, the paid extra after the free app, and no pricing", () => {
     const names = [...document.querySelectorAll("main > section")].map(
       (section) => section.id || section.getAttribute("aria-label"),
     );
     expect(names).toEqual([
       "top",
       "Agents",
+      "community",
+      "stats",
       "sessions",
       "compare",
       "delegate",
       "review",
+      "output",
+      "canvas",
       "control",
       "Long sessions",
       "features",
       "private",
       "privacy",
+      "faq",
       "download",
     ]);
     // A session called "Review the pricing copy" is in a picture; the page's own words name no price.
@@ -171,7 +181,7 @@ describe("landing page", () => {
     for (const link of links) {
       const href = link.getAttribute("href") ?? "";
       expect(link.className, href).toContain("focus-ring");
-      expect(href, link.textContent ?? "").toMatch(/^(#[a-z]+|\/docs(\/[a-z-]+)?|https:\/\/github\.com\/zakyirsyaad\/zorvo\b)/);
+      expect(href, link.textContent ?? "").toMatch(/^(#[a-z]+|\/docs(\/[a-z-]+)?|https:\/\/github\.com\/zakyirsyaad\/zorvo\b|https:\/\/discord\.gg\/wX6SPqQu33$|https:\/\/x\.com\/zorvolabs(\/status\/\d+)?$|https:\/\/zorvolabs\.xyz$)/);
     }
   });
 
@@ -190,12 +200,16 @@ describe("landing page", () => {
   it("links the docs and the source from the header and the guides from their sections", () => {
     const header = document.querySelector("header")!;
     expect([...header.querySelectorAll("a")].map((link) => link.textContent)).toContain("Docs");
-    expect(header.querySelector(`a[href="${LINKS.repository}"]`)?.textContent).toBe("GitHub");
+    expect(header.querySelector(`a[href="${LINKS.repository}"]`)?.textContent).toBe("GitHub, opens in a new tab");
     expect(document.querySelector(`footer a[href="${LINKS.license}"]`)).not.toBeNull();
     expect(document.querySelector(`#compare a[href="${LINKS.compareGuide}"]`)).not.toBeNull();
     expect(document.querySelector(`#delegate a[href="${LINKS.delegateGuide}"]`)).not.toBeNull();
     expect(document.querySelector(`#review a[href="${LINKS.reviewGuide}"]`)).not.toBeNull();
-    expect(copy).toContain("ACP registry");
+    expect(document.querySelector(`#output a[href="${LINKS.outputGuide}"]`)).not.toBeNull();
+    expect(document.querySelector(`#canvas a[href="${LINKS.canvasGuide}"]`)).not.toBeNull();
+    // The page says what Zorvo runs in plain words: the protocol's name is for the docs.
+    expect(copy).toContain("dozens more coding agents");
+    expect(copy).not.toMatch(/\bACP\b|Agent Client Protocol/);
     expect(copy).not.toMatch(/Aider|Oh-My-Pi/);
   });
 
@@ -223,11 +237,11 @@ describe("landing page", () => {
     expect(document.querySelector("#privacy")?.textContent).toContain("Private mode is the one exception");
   });
 
-  it("shows every agent by its logo in the design's tile, and keeps the + tile of the registry", () => {
+  it("shows the four main agents by their own logos, in the design's tile", () => {
     const tiles = [...document.querySelectorAll(".lp-logo")];
-    const agentTiles = tiles.filter((tile) => tile.textContent !== "+");
-    expect(agentTiles).toHaveLength(30);
-    expect(tiles.length - agentTiles.length).toBe(1);
+    // A tile with a mask holds a registry icon; the others hold one of the four colour logos.
+    const agentTiles = tiles.filter((tile) => !tile.querySelector(".lp-mark"));
+    expect(agentTiles).toHaveLength(33);
     for (const tile of agentTiles) {
       expect(tile.getAttribute("aria-hidden"), tile.outerHTML).toBe("true");
       expect(tile.textContent, "no letter stands for the agent any more").toBe("");
@@ -235,6 +249,171 @@ describe("landing page", () => {
     }
     const logos = new Set(agentTiles.map((tile) => tile.querySelector("img")?.getAttribute("src")));
     expect(logos).toEqual(new Set(Object.values(AGENT_LOGOS)));
+  });
+
+  it("names only agents the registry lists in the strip, each with an icon", () => {
+    const history = JSON.parse(readFileSync(join(ROOT, "src-tauri", "resources", "registry-history.json"), "utf8")).agents;
+    const icons = JSON.parse(readFileSync(join(ROOT, "src-tauri", "resources", "registry-icons.json"), "utf8"));
+    for (const agent of STRIP_AGENTS) {
+      expect(history[agent.id], agent.id).toBeDefined();
+      if (!agent.logo) expect(icons[agent.id], agent.id).toMatch(/<svg[\s>]/);
+    }
+    const [shown, filler] = [...document.querySelectorAll('section[aria-label="Agents"] .lp-track > ul')];
+    expect([...shown.querySelectorAll("li")].map((item) => item.textContent)).toEqual(STRIP_AGENTS.map((agent) => agent.name));
+    // The second list only fills the loop.
+    expect(shown.hasAttribute("aria-hidden")).toBe(false);
+    expect(filler.getAttribute("aria-hidden")).toBe("true");
+    expect(filler.querySelectorAll("li")).toHaveLength(STRIP_AGENTS.length);
+    const masks = [...shown.querySelectorAll<HTMLElement>(".lp-mark")].map((mark) => mark.style.getPropertyValue("--lp-mark"));
+    expect(masks).toEqual(STRIP_AGENTS.filter((agent) => !agent.logo).map((agent) => `url(/agents/${agent.id}.svg)`));
+  });
+
+  it("stops the moving strip under the pointer, keeps it still under reduced motion, and draws no line around it", () => {
+    const css = readFileSync(join(ROOT, "site", "app", "landing.css"), "utf8");
+    expect(css).toContain(".lp-mq:hover .lp-track { animation-play-state: paused; }");
+    expect(css).toMatch(/@media \(prefers-reduced-motion: reduce\) \{\s+\.lp-mq \{ mask-image: none; \}\s+\.lp-track \{ animation: none;/);
+    // The owner chose a strip with no Pause control and no rules above or below it.
+    const strip = document.querySelector('section[aria-label="Agents"]')!;
+    expect(strip.querySelectorAll("input, button, label")).toHaveLength(0);
+    expect(strip.className).not.toMatch(/border|bg-/);
+    expect(document.querySelector("#community")?.className.split(" ")).toContain("border-t-0");
+  });
+
+  it("puts the download count on the hero's button and in the Download section", () => {
+    const count = formatCount(DOWNLOADS_FALLBACK);
+    const button = document.querySelector("#top [data-downloads]")?.closest("a");
+    expect(button?.textContent).toBe(`Download for Mac${count}`);
+    expect(button?.getAttribute("aria-label")).toBe(`Download for Mac. Downloaded ${count} times.`);
+    expect(document.querySelector("#download [data-downloads]")?.parentElement?.textContent).toBe(`${count} downloads`);
+    // A count that is missing, broken, or lower than the last one read is not shown.
+    expect(downloadCount(undefined)).toBe(DOWNLOADS_FALLBACK);
+    expect(downloadCount("12")).toBe(DOWNLOADS_FALLBACK);
+    expect(downloadCount("abc")).toBe(DOWNLOADS_FALLBACK);
+    expect(downloadCount("1480")).toBe(1480);
+    expect(formatCount(1480)).toBe("1,480");
+    // The version beside it is the newest published release's, and the package's own only as a stand-in.
+    const packageVersion = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).version;
+    expect(document.querySelector("#download")?.textContent).toContain(`Version ${packageVersion}`);
+    expect(latestVersion("0.14.1")).toBe("0.14.1");
+    expect(latestVersion(undefined)).toBe(packageVersion);
+    expect(latestVersion("latest")).toBe(packageVersion);
+  });
+
+  it("shows Zorvo's launch post as a card that loads nothing from X", () => {
+    const card = document.querySelector("#community [data-tweet]")!;
+    expect(card.textContent).toContain("Every coding agent. One desktop.");
+    expect(card.textContent).toContain("Claude Code, Codex, Qwen Code and 40 more");
+    expect(card.querySelector("time")?.getAttribute("datetime")).toBe("2026-11-14");
+    expect(card.querySelector("time")?.textContent).toBe("14 Nov 2026");
+    // A copy of the post: its video is served by the site itself, and no picture, frame or script comes from X.
+    expect(card.querySelectorAll("img, iframe, script")).toHaveLength(0);
+    const video = card.querySelector("video")!;
+    expect([video.getAttribute("poster"), video.querySelector("source")?.getAttribute("src")]).toEqual(["/media/zorvo-launch.jpg", "/media/zorvo-launch.mp4"]);
+    for (const file of ["zorvo-launch.jpg", "zorvo-launch.mp4"]) expect(existsSync(join(ROOT, "site", "public", "media", file)), file).toBe(true);
+    // Silent, sized so the page does not jump, and not fetched until it plays. No controls: the owner's choice.
+    for (const attribute of ["muted", "loop", "playsinline", "data-autoplay", "aria-label"]) expect(video.hasAttribute(attribute), attribute).toBe(true);
+    expect(video.hasAttribute("controls")).toBe(false);
+    expect([video.getAttribute("width"), video.getAttribute("height"), video.getAttribute("preload")]).toEqual(["960", "540", "none"]);
+    // The card as a whole leads to the profile: the name's link is stretched over it, and it lifts on hover.
+    expect(card.querySelector("a.lp-tweet-main")?.getAttribute("href")).toBe("https://x.com/zorvolabs");
+    expect(card.hasAttribute("data-hover")).toBe(true);
+    const css = readFileSync(join(ROOT, "site", "app", "landing.css"), "utf8");
+    expect(css).toContain('.lp-tweet-main::after { content: ""; position: absolute; inset: 0;');
+    expect([...card.querySelectorAll("a")].map((link) => link.getAttribute("href"))).toEqual([
+      "https://x.com/zorvolabs",
+      "https://x.com/zorvolabs/status/2121583312947007728",
+      "https://zorvolabs.xyz",
+    ]);
+    const places = [...document.querySelectorAll("#community ul a")].map((link) => link.getAttribute("href"));
+    expect(places).toEqual([LINKS.discord, LINKS.x, LINKS.repository]);
+    // Each row answers the pointer and the keyboard alike.
+    const styles = readFileSync(join(ROOT, "site", "app", "landing.css"), "utf8");
+    expect(document.querySelectorAll("#community ul a.lp-place .lp-place-go")).toHaveLength(3);
+    expect(styles).toContain(".lp-place:hover .lp-place-go, .lp-place:focus-visible .lp-place-go { opacity: 1; translate: 0 0; }");
+  });
+
+  it("uncovers the footer instead of scrolling it in", () => {
+    const footer = document.querySelector("footer[data-foot]")!;
+    expect(footer.className.split(" ")).toContain("overflow-hidden");
+    expect(footer.querySelector(":scope > [data-foot-inner]")).not.toBeNull();
+    const script = readFileSync(join(ROOT, "site", "scripts", "motion", "landing.ts"), "utf8");
+    expect(script).toMatch(/"\[data-foot-inner\]",\s+\{ yPercent: footStart \},\s+\{ yPercent: 0, ease: "none", scrollTrigger: \{ trigger: foot, start: "top bottom", end: "bottom bottom", scrub: true, invalidateOnRefresh: true \} \}/);
+    // Held at the bottom of the window, a footer taller than the window would hide its own top for good.
+    expect(script).toContain("const footStart = () => (foot.offsetHeight <= window.innerHeight ? -100 : 0);");
+  });
+
+  it("answers the README's own questions, each in a row that opens without a script", () => {
+    const rows = [...document.querySelectorAll("#faq details")];
+    expect(rows.map((row) => row.querySelector("summary h3")?.textContent)).toEqual([
+      "Is Zorvo free?",
+      "Does Zorvo need my API keys?",
+      "Which agent should I start with?",
+      "What do I need installed?",
+      "Does it work on Windows or Linux?",
+      "Does Zorvo send my code anywhere?",
+    ]);
+    for (const row of rows) {
+      // One open at a time, and an answer of real length under every question.
+      expect(row.getAttribute("name")).toBe("faq");
+      expect(row.hasAttribute("open")).toBe(false);
+      expect(row.querySelector("p")?.textContent?.length, row.textContent ?? "").toBeGreaterThan(30);
+      expect(row.querySelector("summary")?.className).toContain("focus-ring");
+    }
+    // The answers repeat the README, which a change there must not leave behind.
+    const readme = readFileSync(join(ROOT, "README.md"), "utf8").replace(/\s+/g, " ");
+    expect(readme).toContain("Each agent signs in with its own tools, and Zorvo never asks for or stores keys or tokens.");
+    expect(readme).toContain("Not yet. Zorvo is a Mac app for now.");
+    const answers = document.querySelector("#faq")?.textContent ?? "";
+    expect(answers).toContain("Each agent signs in with its own tools, and Zorvo never asks for or stores keys or tokens.");
+    expect(answers).toContain("Not yet. Zorvo is a Mac app for now.");
+    expect(document.querySelector('footer a[href="#faq"]')?.textContent).toBe("Questions");
+  });
+
+  describe("voices", () => {
+    const voice = (word: string) => ({ quote: `Quote ${word}.`, name: `Name ${word}`, role: "Role", source: "Discord" });
+    const render = (voices: readonly Voice[]) =>
+      new DOMParser().parseFromString(renderToStaticMarkup(<Voices voices={voices} />), "text/html");
+
+    it("shows no voices section without real quotes", () => {
+      expect(document.querySelector("#voices")).toBeNull();
+    });
+
+    it("keeps every quote word for word, the first one largest", () => {
+      const voices = ["one", "two", "three", "four"].map(voice);
+      const section = render(voices);
+      expect([...section.querySelectorAll("blockquote")].map((quote) => quote.textContent)).toEqual(voices.map((v) => v.quote));
+      expect(section.querySelectorAll("figcaption")).toHaveLength(4);
+      expect(section.querySelector("[data-voice=lead] blockquote")?.textContent).toBe("Quote one.");
+      expect(section.querySelectorAll("[data-voice=pair]")).toHaveLength(2);
+      expect(section.querySelectorAll("[data-voice=rest]")).toHaveLength(1);
+    });
+
+    it("draws only the rows it has quotes for", () => {
+      expect(render([voice("one")]).querySelectorAll("figure")).toHaveLength(1);
+      const two = render([voice("one"), voice("two")]);
+      expect(two.querySelectorAll("[data-voice=pair]")).toHaveLength(1);
+      expect(two.querySelector("[data-voice=rest]")).toBeNull();
+    });
+
+    it("marks the lead's highlight inside its own words, and nothing that is not in the quote", () => {
+      const lead = { ...voice("one"), quote: "I run Codex and Claude Code side by side now.", highlight: "side by side" };
+      const marked = render([lead]).querySelector("blockquote mark");
+      expect(marked?.textContent).toBe("side by side");
+      expect(render([{ ...lead, highlight: "not in the quote" }]).querySelector("mark")).toBeNull();
+      expect(render([lead, { ...voice("two"), highlight: "Quote" }]).querySelectorAll("mark")).toHaveLength(1);
+    });
+
+    it("names the person, the agents they run, and links to where they said it", () => {
+      const lead = { ...voice("one"), handle: "someone", agents: ["Claude Code", "Codex"], source: "X", href: "https://x.com/someone/status/1" };
+      const caption = render([lead]).querySelector("figcaption")!;
+      expect(caption.textContent).toContain("Name one");
+      expect(caption.textContent).toContain("@someone");
+      expect(caption.textContent).toContain("runs Claude Code and Codex");
+      const link = caption.querySelector("a")!;
+      expect(link.getAttribute("href")).toBe("https://x.com/someone/status/1");
+      expect(link.textContent).toContain("Read on X");
+      expect(render([voice("one")]).querySelector("figcaption a")).toBeNull();
+    });
   });
 
   it("keeps the long-session numbers, ending at their final values", () => {
@@ -247,42 +426,113 @@ describe("landing page", () => {
     expect(counted).toEqual([["43", "9"], ["42099", "263"], [null, "4"]]);
   });
 
-  it("lists the nine features in order", () => {
+  it("lists the twelve features in order", () => {
     const features = [...document.querySelectorAll("#features ul > li h3")].map((title) => title.textContent);
     expect(features).toEqual([
       "Every choice the agent offers",
       "Install agents from Zorvo",
       "See which agents are ready",
       "One inspector beside the chat",
+      "A browser beside the chat",
+      "A session overview",
+      "Pull requests in the sidebar",
+      "Follow a subagent",
+      "See what fills the context",
       "Read a file in place",
       "Fork and rewind",
-      "The effort list follows the model",
       "When a turn goes wrong",
-      "Zorvo updates itself",
     ]);
+    const numbers = [...document.querySelectorAll("#features ul > li > span")].map((number) => number.textContent);
+    expect(numbers).toEqual(["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]);
   });
 
   it("draws the window with the delegated session, and a compare run that asks before Pick", () => {
     const hero = document.querySelector("#top [data-win]");
     expect(hero?.textContent).toContain("Qwen Code · delegated");
     expect(hero?.textContent).toContain("38% of context");
+    // Since 0.14.0 the branch is in the session's overview card, not the top bar, and a session
+    // with a pull request shows its number in the sidebar.
+    expect(hero?.querySelector(".lp-tb")?.textContent).not.toContain("main");
+    expect(hero?.textContent).toMatch(/Environment.*main.*acme-shop.*Running.*pnpm test auth/s);
+    expect(hero?.textContent).toContain("#128 open");
     const compare = document.querySelector("#compare [role=img]");
     expect(compare?.textContent).toContain("Start 3 sessions");
     expect(compare?.textContent).toContain("Pick Claude Code");
   });
 
-  it("names the private mode link apart from privacy, and sends the footer's Privacy to its docs page", () => {
-    const sections = [...document.querySelectorAll('header nav[aria-label="Sections"] a')].map((link) => link.textContent);
-    expect(sections).toEqual(["Compare", "Delegate", "Review", "Features", "Private mode", "Privacy"]);
+  it("groups the section links under Product, with Docs beside them and three icon links", () => {
+    const header = document.querySelector("header")!;
+    const nav = header.querySelector('nav[aria-label="Sections"]')!;
+    expect([...nav.children].map((item) => `${item.tagName.toLowerCase()}:${item.querySelector("button")?.textContent ?? item.textContent}`)).toEqual([
+      "div:Product",
+      "a:Private mode",
+      "a:Privacy",
+      "a:Docs",
+    ]);
+    // The menu sits inside its item, so CSS can open it under the pointer or on focus, with a transition.
+    const item = nav.querySelector("[data-menu]")!;
+    const button = item.querySelector("button")!;
+    expect(button.getAttribute("aria-controls")).toBe("product-menu");
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    const menu = item.querySelector("#product-menu")!;
+    expect(menu.hasAttribute("popover")).toBe(false);
+    const css = readFileSync(join(ROOT, "site", "app", "landing.css"), "utf8");
+    expect(css).toContain(".lp-nav-item:not([data-shut]):is(:hover, :focus-within, [data-open]) > .lp-menu { opacity: 1; visibility: visible;");
+    expect(blockAfter(css, ".lp-menu {")).toMatch(/transition: opacity 160ms/);
+    expect([...menu.querySelectorAll("a")].map((link) => [link.querySelector("b")?.textContent, link.getAttribute("href")])).toEqual([
+      ["Sessions", "#sessions"],
+      ["Compare", "#compare"],
+      ["Delegate", "#delegate"],
+      ["Review", "#review"],
+      ["Output", "#output"],
+      ["Canvas", "#canvas"],
+      ["Control", "#control"],
+      ["All features", "#features"],
+    ]);
+    // Icons only, each named for a screen reader.
+    const icons = [...header.querySelectorAll(".lp-wrap a.lp-icon-link")].map((link) => [link.textContent, link.getAttribute("href")]);
+    expect(icons).toEqual([
+      ["Discord, opens in a new tab", LINKS.discord],
+      ["X, opens in a new tab", LINKS.x],
+      ["GitHub, opens in a new tab", LINKS.repository],
+    ]);
+    // Every link that leaves for Discord or X opens a new tab, without handing the new page a way back.
+    for (const link of document.querySelectorAll('a[href^="https://discord.gg"], a[href^="https://x.com"], a.lp-icon-link[href^="https://github.com"]')) {
+      expect(link.getAttribute("target"), link.outerHTML.slice(0, 80)).toBe("_blank");
+      expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    }
+    expect(LINKS.discord).toBe("https://discord.gg/wX6SPqQu33");
+    expect(LINKS.x).toBe("https://x.com/zorvolabs");
+  });
+
+  it("gives a phone a menu with every link the wide header has", () => {
+    const header = document.querySelector("header")!;
+    const opener = header.querySelector('button[popovertarget="site-menu"]')!;
+    expect(opener.textContent).toBe("Menu");
+    const sheet = header.querySelector("#site-menu")!;
+    expect([...sheet.querySelectorAll("a")].map((link) => link.textContent)).toEqual([
+      "Sessions", "Compare", "Delegate", "Review", "Output", "Canvas", "Control", "All features", "Private mode", "Privacy", "Docs",
+      "Discord, opens in a new tab", "X, opens in a new tab", "GitHub, opens in a new tab",
+    ]);
+    // A browser without popovers hides the button with the menu it cannot open.
+    expect(readFileSync(join(ROOT, "site", "app", "landing.css"), "utf8")).toContain(".lp-sheet, [popovertarget] { display: none; }");
+    // The script closes a menu when one of its links is followed.
+    const script = readFileSync(join(ROOT, "site", "scripts", "motion", "landing.ts"), "utf8");
+    expect(script).toMatch(/function boot\(\) \{\s+wireMenus\(\);/);
+  });
+
+  it("sends the footer's Privacy to its docs page, and links the credits terms", () => {
     const footerPrivacy = [...document.querySelectorAll("footer a")].find((link) => link.textContent === "Privacy");
     expect(footerPrivacy?.getAttribute("href")).toBe(LINKS.privacyGuide);
     expect(document.querySelector(`footer a[href="${LINKS.credits}"]`)).not.toBeNull();
   });
 
-  it("warns beside the first Download that the build is not signed, with the way to open it", () => {
-    const smallPrint = document.querySelector(`#top a[href="${LINKS.firstOpen}"]`)?.parentElement;
-    expect(smallPrint?.textContent).toContain("not signed yet");
-    expect(LINKS.firstOpen).toBe(`${LINKS.installGuide}#download`);
+  it("says the build is signed and notarized, and nowhere that it is not", () => {
+    // Zorvo is signed with a Developer ID and notarized since 0.14.1.
+    for (const id of ["top", "download"]) {
+      expect(document.getElementById(id)?.textContent, id).toMatch(/Signed with a Developer ID and\s+notarized by Apple/);
+    }
+    expect(text).not.toMatch(/not signed|Open Anyway/i);
   });
 
   it("does not claim the user approves every step, since an agent can be always allowed", () => {
@@ -290,12 +540,66 @@ describe("landing page", () => {
     expect(document.querySelector("#control")?.textContent).toContain("Always allow");
   });
 
-  it("ends the delegate scene with the report alone, as the app does", () => {
-    // The working status and the Delegate button are moments the scene passes through, hidden by CSS.
-    for (const hook of ["[data-dlg-status]", "[data-dlg-send]"]) {
+  it("ends the delegate scene with the answered card and the report alone, as the app does", () => {
+    // The card's buttons and the working lines are moments the scene passes through, hidden by CSS.
+    for (const hook of ["[data-dlg-status]", "[data-dlg-ask]"]) {
       expect(document.querySelector(hook)?.className.split(" "), hook).toContain("lp-brief");
     }
-    expect(document.querySelector("[data-dlg-report]")?.className).not.toContain("lp-brief");
+    for (const hook of ["[data-dlg-report]", "[data-dlg-allowed]"]) {
+      expect(document.querySelector(hook)?.className, hook).not.toContain("lp-brief");
+    }
+  });
+
+  it("shows an agent starting two workers with the app's own words", () => {
+    const scene = document.querySelector("#delegate [role=img]");
+    // The card's title, headings and buttons as src/lib/agent-tool-card.ts writes them.
+    expect(scene?.querySelector("[data-dlg-card]")?.textContent).toMatch(
+      /Claude Code wants to give other agents 2 tasks.*For Codex:.*For Qwen Code, in its own worktree:.*Deny.*Allow for this session/s,
+    );
+    // The report as the chat shows it: the heading, then each worker's handle, agent and state.
+    expect(scene?.querySelector("[data-dlg-report]")?.textContent).toMatch(
+      /Worker reports.*worker-1.*Codex.*Succeeded.*worker-2.*Qwen Code.*Succeeded/s,
+    );
+    expect(document.querySelector("#delegate")?.textContent).toContain("Type @ in the message box");
+  });
+
+  it("shows a page in the Output tab with a numbered comment, and says what a page can reach", () => {
+    const scene = document.querySelector("#output [role=img]")!;
+    expect(scene.textContent).toMatch(/Login redirect flow.*Version 2.*Comment.*Export/s);
+    expect([...scene.querySelectorAll("[data-out-node]")].map((step) => step.querySelector(".font-mono")?.textContent)).toEqual([
+      "/checkout",
+      "requireUser1",
+      "/login?next=",
+    ]);
+    // The number on the page is the number in the list under it.
+    expect(scene.querySelectorAll("[data-out-mark]")).toHaveLength(1);
+    expect(scene.querySelector("[data-out-comment]")?.textContent).toMatch(/^1requireUser · Current/);
+    expect(scene.querySelector("[data-out-bar]")?.textContent).toBe("Add 1 to message");
+    const section = document.querySelector("#output")?.textContent ?? "";
+    expect(section).toContain("It cannot call Zorvo or read your files");
+    expect(section).toContain("you can go back to an older one");
+    expect(document.querySelector("#control")?.textContent).toContain("for now it can only look at them");
+  });
+
+  it("gives the design canvas a section of its own: artboards side by side, one picked and commented", () => {
+    const scene = document.querySelector("#canvas [role=img]")!;
+    expect([...scene.querySelectorAll("[data-cv-board] > .lp-sub")].map((label) => label.textContent)).toEqual([
+      "Cart",
+      "Payment A",
+      "Payment B",
+    ]);
+    expect(scene.textContent).toMatch(/Checkout redesign.*3 artboards.*Open/s);
+    expect(scene.textContent).toMatch(/Pick.*Build this/s);
+    expect(scene.querySelector("[data-cv-pick]")?.textContent).toContain("Total1");
+    expect(scene.querySelector("[data-cv-comment]")?.textContent).toMatch(/^1Payment B · Current/);
+    expect(scene.querySelector("[data-cv-bar]")?.textContent).toBe("Add 1 to message");
+    const section = document.querySelector("#canvas")!;
+    expect(section.querySelector("h2")?.textContent).toBe("Several screens, side by side.");
+    // What the changelog says the canvas does, in the section's own points.
+    for (const words of ["Pick keeps one variant", "Build this and Build section", "canvas.json and one HTML file per artboard", "PNG or PDF"]) {
+      expect(section.textContent, words).toContain(words);
+    }
+    expect(LINKS.canvasGuide).toBe(`${LINKS.outputGuide}#canvas`);
   });
 
   it("points every in-page link at an element that exists", () => {
@@ -317,10 +621,22 @@ describe("landing page", () => {
       expect(script).toContain("(prefers-reduced-motion: reduce)");
     });
 
-    it("never loops: dots and the cursor stop on their own, so nothing needs a pause control", () => {
+    it("scrolls smoothly through GSAP's ScrollSmoother, over the two wrappers the page gives it", () => {
+      expect(document.querySelector("#smooth-wrapper > #smooth-content > main#main")).not.toBeNull();
+      expect(document.querySelector("#smooth-content > header")).not.toBeNull();
+      expect(document.querySelector("#smooth-content > footer")).not.toBeNull();
+      expect(script).toContain('ScrollSmoother.create({ wrapper: "#smooth-wrapper", content: "#smooth-content", smooth: 1, smoothTouch: false })');
+      // Created only after the reduced-motion check, and undone with the rest of the motion.
+      expect(script.indexOf("ScrollSmoother.create")).toBeGreaterThan(script.indexOf("function start("));
+      expect(script).toContain("smoother?.kill();");
+    });
+
+    it("loops in one place only, the agents strip", () => {
+      // Dots and the cursor stop on their own, so nothing else needs a pause control.
       expect(script).not.toMatch(/repeat:\s*-1/);
       const css = readFileSync(join(ROOT, "site", "app", "landing.css"), "utf8");
-      expect(css).not.toMatch(/\binfinite\b/);
+      expect(css.match(/\binfinite\b/g)).toHaveLength(1);
+      expect(css).toContain(".lp-track { display: flex; gap: 12px; width: max-content; animation: lp-mq 90s linear infinite; }");
     });
 
     it("finds every hook it animates in the page", () => {
@@ -334,9 +650,10 @@ describe("landing page", () => {
     it("never lets GSAP and Motion animate the same element", () => {
       const gsapHooks = [
         "[data-hero-fade]", "[data-win]", "[data-srow]", "[data-chat]", "[data-cmp-prompt]", "[data-cmp-type]", "[data-cmp-chip]",
-        "[data-cmp-start]", "[data-cmp-card]", "[data-cmp-confirm]", "[data-dlg-pane]", "[data-dlg-ph]", "[data-dlg-type]",
-        "[data-dlg-pop]", "[data-dlg-send]", "[data-dlg-msg]", "[data-dlg-status]", "[data-dlg-dot]", "[data-dlg-b]",
-        "[data-dlg-report]", "[data-prv]", "[data-prv-chip]", "[data-prv-item]", "[data-prv-check]", "[data-prv-badge]",
+        "[data-cmp-start]", "[data-cmp-card]", "[data-cmp-confirm]", "[data-dlg-pane]", "[data-dlg-card]", "[data-dlg-ask]",
+        "[data-dlg-allow]", "[data-dlg-allowed]", "[data-dlg-status]", "[data-dlg-dot]", "[data-dlg-b]",
+        "[data-dlg-report]", "[data-foot-inner]", "[data-out]", "[data-out-node]", "[data-out-mark]", "[data-out-comment]", "[data-out-bar]",
+        "[data-cv-pane]", "[data-cv-board]", "[data-cv-pick]", "[data-cv-mark]", "[data-cv-comment]", "[data-cv-bar]", "[data-prv]", "[data-prv-chip]", "[data-prv-item]", "[data-prv-check]", "[data-prv-badge]",
         "[data-flow-step]", "[data-flow-end]", "[data-term-type]", "[data-term-out]", ".lp-ln > span", ".lp-pulse", ".lp-bar i",
         ".lp-st-a", ".lp-st-b", ".lp-cursor",
       ].join(",");
@@ -350,7 +667,7 @@ describe("landing page", () => {
 
     it("starts hidden scenes by CSS, so the page is complete without the script", () => {
       const css = readFileSync(join(ROOT, "site", "app", "landing.css"), "utf8");
-      expect(css).toMatch(/\.lp-st-a, \.lp-pl-a, \.lp-pop, \.lp-wire-dot, \.lp-typed, \.lp-brief \{ opacity: 0; visibility: hidden; \}/);
+      expect(css).toMatch(/\.lp-st-a, \.lp-pl-a, \.lp-wire-dot, \.lp-brief \{ opacity: 0; visibility: hidden; \}/);
       // The finished state is what shows: Finished, the plan at 3/4, and the numbers at their end values.
       expect(copy + text).toContain("Finished · 2 min");
       expect(document.querySelector("[data-count='59']")?.textContent).toBe("59");
@@ -436,14 +753,56 @@ describe("search engines", () => {
     const json = new DOMParser()
       .parseFromString(html, "text/html")
       .querySelector('script[type="application/ld+json"]')?.textContent;
-    expect(JSON.parse(json ?? "null")).toMatchObject({
+    const data = JSON.parse(json ?? "null");
+    expect(data["@context"]).toBe("https://schema.org");
+    const [application, questions] = data["@graph"];
+    expect(application).toMatchObject({
       "@type": "SoftwareApplication",
       name: "Zorvo",
       operatingSystem: "macOS",
       offers: { price: "0" },
       isAccessibleForFree: true,
-      publisher: { sameAs: [LINKS.repository] },
+      publisher: { sameAs: [LINKS.repository, LINKS.x, LINKS.discord] },
     });
+    // The questions on the page, word for word, so a search engine never shows an answer the page does not give.
+    const document = new DOMParser().parseFromString(html, "text/html");
+    const rows = [...document.querySelectorAll("#faq details")];
+    expect(questions["@type"]).toBe("FAQPage");
+    expect(questions.mainEntity.map((entry: { name: string }) => entry.name)).toEqual(rows.map((row) => row.querySelector("h3")?.textContent));
+    for (const [index, entry] of questions.mainEntity.entries()) {
+      expect(rows[index].querySelector("p")?.textContent, entry.name).toContain(entry.acceptedAnswer.text);
+    }
+  });
+
+  it("gives every page a title and a description a search result can show whole", () => {
+    for (const page of DOCS_PAGES) {
+      expect(page.title.length, page.href).toBeGreaterThanOrEqual(30);
+      expect(page.title.length, page.href).toBeLessThanOrEqual(60);
+      expect(page.description.length, page.href).toBeGreaterThanOrEqual(140);
+      expect(page.description.length, page.href).toBeLessThanOrEqual(160);
+    }
+    expect(new Set(DOCS_PAGES.map((page) => page.title)).size).toBe(DOCS_PAGES.length);
+    expect(new Set(DOCS_PAGES.map((page) => page.description)).size).toBe(DOCS_PAGES.length);
+  });
+
+  it("dates the sitemap from git, loads logos lazily and lets static assets be cached", () => {
+    // Where the history is whole every page has a date. CI clones one commit, and there a page whose date
+    // git cannot know has none. No date is ever in the future.
+    const isShallow = spawnSync("git", ["rev-parse", "--is-shallow-repository"], { cwd: ROOT, encoding: "utf8" }).stdout.trim() === "true";
+    for (const entry of sitemap()) {
+      if (!isShallow) expect(entry.lastModified, entry.url).toBeInstanceOf(Date);
+      if (entry.lastModified) expect(new Date(entry.lastModified).getTime(), entry.url).toBeLessThanOrEqual(Date.now());
+    }
+    const document = new DOMParser().parseFromString(renderToStaticMarkup(<Home />), "text/html");
+    // Only the mark in the first screen loads at once: an eager image is one the browser preloads.
+    const eager = [...document.querySelectorAll("img")].filter((image) => image.getAttribute("loading") !== "lazy");
+    expect(eager.map((image) => image.getAttribute("src"))).toEqual(["/near-ai-tile-white.svg"]);
+    const { headers } = JSON.parse(readFileSync(join(ROOT, "site", "vercel.json"), "utf8"));
+    const cacheOf = (source: string) =>
+      headers.find((rule: { source: string }) => rule.source === source)?.headers.find((header: { key: string }) => header.key === "Cache-Control")?.value;
+    // The script keeps one name across deploys, so it is checked on every visit: a kept copy could meet a newer page.
+    expect(cacheOf("/motion.js")).toBeUndefined();
+    expect(cacheOf("/(media|agents)/(.*)")).toBe("public, max-age=86400, stale-while-revalidate=604800");
   });
 });
 
@@ -457,6 +816,7 @@ describe("docs pages", () => {
     "/docs/compare": CompareDocs,
     "/docs/delegate": DelegateDocs,
     "/docs/review": ReviewDocs,
+    "/docs/output": OutputDocs,
     "/docs/terminal": TerminalDocs,
     "/docs/privacy": PrivacyDocs,
     "/docs/credits": CreditsDocs,

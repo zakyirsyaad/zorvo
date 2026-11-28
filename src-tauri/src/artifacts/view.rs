@@ -9,6 +9,10 @@
 //! content process, so a page that never yields cannot stop Zorvo's interface
 //! (a frame inside the main webview does; see the spec's spike results).
 //! There is one at a time, and it lives on the main thread.
+//!
+//! A canvas shows in the same view, through Zorvo's wrapper (`canvas_shell.html`): the comment
+//! script then runs in every frame, so it reaches the artboards too, and a message is read as
+//! the wrapper's only when its frame's URL is the wrapper's (`canvas_view.rs`).
 
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
@@ -17,13 +21,24 @@ use std::time::Instant;
 
 use tauri::{AppHandle, Emitter, Manager};
 
+use super::canvas::Canvas;
+pub use super::canvas_view::ShownCanvas;
+use super::canvas_view::{
+    apply_script, canvas_intake, canvas_marks_script, canvas_mode_script, command_script,
+    pick_event, view_event, CanvasIntake, CanvasNavigation, CANVAS_PICK, CANVAS_VIEW,
+};
+use super::ds_protocol::ds_shell_url;
+use super::ds_view::{
+    ds_intake, ds_marks_script, ds_mode_script, ds_pick_event, keep_state, kept_state,
+    record_components, recorded_components, DsIntake, DsNavigation, DsShellMessage,
+    ShownDesignSystem, DS_PICK, DS_VIEW,
+};
 use super::page_script::{marks_script, mode_script, PAGE_SCRIPT};
 use super::picks::{
     accepted_message, FloodGuard, Intake, PageMark, PagePickEvent, RateLimit, ViewState,
     ARTIFACT_PAGE_PICK,
 };
-use super::protocol::{is_allowed_navigation, respond, SCHEME};
-use super::store::ArtifactStore;
+use super::protocol::{canvas_shell_url, is_allowed_navigation, respond, Served, SCHEME};
 
 const MAIN_WINDOW: &str = "main";
 pub const COULD_NOT_SHOW: &str = "Zorvo could not show that page.";
@@ -34,6 +49,22 @@ pub struct ShownPage {
     pub session_id: String,
     pub artifact_id: String,
     pub version: u32,
+}
+
+/// What the one view shows: a stored page, or a canvas through Zorvo's wrapper.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ShownView {
+    Page(ShownPage),
+    Canvas(ShownCanvas),
+    Motion(ShownMotion),
+    DesignSystem(ShownDesignSystem),
+}
+
+/// A motion the view shows through Zorvo's preview wrapper.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ShownMotion {
+    pub session_id: String,
+    pub key: String,
 }
 
 /// What decides whether the view is drawn.
@@ -67,7 +98,7 @@ const SHOW_ANYWAY_AFTER: std::time::Duration = std::time::Duration::from_secs(3)
 
 thread_local! {
     /// The one child webview and what it shows. `wry::WebView` is not `Send`, so it stays here.
-    static VIEW: RefCell<Option<(wry::WebView, ShownPage)>> = const { RefCell::new(None) };
+    static VIEW: RefCell<Option<(wry::WebView, ShownView)>> = const { RefCell::new(None) };
     static DISPLAY: Cell<Display> = const { Cell::new(Display { is_loaded: false, is_hidden: false, is_outside: false }) };
     /// Counts the views made, so a late "loaded" for an earlier view changes nothing.
     static GENERATION: Cell<u64> = const { Cell::new(0) };
@@ -82,6 +113,22 @@ thread_local! {
     static RATE: RefCell<RateLimit> = RefCell::new(RateLimit::default());
     /// Every message the view on screen has sent, refused or not, to end a page that floods.
     static FLOOD: RefCell<FloodGuard> = RefCell::new(FloodGuard::default());
+    /// How many messages the wrapper has had through this second (its own limit, not a page's).
+    static SHELL_RATE: RefCell<RateLimit> = RefCell::new(RateLimit::default());
+    /// The shown canvas as `canvas.json` last read, to know which files are its artboards.
+    /// Replaced whenever the frontend hands the wrapper a state, since it read the canvas again.
+    static CANVAS_BOARDS: RefCell<Option<(ShownCanvas, Canvas)>> = const { RefCell::new(None) };
+    /// The last state asked for, with its canvas, as the script that applies it. Kept across
+    /// views of the same canvas, and run again once such a view has loaded.
+    static CANVAS_STATE: RefCell<Option<(ShownCanvas, String)>> = const { RefCell::new(None) };
+    /// The generation canvas marks were last run in, so only that view may say which an
+    /// artboard could not find.
+    static CANVAS_MARKS_SENT: Cell<u64> = const { Cell::new(0) };
+    /// The last state asked for a motion, as the script that applies it, run again once a view of
+    /// that motion has loaded.
+    static MOTION_STATE: RefCell<Option<(ShownMotion, String)>> = const { RefCell::new(None) };
+    /// The generation design system marks were last run in, as for a canvas.
+    static DS_MARKS_SENT: Cell<u64> = const { Cell::new(0) };
 }
 
 /// Changes what decides the view's visibility and applies it. Main thread only.
@@ -104,12 +151,59 @@ fn mark_loaded(generation: u64) {
             ..display
         });
         apply_page_state();
+        apply_canvas_state();
+        apply_motion_state();
+        apply_design_system_state();
     }
 }
 
-/// The page the view on screen shows. Main thread only.
+/// What the view on screen shows. Main thread only.
+fn shown_view() -> Option<ShownView> {
+    VIEW.with(|slot| slot.borrow().as_ref().map(|(_, shown)| shown.clone()))
+}
+
+/// The page the view on screen shows, when it shows a page. Main thread only.
 fn shown_page() -> Option<ShownPage> {
-    VIEW.with(|slot| slot.borrow().as_ref().map(|(_, page)| page.clone()))
+    match shown_view()? {
+        ShownView::Page(page) => Some(page),
+        ShownView::Canvas(_) | ShownView::Motion(_) | ShownView::DesignSystem(_) => None,
+    }
+}
+
+/// The canvas the view on screen shows, when it shows one. Main thread only.
+fn shown_canvas() -> Option<ShownCanvas> {
+    match shown_view()? {
+        ShownView::Canvas(canvas) => Some(canvas),
+        ShownView::Page(_) | ShownView::Motion(_) | ShownView::DesignSystem(_) => None,
+    }
+}
+
+/// What a wrapper is told once it has loaded: the last state asked for its canvas, then its
+/// comment mode, which may have been turned on while it loaded. The mode is sent on or off,
+/// so running these twice says the same thing twice.
+fn canvas_load_scripts(state: Option<String>, is_commenting: bool) -> Vec<String> {
+    state
+        .into_iter()
+        .chain(std::iter::once(canvas_mode_script(is_commenting)))
+        .collect()
+}
+
+/// Gives a loaded wrapper the last state asked for its canvas and its comment mode. Main
+/// thread only.
+fn apply_canvas_state() {
+    let Some(canvas) = shown_canvas() else {
+        return;
+    };
+    let state = CANVAS_STATE.with(|state| {
+        state
+            .borrow()
+            .as_ref()
+            .filter(|(of, _)| *of == canvas)
+            .map(|(_, script)| script.clone())
+    });
+    for script in canvas_load_scripts(state, COMMENTING.get()) {
+        evaluate(&script);
+    }
 }
 
 /// Runs one of `page_script.rs`'s fixed calls in the view on screen. Main thread only.
@@ -147,15 +241,15 @@ fn apply_page_state() {
     run_marks(&page);
 }
 
-/// What the page sent, once `picks.rs` accepts it, goes to the main webview with
-/// the page it came from. Main thread only (wry calls the handler there).
-fn on_page_message(app: &AppHandle, generation: u64, body: &str) {
+/// Counts a message of the view of `generation` and says whether to read it; a view that
+/// floods is ended. Main thread only.
+fn admits(app: &AppHandle, generation: u64, body: &str) -> bool {
     if GENERATION.get() != generation {
-        return;
+        return false;
     }
     match FLOOD.with(|flood| flood.borrow_mut().admit(body.len(), Instant::now())) {
-        Intake::Read => {}
-        Intake::Drop => return,
+        Intake::Read => true,
+        Intake::Drop => false,
         Intake::EndPage => {
             // Not from inside the view's own handler: the end runs once this call has returned.
             let _ = app.run_on_main_thread(move || {
@@ -163,8 +257,67 @@ fn on_page_message(app: &AppHandle, generation: u64, body: &str) {
                     end_current();
                 }
             });
-            return;
+            false
         }
+    }
+}
+
+/// What the canvas view sent, read by `canvas_intake`: the wrapper's kinds only from its own
+/// frame, a comment pick only from an artboard of this canvas. Main thread only.
+fn on_canvas_message(app: &AppHandle, generation: u64, frame_url: &str, body: &str) {
+    if !admits(app, generation, body) {
+        return;
+    }
+    let Some(shown) = shown_canvas() else {
+        return;
+    };
+    let state = ViewState {
+        is_commenting: COMMENTING.get(),
+        has_marks: CANVAS_MARKS_SENT.get() == generation,
+    };
+    let intake = CANVAS_BOARDS.with(|boards| {
+        let boards = boards.borrow();
+        let canvas = boards
+            .as_ref()
+            .filter(|(of, _)| *of == shown)
+            .map(|(_, canvas)| canvas);
+        RATE.with(|rate| {
+            SHELL_RATE.with(|shell_rate| {
+                canvas_intake(
+                    frame_url,
+                    body,
+                    &shown,
+                    canvas,
+                    state,
+                    &mut rate.borrow_mut(),
+                    &mut shell_rate.borrow_mut(),
+                    Instant::now(),
+                )
+            })
+        })
+    });
+    match intake {
+        CanvasIntake::Shell(message) => {
+            let _ = app.emit(CANVAS_VIEW, view_event(&shown, &message));
+        }
+        CanvasIntake::Board {
+            artboard_id,
+            message,
+        } => {
+            if message.takes_keyboard() {
+                focus_zorvo(app);
+            }
+            let _ = app.emit(CANVAS_PICK, pick_event(&shown, &artboard_id, &message));
+        }
+        CanvasIntake::Refused => {}
+    }
+}
+
+/// What the page sent, once `picks.rs` accepts it, goes to the main webview with
+/// the page it came from. Main thread only (wry calls the handler there).
+fn on_page_message(app: &AppHandle, generation: u64, body: &str) {
+    if !admits(app, generation, body) {
+        return;
     }
     let Some(page) = shown_page() else {
         return;
@@ -222,11 +375,17 @@ fn focus_zorvo(app: &AppHandle) {
     });
 }
 
-/// Whether the view shows a page of `session_id` (and, when one is named, of that artifact).
-pub fn is_showing(shown: Option<&ShownPage>, session_id: &str, artifact_id: Option<&str>) -> bool {
-    shown.is_some_and(|page| {
-        page.session_id == session_id && artifact_id.is_none_or(|id| page.artifact_id == id)
-    })
+/// Whether the view shows something of `session_id` (and, when one is named, that artifact or
+/// canvas: artifact ids and canvas keys never look alike).
+pub fn is_showing(shown: Option<&ShownView>, session_id: &str, artifact_id: Option<&str>) -> bool {
+    let (session, id) = match shown {
+        Some(ShownView::Page(page)) => (&page.session_id, &page.artifact_id),
+        Some(ShownView::Canvas(canvas)) => (&canvas.session_id, &canvas.key),
+        Some(ShownView::Motion(motion)) => (&motion.session_id, &motion.key),
+        Some(ShownView::DesignSystem(system)) => (&system.session_id, &system.key),
+        None => return false,
+    };
+    session == session_id && artifact_id.is_none_or(|wanted| id == wanted)
 }
 
 /// Ends a view: its page's process first, then the view.
@@ -238,7 +397,7 @@ pub fn is_showing(shown: Option<&ShownPage>, session_id: &str, artifact_id: Opti
 /// that ends the process of a page that does not yield, so this asks for it by
 /// the name WebKit's own tools use, and only when the view answers to it; on a
 /// macOS where it does not, the page is merely hidden, as before.
-fn end(view: wry::WebView) {
+pub(crate) fn end(view: wry::WebView) {
     use objc2::{msg_send, sel};
     use wry::WebViewExtMacOS;
     let webview = view.webview();
@@ -306,8 +465,269 @@ fn rect(bounds: Bounds) -> wry::Rect {
 /// Shows the page at `url` in a new webview at `bounds`, ending any earlier one.
 pub fn show(
     app: &AppHandle,
-    store: Arc<ArtifactStore>,
+    served: Arc<Served>,
     page: ShownPage,
+    url: String,
+    bounds: Bounds,
+) -> Result<(), String> {
+    show_view(app, served, ShownView::Page(page), url, bounds)
+}
+
+/// Shows a canvas through Zorvo's wrapper in a new webview at `bounds`, ending any earlier one.
+/// The comment script runs in every frame, so it reaches the artboards; only the wrapper's
+/// URL, once, and the canvas's own files may be loaded.
+pub fn show_canvas(
+    app: &AppHandle,
+    served: Arc<Served>,
+    canvas: ShownCanvas,
+    bounds: Bounds,
+) -> Result<(), String> {
+    let url = canvas_shell_url(&canvas.session_id, &canvas.key);
+    show_view(app, served, ShownView::Canvas(canvas), url, bounds)
+}
+
+/// Keeps `state_json` (one JSON object of at most 1 MiB) for `canvas` and hands it to the
+/// wrapper now when that canvas is shown and loaded; a view of it made or loaded later gets it
+/// then, so a state sent before its view exists is not lost.
+pub fn apply_canvas(
+    app: &AppHandle,
+    canvas: ShownCanvas,
+    boards: Option<Canvas>,
+    state_json: String,
+) -> Result<(), String> {
+    let script = apply_script(&state_json).ok_or_else(|| COULD_NOT_SHOW.to_string())?;
+    let _ = app.run_on_main_thread(move || {
+        let is_shown = shown_canvas().as_ref() == Some(&canvas);
+        CANVAS_BOARDS.with(|slot| {
+            *slot.borrow_mut() = boards.map(|boards| (canvas.clone(), boards));
+        });
+        CANVAS_STATE.with(|state| *state.borrow_mut() = Some((canvas, script.clone())));
+        if is_shown && DISPLAY.get().is_loaded {
+            evaluate(&script);
+        }
+    });
+    Ok(())
+}
+
+/// The motion the view on screen shows, when it shows one. Main thread only.
+fn shown_motion() -> Option<ShownMotion> {
+    match shown_view()? {
+        ShownView::Motion(motion) => Some(motion),
+        ShownView::Page(_) | ShownView::Canvas(_) | ShownView::DesignSystem(_) => None,
+    }
+}
+
+/// Hands the motion wrapper on screen the last state asked for it. Main thread only.
+fn apply_motion_state() {
+    let Some(motion) = shown_motion() else {
+        return;
+    };
+    let script = MOTION_STATE.with(|state| {
+        state
+            .borrow()
+            .as_ref()
+            .filter(|(of, _)| *of == motion)
+            .map(|(_, script)| script.clone())
+    });
+    if let Some(script) = script {
+        evaluate(&script);
+    }
+}
+
+/// Shows a motion through Zorvo's preview wrapper in a new webview at `bounds`, ending any
+/// earlier one. The motion runtime runs in every frame; only the wrapper and that motion's files
+/// may be loaded.
+pub fn show_motion(
+    app: &AppHandle,
+    served: Arc<Served>,
+    motion: ShownMotion,
+    bounds: Bounds,
+) -> Result<(), String> {
+    let url = super::motion_protocol::motion_shell_url(&motion.session_id, &motion.key);
+    show_view(app, served, ShownView::Motion(motion), url, bounds)
+}
+
+/// Keeps `script` (the wrapper's `apply`) for `motion` and runs it now when that motion is shown
+/// and loaded; a view of it made or loaded later gets it then.
+pub fn apply_motion(app: &AppHandle, motion: ShownMotion, script: String) {
+    let _ = app.run_on_main_thread(move || {
+        let is_shown = shown_motion().as_ref() == Some(&motion);
+        MOTION_STATE.with(|state| *state.borrow_mut() = Some((motion, script.clone())));
+        if is_shown && DISPLAY.get().is_loaded {
+            evaluate(&script);
+        }
+    });
+}
+
+/// The design system the view on screen shows, when it shows one. Main thread only.
+fn shown_design_system() -> Option<ShownDesignSystem> {
+    match shown_view()? {
+        ShownView::DesignSystem(system) => Some(system),
+        ShownView::Page(_) | ShownView::Canvas(_) | ShownView::Motion(_) => None,
+    }
+}
+
+/// Hands the design system shell on screen the last state asked for it, then its comment mode,
+/// which may have been turned on while it loaded. Main thread only.
+fn apply_design_system_state() {
+    let Some(system) = shown_design_system() else {
+        return;
+    };
+    if let Some(script) = kept_state(&system) {
+        evaluate(&script);
+    }
+    evaluate(&ds_mode_script(COMMENTING.get()));
+}
+
+/// What the design system view sent, read by `ds_intake`: the shell's kinds only from its own
+/// frame, a page's kinds only from a preview of a component the system holds. Main thread only.
+fn on_ds_message(app: &AppHandle, generation: u64, frame_url: &str, body: &str) {
+    if !admits(app, generation, body) {
+        return;
+    }
+    let Some(shown) = shown_design_system() else {
+        return;
+    };
+    let state = ViewState {
+        is_commenting: COMMENTING.get(),
+        has_marks: DS_MARKS_SENT.get() == generation,
+    };
+    let components = recorded_components(&shown);
+    let intake = RATE.with(|rate| {
+        SHELL_RATE.with(|shell_rate| {
+            ds_intake(
+                frame_url,
+                body,
+                &shown,
+                components.as_deref(),
+                state,
+                &mut rate.borrow_mut(),
+                &mut shell_rate.borrow_mut(),
+                Instant::now(),
+            )
+        })
+    });
+    match &intake {
+        DsIntake::Shell(DsShellMessage::PreviewLoaded(component)) => {
+            let _ = app.emit(
+                DS_VIEW,
+                serde_json::json!({
+                    "sessionId": shown.session_id,
+                    "key": shown.key,
+                    "kind": "preview-loaded",
+                    "component": component,
+                }),
+            );
+        }
+        DsIntake::Shell(message) => {
+            if message.takes_keyboard() {
+                focus_zorvo(app);
+            }
+            if let Some(event) = ds_pick_event(&shown, &intake) {
+                let _ = app.emit(DS_PICK, event);
+            }
+        }
+        DsIntake::Preview { message, .. } => {
+            if message.takes_keyboard() {
+                focus_zorvo(app);
+            }
+            if let Some(event) = ds_pick_event(&shown, &intake) {
+                let _ = app.emit(DS_PICK, event);
+            }
+        }
+        DsIntake::Refused => {}
+    }
+}
+
+/// Turns comment mode on or off for `system`, only while it is shown; the shell passes it on to
+/// each live preview.
+pub fn set_ds_comment_mode(app: &AppHandle, system: ShownDesignSystem, on: bool) {
+    let _ = app.run_on_main_thread(move || {
+        if shown_design_system().as_ref() != Some(&system) {
+            return;
+        }
+        COMMENTING.set(on);
+        if DISPLAY.get().is_loaded {
+            evaluate(&ds_mode_script(on));
+        }
+    });
+}
+
+const COULD_NOT_MARK_PREVIEW: &str = "Zorvo could not mark that preview.";
+
+/// Has the shell post `marks` to one preview of `system`, only while it is shown and loaded.
+pub fn set_ds_marks(
+    app: &AppHandle,
+    system: ShownDesignSystem,
+    component: String,
+    marks: Vec<PageMark>,
+) -> Result<(), String> {
+    let script =
+        ds_marks_script(&component, &marks).ok_or_else(|| COULD_NOT_MARK_PREVIEW.to_string())?;
+    let _ = app.run_on_main_thread(move || {
+        if shown_design_system().as_ref() == Some(&system) && DISPLAY.get().is_loaded {
+            evaluate(&script);
+            DS_MARKS_SENT.set(GENERATION.get());
+        }
+    });
+    Ok(())
+}
+
+/// Shows a design system through Zorvo's shell in a new webview at `bounds`, ending any earlier
+/// one. Only the shell and that system's files may be loaded.
+pub fn show_design_system(
+    app: &AppHandle,
+    served: Arc<Served>,
+    system: ShownDesignSystem,
+    bounds: Bounds,
+) -> Result<(), String> {
+    let url = ds_shell_url(&system.session_id, &system.key);
+    show_view(app, served, ShownView::DesignSystem(system), url, bounds)
+}
+
+/// Keeps `script` (the shell's `apply`) and the system's components for `system`, and runs the
+/// script now when that system is shown and loaded; a view of it made or loaded later gets it then.
+pub fn apply_design_system(
+    app: &AppHandle,
+    system: ShownDesignSystem,
+    components: Vec<String>,
+    script: String,
+) {
+    let _ = app.run_on_main_thread(move || {
+        record_components(&system, components);
+        let is_shown = shown_design_system().as_ref() == Some(&system);
+        keep_state(system, script.clone());
+        if is_shown && DISPLAY.get().is_loaded {
+            evaluate(&script);
+        }
+    });
+}
+
+/// Runs one wrapper command (built from a fixed list) while that motion is shown and loaded.
+pub fn motion_command(app: &AppHandle, motion: ShownMotion, script: String) {
+    let _ = app.run_on_main_thread(move || {
+        if shown_motion().as_ref() == Some(&motion) && DISPLAY.get().is_loaded {
+            evaluate(&script);
+        }
+    });
+}
+
+/// Runs one of the wrapper's commands, only while that canvas is shown and loaded; a name
+/// outside the list is refused.
+pub fn canvas_command(app: &AppHandle, canvas: ShownCanvas, name: String) -> Result<(), String> {
+    let script = command_script(&name).ok_or_else(|| COULD_NOT_SHOW.to_string())?;
+    let _ = app.run_on_main_thread(move || {
+        if shown_canvas().as_ref() == Some(&canvas) && DISPLAY.get().is_loaded {
+            evaluate(&script);
+        }
+    });
+    Ok(())
+}
+
+fn show_view(
+    app: &AppHandle,
+    served: Arc<Served>,
+    shown: ShownView,
     url: String,
     bounds: Bounds,
 ) -> Result<(), String> {
@@ -321,19 +741,61 @@ pub fn show(
         DISPLAY.set(Display::default());
         COMMENTING.set(false);
         RATE.with(|rate| *rate.borrow_mut() = RateLimit::default());
+        SHELL_RATE.with(|rate| *rate.borrow_mut() = RateLimit::default());
         FLOOD.with(|flood| *flood.borrow_mut() = FloodGuard::default());
         let messages = handle.clone();
         let built = handle
             .get_webview_window(MAIN_WINDOW)
             .ok_or(())
             .and_then(|window| {
-                wry::WebViewBuilder::new()
+                let builder = match shown.clone() {
+                    ShownView::Page(_) => wry::WebViewBuilder::new()
+                        .with_initialization_script(PAGE_SCRIPT)
+                        .with_ipc_handler(move |request| {
+                            on_page_message(&messages, generation, request.body())
+                        })
+                        .with_navigation_handler(|url| is_allowed_navigation(&url)),
+                    ShownView::Canvas(canvas) => {
+                        let navigation = RefCell::new(CanvasNavigation::default());
+                        let rule = canvas.clone();
+                        wry::WebViewBuilder::new()
+                            .with_initialization_script_for_main_only(PAGE_SCRIPT, false)
+                            .with_ipc_handler(move |request| {
+                                let frame = request.uri().to_string();
+                                on_canvas_message(&messages, generation, &frame, request.body())
+                            })
+                            .with_navigation_handler(move |url| {
+                                navigation.borrow_mut().allows(&url, &rule)
+                            })
+                    }
+                    ShownView::DesignSystem(system) => {
+                        let navigation = RefCell::new(DsNavigation::default());
+                        wry::WebViewBuilder::new()
+                            .with_initialization_script_for_main_only(PAGE_SCRIPT, false)
+                            .with_ipc_handler(move |request| {
+                                let frame = request.uri().to_string();
+                                on_ds_message(&messages, generation, &frame, request.body())
+                            })
+                            .with_navigation_handler(move |url| {
+                                navigation.borrow_mut().allows(&url, &system)
+                            })
+                    }
+                    ShownView::Motion(motion) => wry::WebViewBuilder::new()
+                        .with_initialization_script_for_main_only(
+                            super::motion_protocol::MOTION_RUNTIME,
+                            false,
+                        )
+                        .with_navigation_handler(move |url| {
+                            super::motion_protocol::is_allowed_motion_navigation(
+                                &url,
+                                &motion.session_id,
+                                &motion.key,
+                            )
+                        }),
+                };
+                builder
                     .with_incognito(true)
                     .with_visible(false)
-                    .with_initialization_script(PAGE_SCRIPT)
-                    .with_ipc_handler(move |request| {
-                        on_page_message(&messages, generation, request.body())
-                    })
                     .with_on_page_load_handler(move |event, _url| {
                         if matches!(event, wry::PageLoadEvent::Finished) {
                             mark_loaded(generation);
@@ -342,18 +804,17 @@ pub fn show(
                     .with_bounds(rect(bounds))
                     .with_custom_protocol(SCHEME.to_string(), move |_id, request| {
                         respond(
-                            &store,
+                            &served,
                             request.method().as_str(),
                             &request.uri().to_string(),
                         )
                         .map(Cow::from)
                     })
-                    .with_navigation_handler(|url| is_allowed_navigation(&url))
                     .with_url(url)
                     .build_as_child(&window)
                     .map_err(|_| ())
             });
-        let shown = built.map(|view| VIEW.with(|slot| *slot.borrow_mut() = Some((view, page))));
+        let shown = built.map(|view| VIEW.with(|slot| *slot.borrow_mut() = Some((view, shown))));
         if shown.is_ok() {
             let later = handle.clone();
             std::thread::spawn(move || {
@@ -410,6 +871,42 @@ pub fn set_comment_mode(app: &AppHandle, page: ShownPage, on: bool) {
     });
 }
 
+/// Turns comment mode on or off for the canvas view, only when it shows `canvas`: the intake
+/// reads it, and the wrapper passes it on to each live artboard's frame.
+pub fn set_canvas_comment_mode(app: &AppHandle, canvas: ShownCanvas, on: bool) {
+    let _ = app.run_on_main_thread(move || {
+        if shown_canvas().as_ref() != Some(&canvas) {
+            return;
+        }
+        COMMENTING.set(on);
+        if DISPLAY.get().is_loaded {
+            evaluate(&canvas_mode_script(on));
+        }
+    });
+}
+
+const COULD_NOT_MARK_ARTBOARD: &str = "Zorvo could not mark that artboard.";
+
+/// Has the wrapper post `marks` to one artboard of `canvas`, only while that canvas is shown and
+/// loaded. Nothing is kept: the wrapper says when each live artboard loads, and the frontend
+/// sends that artboard's marks then.
+pub fn set_canvas_marks(
+    app: &AppHandle,
+    canvas: ShownCanvas,
+    artboard_id: String,
+    marks: Vec<PageMark>,
+) -> Result<(), String> {
+    let script = canvas_marks_script(&artboard_id, &marks)
+        .ok_or_else(|| COULD_NOT_MARK_ARTBOARD.to_string())?;
+    let _ = app.run_on_main_thread(move || {
+        if shown_canvas().as_ref() == Some(&canvas) && DISPLAY.get().is_loaded {
+            evaluate(&script);
+            CANVAS_MARKS_SENT.set(GENERATION.get());
+        }
+    });
+    Ok(())
+}
+
 /// Keeps `marks` for `page`, and runs them now when the view shows that page
 /// and it has loaded; a page still loading gets them once it has.
 pub fn set_marks(app: &AppHandle, page: ShownPage, marks: Vec<PageMark>) {
@@ -464,7 +961,7 @@ pub fn close_for(app: &AppHandle, session_id: String, artifact_id: Option<String
     let _ = app.run_on_main_thread(move || {
         let is_shown = VIEW.with(|slot| {
             is_showing(
-                slot.borrow().as_ref().map(|(_, page)| page),
+                slot.borrow().as_ref().map(|(_, shown)| shown),
                 &session_id,
                 artifact_id.as_deref(),
             )
@@ -543,6 +1040,7 @@ mod tests {
             version: 1,
         };
 
+        let page = ShownView::Page(page);
         // Deleting the session it belongs to, or the artifact it shows, closes it.
         assert!(is_showing(Some(&page), "s-1", None));
         assert!(is_showing(Some(&page), "s-1", Some("a-0123456789abcdef")));
@@ -551,6 +1049,53 @@ mod tests {
         assert!(!is_showing(Some(&page), "s-1", Some("a-ffffffffffffffff")));
         assert!(!is_showing(Some(&page), "s-2", Some("a-0123456789abcdef")));
         assert!(!is_showing(None, "s-1", None));
+    }
+
+    #[test]
+    fn a_loaded_wrapper_gets_its_state_and_the_comment_mode_asked_for_before() {
+        let state = Some("window.__zorvoCanvas.apply({});".to_string());
+
+        // Comment mode turned on while the wrapper loaded reaches it once it has.
+        assert_eq!(
+            canvas_load_scripts(state.clone(), true),
+            [
+                "window.__zorvoCanvas.apply({});".to_string(),
+                canvas_mode_script(true)
+            ]
+        );
+        // Off is sent too, so a second load (`mark_loaded` may run twice) says the same thing.
+        assert_eq!(
+            canvas_load_scripts(None, false),
+            [canvas_mode_script(false)]
+        );
+        assert_eq!(
+            canvas_load_scripts(state.clone(), true),
+            canvas_load_scripts(state, true)
+        );
+    }
+
+    #[test]
+    fn close_for_closes_a_canvas_of_that_session_only() {
+        let canvas = ShownView::Canvas(ShownCanvas {
+            session_id: "s-1".to_string(),
+            key: "c-0123456789abcdef".to_string(),
+        });
+
+        // Deleting its session, or forgetting the canvas, closes it.
+        assert!(is_showing(Some(&canvas), "s-1", None));
+        assert!(is_showing(Some(&canvas), "s-1", Some("c-0123456789abcdef")));
+        // Another session, another canvas, or a page of the same session does not.
+        assert!(!is_showing(Some(&canvas), "s-2", None));
+        assert!(!is_showing(
+            Some(&canvas),
+            "s-1",
+            Some("c-ffffffffffffffff")
+        ));
+        assert!(!is_showing(
+            Some(&canvas),
+            "s-1",
+            Some("a-0123456789abcdef")
+        ));
     }
 
     #[test]

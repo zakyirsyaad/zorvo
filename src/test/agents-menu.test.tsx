@@ -4,6 +4,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { AgentsMenu } from "../components/sidebar/AgentsMenu";
 import { makeProfile } from "./fixtures/agents";
 import type { SignInState } from "../lib/agent-sign-in";
+import type { SettingsSignIn } from "../hooks/useSettingsSignIn";
 
 const claude = makeProfile({ id: "claude-acp", name: "Claude Code", detected: true });
 const qwen = makeProfile({ id: "qwen-code", name: "Qwen Code", detected: true });
@@ -61,7 +62,7 @@ describe("AgentsMenu", () => {
     const dialog = within(screen.getByRole("dialog", { name: "Agents in use" }));
     const rows = dialog.getAllByRole("listitem");
     for (const row of rows) {
-      expect(row).toHaveClass("h-7");
+      expect(row.firstElementChild).toHaveClass("h-7");
       expect(row.querySelector(".size-4.bg-chip")).not.toBeNull();
     }
     const [claudeRow, qwenRow, codexRow] = rows;
@@ -80,7 +81,9 @@ describe("AgentsMenu", () => {
     // Claude Code and Gemini CLI.
     expect(dialog.getAllByText("Ready")).toHaveLength(2);
     expect(dialog.queryByText("Kimi CLI")).toBeNull();
-    expect(dialog.getByRole("button", { name: "Check Codex" })).toHaveTextContent("Not checked");
+    expect(dialog.getByText("Not checked yet")).toBeInTheDocument();
+    expect(dialog.getByRole("button", { name: "Check Codex" })).toHaveTextContent(/^Check$/);
+    expect(dialog.getByText("Needs sign-in")).toBeInTheDocument();
     fireEvent.click(dialog.getByRole("button", { name: "Sign in to Qwen Code" }));
     expect(onSetUpAgent).toHaveBeenCalledWith("qwen-code");
   });
@@ -146,10 +149,11 @@ describe("AgentsMenu", () => {
     expect(signIn).toHaveClass("h-6", "border-border-strong");
     expect(signIn.closest("li")).toHaveClass("bg-surface-hover");
 
-    // Not checked: subtle words, no dot.
-    const check = dialog.getByRole("button", { name: "Check Codex" });
-    expect(check).toHaveClass("text-fg-subtle");
-    expect(check.querySelector("[class*='bg-']")).toBeNull();
+    // Not checked yet: subtle words, no dot, and a Check text button.
+    const words = dialog.getByText("Not checked yet");
+    expect(words).toHaveClass("text-fg-subtle");
+    expect(words.querySelector("[class*='bg-']")).toBeNull();
+    expect(dialog.getByRole("button", { name: "Check Codex" })).toHaveTextContent(/^Check$/);
 
     expect(dialog.getByRole("button", { name: "Manage agents" }).querySelector(".lucide-settings-2")).not.toBeNull();
   });
@@ -157,5 +161,80 @@ describe("AgentsMenu", () => {
   it("renders nothing when no agent is in use", () => {
     render(<AgentsMenu agents={[notInstalled]} settings={inUse("kimi")} onManageAgents={vi.fn()} />);
     expect(screen.queryByRole("button", { name: /^Agents/ })).toBeNull();
+  });
+});
+
+describe("signing in from the Agents menu", () => {
+  const login = { id: "qwen-login", name: "Qwen OAuth", kind: "terminal" } as const;
+
+  function fakeSignIn(overrides: Partial<SettingsSignIn> = {}): SettingsSignIn {
+    return {
+      cwd: "/Users/test/developer/zorvo",
+      stateOf: () => "unchecked" as SignInState,
+      checkOf: () => ({ phase: "idle" }),
+      reportsStatusOf: () => undefined,
+      methodsOf: () => [],
+      requestOf: () => null,
+      busyAgentId: null,
+      check: vi.fn(),
+      signInWith: vi.fn(),
+      sweep: vi.fn(),
+      againOf: () => "closed" as const,
+      openAgain: vi.fn(),
+      closeAgain: vi.fn(),
+      terminal: { dialog: null } as unknown as SettingsSignIn["terminal"],
+      cancelSignIn: vi.fn(),
+      finishSignIn: vi.fn(),
+      retrySignIn: vi.fn(),
+      ...overrides,
+    };
+  }
+
+  it("starts no agent when the menu opens: only Settings' Agents section sweeps", () => {
+    const signIn = fakeSignIn();
+    renderMenu({}, { signIn });
+    fireEvent.click(screen.getByRole("button", { name: /^Agents/ }));
+    expect(signIn.sweep).not.toHaveBeenCalled();
+    expect(signIn.check).not.toHaveBeenCalled();
+  });
+
+  it("shows an agent's ways in under its row, keeps the menu open and starts no session", () => {
+    const signIn = fakeSignIn({ methodsOf: (id) => (id === "qwen-code" ? [login] : []) });
+    const { onSetUpAgent } = renderMenu({ "qwen-code": "needed" }, { signIn });
+    fireEvent.click(screen.getByRole("button", { name: "Agents, sign-in needed" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in to Qwen Code" }));
+
+    expect(onSetUpAgent).not.toHaveBeenCalled();
+    const group = within(screen.getByRole("group", { name: "Qwen Code sign-in" }));
+    fireEvent.click(group.getByRole("button", { name: "Sign in with Qwen OAuth" }));
+    expect(signIn.signInWith).toHaveBeenCalledWith("qwen-code", "qwen-login");
+    expect(screen.getByRole("dialog", { name: "Agents in use" })).toBeInTheDocument();
+  });
+
+  it("reads the ways in without a session when none are known yet", () => {
+    const signIn = fakeSignIn();
+    renderMenu({ "qwen-code": "needed" }, { signIn });
+    fireEvent.click(screen.getByRole("button", { name: "Agents, sign-in needed" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sign in to Qwen Code" }));
+    expect(signIn.openAgain).toHaveBeenCalledWith("qwen-code");
+  });
+
+  it("checks an agent never checked in its row and says the result there", () => {
+    const signIn = fakeSignIn({ checkOf: (id) => (id === "codex-acp" ? { phase: "done", message: "Codex looks ready." } : { phase: "idle" }) });
+    renderMenu({ "codex-acp": "unchecked" }, { signIn });
+    fireEvent.click(screen.getByRole("button", { name: /^Agents/ }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Check Codex" }));
+
+    expect(signIn.check).toHaveBeenCalledWith("codex-acp");
+    expect(screen.getByRole("status")).toHaveTextContent("Codex looks ready.");
+  });
+
+  it("falls back to a new session while no folder is open", () => {
+    const { onSetUpAgent } = renderMenu({ "qwen-code": "needed" }, { signIn: fakeSignIn({ cwd: undefined }) });
+    fireEvent.click(screen.getByRole("button", { name: "Agents, sign-in needed" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sign in to Qwen Code" }));
+    expect(onSetUpAgent).toHaveBeenCalledWith("qwen-code");
   });
 });

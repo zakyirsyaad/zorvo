@@ -4,6 +4,7 @@
 
 import type { AgentOptions } from '../lib/acp-draft';
 import type { Appearance } from '../lib/appearance';
+import type { WorkerState } from '../lib/workers';
 
 /** Mirrors the Rust `AgentProfile` (snake_case on the wire). */
 export interface AgentProfile {
@@ -52,8 +53,6 @@ export interface CatalogAgent {
   /** The newer version on offer, if any. */
   updateVersion: string | null;
   status: CatalogStatus;
-  /** Unix seconds; set while a new version waits out its seven days. */
-  availableFrom: number | null;
   /** Where a program installed outside Zorvo lives. */
   location: string | null;
 }
@@ -112,7 +111,6 @@ export interface SessionWorktree {
   startCommit?: string;
 }
 
-/** A delegated task: the session that delegated it, the task, and when it ran. */
 /** Which session's agent opened a session, and when. */
 export interface OpenedByLink {
   sessionId: string;
@@ -121,6 +119,24 @@ export interface OpenedByLink {
   handle?: string;
 }
 
+export type WorkerTurnEnd = 'finished' | 'failed' | 'cancelled' | 'exited';
+
+/** How a worker's task ended, with its own words and the files it reported changing. */
+export interface WorkerOutcome {
+  result: 'succeeded' | 'failed';
+  at: number;
+  summary?: string;
+  files?: string[];
+}
+
+/** How a worker's last turn ended. */
+export interface WorkerLastTurn {
+  endedAt: number;
+  how: WorkerTurnEnd;
+  reason?: string;
+}
+
+/** A delegated task: the session that delegated it, the task, and when it ran. */
 export interface DelegationLink {
   /** A, the session that delegated. */
   sessionId: string;
@@ -129,6 +145,12 @@ export interface DelegationLink {
   startedAt: number;
   /** Set by End delegation; no report is sent after it. */
   endedAt?: number | null;
+  /** What the opener's agent calls a worker (`worker-3`); absent on other links. */
+  handle?: string;
+  outcome?: WorkerOutcome | null;
+  lastTurn?: WorkerLastTurn | null;
+  /** When the worker's report reached the opener. */
+  reportedAt?: number | null;
 }
 
 export interface Session {
@@ -289,6 +311,39 @@ export interface ActionCard {
    * decides. It has no `requestId`; its answer goes to Zorvo's tool server.
    */
   zorvoTool?: ZorvoToolRequest;
+  /**
+   * A card Zorvo made for an agent's `request_access`: the apps the agent asks to use.
+   * Its answer goes to `computer_use_answer`, never to the agent.
+   */
+  computerUse?: ComputerUseRequest;
+}
+
+/** How far an agent may go in an app: everything, look and click, look, or nothing. */
+export type ComputerUseTier = 'full' | 'click' | 'view' | 'never';
+
+/** One app on a computer-use card, as Zorvo read it from this Mac. */
+export interface ComputerUseApp {
+  /** What goes back for a ticked row; Rust gave it, and it names nothing outside its card. */
+  key: string;
+  name: string;
+  path?: string;
+  signer?: string;
+  tier: ComputerUseTier;
+  /** "Full use", "Click only", "View only", "Never allowed" or "Not on this Mac". */
+  label: string;
+  warning?: string;
+  installed: boolean;
+  /** A PNG data URL; dropped once the card is answered. */
+  icon?: string;
+}
+
+export interface ComputerUseRequest {
+  kind: 'apps';
+  /** The agent's reason, already made safe to show. */
+  reason: string;
+  apps: ComputerUseApp[];
+  /** The names of the apps the user allowed, once answered. */
+  allowed?: string[];
 }
 
 /** What an agent asked Zorvo's tools for, as the approval card shows it. */
@@ -386,7 +441,9 @@ export type ToolDetail =
 export type ChatMessagePart =
   | { kind: 'text'; text: string }
   /** Consecutive tool calls share one part. */
-  | { kind: 'tools'; toolIds: string[] };
+  | { kind: 'tools'; toolIds: string[] }
+  /** An inline visual the agent showed; its markup is kept by the backend under `id`. */
+  | { kind: 'visual'; id: string; title: string; visualKind: 'svg' | 'html' };
 
 /** One step of an agent's plan, as reported over ACP. */
 export interface PlanEntry {
@@ -435,15 +492,37 @@ export interface ChatMessage {
   /** The agent's `messageId` for a user message replayed by `session/load`; its chunks share it. */
   replayId?: string;
   /** A report from a delegated session in A's transcript; the chat labels it From <agent>. */
-  delegationReport?: { agentName: string; agentId?: string };
+  delegationReport?: { agentName: string; agentId?: string; handle?: string };
+  /** One message that reports on several workers; the chat labels it Worker reports and lists them. */
+  workerReport?: { workers: Array<{ agentName: string; agentId?: string; handle: string; state: WorkerState }> };
   /** On the user message that carries a task into a delegate: the agent of the session that gave it. */
   delegationTask?: { agentName: string; agentId?: string };
+  /** On a session's first user message when it continued another agent's conversation: where it came from. */
+  continuedFrom?: { sessionId: string; agentId: string; toAgentId?: string };
   /** A question the agent asked the user (ACP elicitation); never holds the answer. */
   elicitation?: ElicitationCard;
   /** The NEAR AI signature state of a private reply's model calls. */
   verification?: MessageVerification;
   /** Marks where the agent showed a page: Zorvo's own row, with the version shown then. */
   artifactCard?: ArtifactCard;
+  /** The agent's `wrap_up` for this turn, and the user's answer from the box under it. */
+  nextStep?: NextStep;
+  /** Set on a turn's last reply when the turn ended with `end_turn`: only those get a next-step box. */
+  endedNormally?: true;
+  /** Git tree snapshot captured right before this user message's turn, for optional file restore on rewind. */
+  checkpoint?: string;
+}
+
+/** An action a next-step box can offer; the agent may pick one of them in `wrap_up`. */
+export type NextStepAction = 'commit' | 'create_pr' | 'merge' | 'auto_merge' | 'open_preview' | 'open_pr';
+
+/** What an agent's `wrap_up` left on its reply, and what the user pressed in the box. */
+export interface NextStep {
+  recap?: string;
+  ask?: string;
+  pick?: NextStepAction;
+  replies?: string[];
+  answered?: { label: string; at: number };
 }
 
 /** One stored copy of an artifact's page. */
@@ -464,7 +543,8 @@ export interface Artifact {
 }
 
 /** Where a comment is on an artifact page: selected text with its context, or a clicked element. */
-export type ArtifactAnchor =
+/** Where on a page a comment is: text or an element, which the page can mark. */
+export type PageAnchor =
   | { kind: 'text'; quote: string; before: string; after: string }
   | {
       kind: 'element';
@@ -475,6 +555,27 @@ export type ArtifactAnchor =
       text: string;
       path: string;
     };
+
+/** A page anchor, or (on a canvas artboard only) the whole artboard, which has no mark. */
+/** `system`: a design system comment on a whole token or component, which has no mark in a page. */
+export type ArtifactAnchor = PageAnchor | { kind: 'artboard' } | { kind: 'system' };
+
+/** What a design system comment is on: a token, a component, or a section of the brand book. */
+export type DesignSystemTarget = { kind: 'token'; name: string } | { kind: 'component'; name: string } | { kind: 'section'; file: string };
+
+/** Which part of a design system a comment is on, and the hash of what it was written on. */
+export interface DesignSystemCommentRef {
+  key: string;
+  target: DesignSystemTarget;
+  hash: string;
+}
+
+/** Which canvas artboard a comment is on, and the SHA-256 of its file when it was written. */
+export interface CanvasCommentRef {
+  key: string;
+  artboardId: string;
+  fileHash: string;
+}
 
 /** A comment on an artifact page, for the agent. It never moves to another version. */
 export interface ArtifactComment {
@@ -487,6 +588,10 @@ export interface ArtifactComment {
   createdAt: number;
   /** Send was pressed with it in the message, not that the agent acted. */
   sentAt?: number;
+  /** Set on a canvas comment: `artifactId` is then the canvas key and `version` is 0. */
+  canvas?: CanvasCommentRef;
+  /** Set on a design system comment: `artifactId` is then the system key and `version` is 0. */
+  designSystem?: DesignSystemCommentRef;
 }
 
 /** One version of one artifact, as the page view shows it. */
@@ -499,7 +604,7 @@ export interface PageRef {
 /** A comment's number and where it is, for the page to draw. */
 export interface PageMark {
   n: number;
-  anchor: ArtifactAnchor;
+  anchor: PageAnchor;
 }
 
 /** What an artifact page reported through Zorvo's script. */
@@ -517,11 +622,13 @@ export type PageMessage =
   | { kind: 'cancel' }
   | { kind: 'marks-missing'; numbers: number[] };
 
-export interface ArtifactCard {
-  artifactId: string;
-  title: string;
-  version: number;
-}
+/** Where the agent showed a page (with the version shown then) or a canvas (with its artboard count then). */
+export type ArtifactCard =
+  | { kind?: undefined; artifactId: string; title: string; version: number }
+  | { kind: 'canvas'; canvasKey: string; title: string; artboards: number }
+  | { kind: 'motion'; motionKey: string; title: string; duration: number; formats: number }
+  | { kind: 'video'; videoKey: string; title: string }
+  | { kind: 'design-system'; designSystemKey: string; title: string; tokens: number; components: number };
 
 export interface ElicitationChoice {
   value: string;

@@ -12,6 +12,8 @@ export interface SessionListContext {
   agentNameOf: (profileId: string) => string | undefined;
   isSessionBusy: (sessionId: string) => boolean;
   isSessionWaiting: (sessionId: string) => boolean;
+  /** The session's agent may use apps on this Mac. */
+  usesComputer?: (sessionId: string) => boolean;
   onSelectSession: (sessionId: string) => void;
   /** Opens a compare run's panel; a run's group is a plain label when absent. */
   onOpenRun?: (runId: string) => void;

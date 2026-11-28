@@ -37,13 +37,23 @@ fn current_uid() -> u32 {
     unsafe { getuid() }
 }
 
+/// Which tools a session's agent sees: a coordinator gets the full set; a
+/// worker, started by another session's agent to do one task, gets `done` and
+/// nothing else.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToolsRole {
+    Coordinator,
+    Worker,
+}
+
 /// What a session's token lets it use: Zorvo's agent tools, computer use,
-/// and the path it reaches them by.
+/// the path it reaches them by, and its role.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Capabilities {
     pub agent_tools: bool,
     pub computer_use: bool,
     pub path: ToolsPath,
+    pub role: ToolsRole,
 }
 
 impl Capabilities {
@@ -53,6 +63,17 @@ impl Capabilities {
             agent_tools: enabled,
             computer_use: false,
             path,
+            role: ToolsRole::Coordinator,
+        }
+    }
+
+    /// A worker: the `done` tool and no computer use, whatever the settings say.
+    pub fn worker(path: ToolsPath) -> Self {
+        Self {
+            agent_tools: true,
+            computer_use: false,
+            path,
+            role: ToolsRole::Worker,
         }
     }
 

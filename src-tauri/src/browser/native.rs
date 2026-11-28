@@ -75,7 +75,26 @@ pub(super) struct Tab {
     document: Option<String>,
     picker: Option<Picker>,
     popup_link: Option<PopupLink>,
+    /// One blocked-popup notice per tab (plain-text host or empty), cleared on navigation.
+    blocked_popup: Option<String>,
+    /// Incremented whenever a popup is refused on this tab so agent clicks can report it.
+    blocked_popup_seq: u64,
     pending: Vec<WeakReply>,
+    /// Approved, staged files that answer this tab's next file chooser, from `origin` only.
+    upload: Option<PendingUpload>,
+    /// The id of the last armed upload a file chooser took, so its caller can tell taken from expired.
+    upload_taken: Option<u64>,
+}
+pub(super) struct PendingUpload {
+    pub(super) id: u64,
+    pub(super) origin: String,
+    pub(super) paths: Vec<std::path::PathBuf>,
+    pub(super) armed_at: std::time::Instant,
+}
+impl PendingUpload {
+    pub(super) fn is_fresh(&self) -> bool {
+        self.armed_at.elapsed() < crate::browser_upload::ARM_TTL
+    }
 }
 pub(super) struct Picker {
     document: String,
@@ -118,7 +137,33 @@ fn metadata(id: &str, tab: &Tab) -> Value {
     unsafe {
         json!({"id":id,"engine":"WebKit","url":view.URL().and_then(|u|u.absoluteString()).map(|s|s.to_string()).unwrap_or_else(||tab.initial_url.clone()),
         "title":view.title().map(|v|v.to_string()).unwrap_or_else(||"New tab".into()),"loading":tab.loading,
-        "canGoBack":view.canGoBack(),"canGoForward":view.canGoForward(),"zoomFactor":view.pageZoom()})
+        "canGoBack":view.canGoBack(),"canGoForward":view.canGoForward(),"zoomFactor":view.pageZoom(),
+        "blockedPopup":tab.blocked_popup})
+    }
+}
+
+fn popup_host(raw_url: Option<&str>) -> String {
+    raw_url
+        .and_then(|url| reqwest::Url::parse(url).ok())
+        .filter(|url| matches!(url.scheme(), "http" | "https"))
+        .and_then(|url| url.host_str().map(str::to_string))
+        .unwrap_or_default()
+}
+
+pub(super) fn record_blocked_popup(app: &AppHandle, sid: &str, tid: &str, raw_url: Option<&str>) {
+    let host = popup_host(raw_url);
+    let updated = with_tab(sid, tid, |tab| {
+        tab.blocked_popup_seq = tab.blocked_popup_seq.saturating_add(1);
+        if tab.blocked_popup.as_deref() == Some(host.as_str()) {
+            false
+        } else {
+            tab.blocked_popup = Some(host.clone());
+            true
+        }
+    })
+    .unwrap_or(false);
+    if updated {
+        changed(app, sid);
     }
 }
 fn state(session_id: &str) -> Value {
@@ -245,7 +290,7 @@ fn create_tab(app: &AppHandle, sid: &str, url: &str, activate: bool) -> Result<S
     SESSIONS.with(|sessions| {
         let mut sessions = sessions.borrow_mut();
         if !sessions.contains_key(sid) && sessions.len() >= MAX_SESSIONS {
-            return Err("Close a browser session before opening another.".into());
+            return Err(session_limit_error(app, sessions.keys().cloned().collect()));
         }
         let session = sessions.entry(sid.into()).or_insert_with(|| Session {
             // SAFETY: each app session owns one non-persistent store; per-tab configurations are separate.
@@ -312,7 +357,10 @@ fn create_tab(app: &AppHandle, sid: &str, url: &str, activate: bool) -> Result<S
                         tab.loading = matches!(event, wry::PageLoadEvent::Started);
                         if tab.loading {
                             tab.popup_link = None;
+                            tab.blocked_popup = None;
                             cancel_pending(&mut tab.pending);
+                            // Files approved for one page never answer the next one's chooser.
+                            tab.upload = None;
                             tab.frames.clear();
                             tab.document = None;
                             if let Some(picker) = tab.picker.take() {
@@ -357,7 +405,11 @@ fn create_tab(app: &AppHandle, sid: &str, url: &str, activate: bool) -> Result<S
                 document: None,
                 picker: None,
                 popup_link: None,
+                blocked_popup: None,
+                blocked_popup_seq: 0,
                 pending: vec![],
+                upload: None,
+                upload_taken: None,
             },
         ));
         if activate || session.active.is_none() {
@@ -416,26 +468,65 @@ pub async fn execute(app: &AppHandle, sid: String, args: Value) -> Result<Value,
         + 2000;
     tokio::time::timeout(Duration::from_millis(timeout), async {
         let mut args = args;
+        let is_click = args["operation"].as_str() == Some("click");
         if matches!(
             args["operation"].as_str(),
             Some("snapshot" | "find" | "wait" | "click" | "fill" | "select" | "check" | "scroll")
         ) {
             await_helper(app, &sid, &mut args).await?;
         }
+        let click_tab = if is_click {
+            args["tabID"].as_str().map(str::to_string)
+        } else {
+            None
+        };
+        let before_popup_seq = if let Some(tid) = click_tab.clone() {
+            let (send, receive) = oneshot::channel();
+            let sid_read = sid.clone();
+            let _ = app.run_on_main_thread(move || {
+                let seq = with_tab(&sid_read, &tid, |tab| tab.blocked_popup_seq).unwrap_or(0);
+                let _ = send.send(seq);
+            });
+            receive.await.unwrap_or(0)
+        } else {
+            0
+        };
         let (send, receive) = oneshot::channel();
         let handle = app.clone();
+        let sid_dispatch = sid.clone();
         app.run_on_main_thread(move || {
             dispatch(
                 &handle,
-                &sid,
+                &sid_dispatch,
                 args,
                 Reply(Rc::new(RefCell::new(Some(send)))),
             )
         })
         .map_err(|_| "The browser main thread is unavailable.")?;
-        receive
+        let mut result = receive
             .await
-            .map_err(|_| "The browser operation was cancelled.")?
+            .map_err(|_| "The browser operation was cancelled.")??;
+        if let Some(tid) = click_tab {
+            let (send, receive) = oneshot::channel();
+            let sid_after = sid.clone();
+            let _ = app.run_on_main_thread(move || {
+                let info = with_tab(&sid_after, &tid, |tab| {
+                    (tab.blocked_popup_seq, tab.blocked_popup.clone())
+                });
+                let _ = send.send(info);
+            });
+            if let Ok(Some((after_seq, host))) = receive.await {
+                if after_seq > before_popup_seq {
+                    if let Some(obj) = result.as_object_mut() {
+                        obj.insert("popupBlocked".into(), json!(true));
+                        if let Some(host) = host.filter(|h| !h.is_empty()) {
+                            obj.insert("popupHost".into(), json!(host));
+                        }
+                    }
+                }
+            }
+        }
+        Ok(result)
     })
     .await
     .map_err(|_| "The browser operation timed out.")?
@@ -628,6 +719,91 @@ fn dispatch(app: &AppHandle, sid: &str, args: Value, reply: Reply) {
             tab.pending.push(Rc::downgrade(&reply.0));
         }
         match operation {
+            "__upload_page" => {
+                let _ = reply.send(
+                    upload_origin(tab, args.get("frameId"))
+                        .map(|origin| json!({ "origin": origin, "tabId": tid })),
+                );
+            }
+            "__upload_check" => {
+                let check = json!({
+                    "operation": "upload_target",
+                    "ref": args.get("ref").cloned().unwrap_or(Value::Null),
+                });
+                helper(
+                    &tab.view.webview(),
+                    args.get("frameId"),
+                    &tab.frames,
+                    &check,
+                    reply,
+                );
+            }
+            "__upload_arm" => {
+                let origin = args["origin"].as_str().unwrap_or_default().to_owned();
+                let id = args["uploadId"].as_u64().unwrap_or_default();
+                let same = upload_origin(tab, args.get("frameId")).is_ok_and(|now| now == origin);
+                let paths: Vec<std::path::PathBuf> = args["staged"]
+                    .as_array()
+                    .map(|paths| {
+                        paths
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(Into::into)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                if !same || tab.loading {
+                    let _ = reply.send(Err("The page changed. Ask for the upload again.".into()));
+                } else if paths.is_empty() || id == 0 {
+                    let _ = reply.send(Err("Specify at least one file.".into()));
+                } else {
+                    tab.upload = Some(PendingUpload {
+                        id,
+                        origin,
+                        paths,
+                        armed_at: std::time::Instant::now(),
+                    });
+                    let mut click = json!({
+                        "operation": "click",
+                        "ref": args.get("ref").cloned().unwrap_or(Value::Null),
+                    });
+                    if let Some(frame) = args.get("frameId") {
+                        click["frameId"] = frame.clone();
+                    }
+                    helper(
+                        &tab.view.webview(),
+                        args.get("frameId"),
+                        &tab.frames,
+                        &click,
+                        reply,
+                    );
+                }
+            }
+            "__upload_state" => {
+                let id = args["uploadId"].as_u64().unwrap_or_default();
+                let state = if tab.upload_taken == Some(id) {
+                    "taken"
+                } else if tab
+                    .upload
+                    .as_ref()
+                    .is_some_and(|upload| upload.id == id && upload.is_fresh())
+                {
+                    "waiting"
+                } else {
+                    if tab.upload.as_ref().is_some_and(|upload| upload.id == id) {
+                        tab.upload = None;
+                    }
+                    "expired"
+                };
+                let _ = reply.send(Ok(json!({ "state": state })));
+            }
+            "__upload_disarm" => {
+                let id = args["uploadId"].as_u64().unwrap_or_default();
+                if tab.upload.as_ref().is_some_and(|upload| upload.id == id) {
+                    tab.upload = None;
+                }
+                let _ = reply.send(Ok(json!({ "state": "expired" })));
+            }
             "__manual_zoom" => {
                 // SAFETY: this public WebKit property belongs to the retained
                 // session-owned view on its main thread, not to page script.
@@ -729,6 +905,7 @@ fn dispatch(app: &AppHandle, sid: &str, args: Value, reply: Reply) {
                         tab.document = None;
                         tab.frames.clear();
                         tab.popup_link = None;
+                        tab.blocked_popup = None;
                         tab.loading = true;
                         Ok(())
                     })
@@ -758,6 +935,7 @@ fn dispatch(app: &AppHandle, sid: &str, args: Value, reply: Reply) {
                         tab.document = None;
                         tab.frames.clear();
                         tab.popup_link = None;
+                        tab.blocked_popup = None;
                         tab.loading = true;
                     }
                 }
@@ -818,6 +996,36 @@ fn dispatch(app: &AppHandle, sid: &str, args: Value, reply: Reply) {
     ) {
         changed(app, sid);
     }
+}
+
+/// The origin an upload from this tab goes to: the frame's own when `frame_id` names one (an
+/// input inside an iframe posts to that frame's site), else the page's. Only web origins.
+fn upload_origin(tab: &Tab, frame_id: Option<&Value>) -> Result<String, String> {
+    if let Some(frame) = frame(frame_id, &tab.frames)? {
+        // SAFETY: the frame info is retained by this tab and read on the main thread.
+        let origin = unsafe {
+            let origin = frame.securityOrigin();
+            let protocol = origin.protocol().to_string();
+            if !matches!(protocol.as_str(), "http" | "https") {
+                return Err("Open a web page before uploading files.".into());
+            }
+            crate::browser_upload::frame_origin(
+                &protocol,
+                &origin.host().to_string(),
+                origin.port() as i64,
+            )
+        };
+        return Ok(origin);
+    }
+    // SAFETY: dispatch runs on the main thread and retains this tab's view.
+    let url = unsafe {
+        tab.view
+            .webview()
+            .URL()
+            .and_then(|url| url.absoluteString())
+            .map(|url| url.to_string())
+    };
+    crate::browser_upload::origin_of(&url.ok_or("Open a web page before uploading files.")?)
 }
 
 fn frame<'a>(
@@ -1109,9 +1317,77 @@ pub fn close_all(app: &AppHandle) {
     });
 }
 
+fn session_limit_error(app: &AppHandle, held_ids: Vec<String>) -> String {
+    let names_by_id: HashMap<String, String> = app
+        .try_state::<crate::store::AppStore>()
+        .and_then(|store| store.load_state().ok())
+        .map(|state| {
+            state
+                .sessions
+                .into_iter()
+                .map(|session| (session.id, session.name))
+                .collect()
+        })
+        .unwrap_or_default();
+    format_session_limit_error(&held_ids, &names_by_id)
+}
+
+fn format_session_limit_error(
+    held_ids: &[String],
+    names_by_id: &HashMap<String, String>,
+) -> String {
+    let mut labels: Vec<String> = held_ids
+        .iter()
+        .map(|id| {
+            names_by_id
+                .get(id)
+                .map(|name| name.trim())
+                .filter(|name| !name.is_empty())
+                .unwrap_or(id.as_str())
+                .to_string()
+        })
+        .collect();
+    labels.sort();
+    labels.dedup();
+    if labels.is_empty() {
+        return "Close a browser session before opening another.".into();
+    }
+    format!(
+        "Browser limit reached ({MAX_SESSIONS} sessions). Close tabs or archive: {}.",
+        labels.join(", ")
+    )
+}
+
 #[cfg(test)]
 mod reply_tests {
     use super::*;
+
+    #[test]
+    fn session_limit_error_names_sessions_still_holding_browser_tabs() {
+        let held = vec!["s-2".to_string(), "s-1".to_string(), "s-3".to_string()];
+        let names = HashMap::from([
+            ("s-1".to_string(), "Alpha".to_string()),
+            ("s-2".to_string(), "Beta".to_string()),
+        ]);
+        let msg = format_session_limit_error(&held, &names);
+        assert!(msg.contains("Alpha, Beta, s-3"), "{msg}");
+        assert!(msg.contains("8 sessions"), "{msg}");
+    }
+
+    #[test]
+    fn popup_host_keeps_only_plain_http_or_https_hosts() {
+        assert_eq!(
+            popup_host(Some("https://example.com/auth?token=secret")),
+            "example.com"
+        );
+        assert_eq!(
+            popup_host(Some("http://localhost:3000/callback")),
+            "localhost"
+        );
+        assert_eq!(popup_host(Some("javascript:alert(1)")), "");
+        assert_eq!(popup_host(Some("about:blank")), "");
+        assert_eq!(popup_host(None), "");
+    }
 
     #[test]
     fn a_tab_with_nothing_loading_and_no_helper_ends_the_wait_with_a_reason() {

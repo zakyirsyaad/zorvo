@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { act, renderHook } from "@testing-library/react";
-import { clampInspectorWidth, isCrowded, maxInspectorWidth, minInspectorWidth, offeredTabs, shownInspectorWidth } from "../lib/inspector";
+import { clampInspectorWidth, isCrowded, maxInspectorWidth, maxResizeWidth, minInspectorWidth, offeredTabs, shownInspectorWidth } from "../lib/inspector";
 import { useInspectorWidth } from "../hooks/useInspectorWidth";
 
 const KEY = "zorvo.inspectorWidth";
@@ -16,6 +16,22 @@ describe("inspector layout", () => {
     expect(clampInspectorWidth(900)).toBe(720);
     expect(clampInspectorWidth(400.6)).toBe(401);
     expect(clampInspectorWidth(NaN)).toBe(380);
+  });
+
+  it("lets the Browser tab go as wide as the window allows, while the other tabs stop at 720", () => {
+    expect(maxResizeWidth("browser", 1400)).toBe(1400);
+    expect(maxResizeWidth("browser", 500)).toBe(500);
+    expect(maxResizeWidth("changes", 1400)).toBe(720);
+    expect(maxResizeWidth("terminal", 600)).toBe(600);
+  });
+
+  it("remembers the Browser tab's width apart from the other tabs'", () => {
+    const { result } = renderHook(() => useInspectorWidth("browser"));
+    expect(result.current[0]).toBe(560);
+    act(() => result.current[1](1200));
+    expect(result.current[0]).toBe(1200);
+    expect(localStorage.getItem("zorvo.browserWidth")).toBe("1200");
+    expect(localStorage.getItem(KEY)).toBeNull();
   });
 
   it("widens only the Terminal tab", () => {

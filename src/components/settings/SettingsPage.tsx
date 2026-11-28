@@ -124,6 +124,7 @@ export function SettingsPage({
         state={agentSignIn.terminal.dialog}
         output={agentSignIn.terminal.output}
         onClose={agentSignIn.cancelSignIn}
+        onDone={agentSignIn.finishSignIn}
         onTryAgain={agentSignIn.retrySignIn}
         onInput={agentSignIn.terminal.sendInput}
         onResize={agentSignIn.terminal.resize}
@@ -167,14 +168,7 @@ export function SettingsPage({
             <SettingsHeader title="Agents" {...heading}>
               The agents Zorvo can run. Zorvo installs them in its own folder, or uses the ones already on this Mac.
             </SettingsHeader>
-            <AgentCatalogPanel
-              agents={agents}
-              settings={settings}
-              refreshAgents={refreshAgents}
-              catalog={catalog}
-              actions={actions}
-              signIn={agentSignIn}
-            />
+            {/* What every agent may do comes first: under the catalog, a long list hid it. */}
             <AgentToolsSetting
               isOn={settings.agentTools !== false}
               onChange={(agentTools) => updateSettings({ agentTools })}
@@ -187,6 +181,14 @@ export function SettingsPage({
                 onError={computerUse.onError}
               />
             )}
+            <AgentCatalogPanel
+              agents={agents}
+              settings={settings}
+              refreshAgents={refreshAgents}
+              catalog={catalog}
+              actions={actions}
+              signIn={agentSignIn}
+            />
           </div>
         );
       case "private":

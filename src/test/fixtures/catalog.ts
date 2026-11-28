@@ -9,7 +9,6 @@ export function makeCatalogAgent(overrides: Partial<CatalogAgent> & Pick<Catalog
     version: null,
     updateVersion: null,
     status: "ready",
-    availableFrom: null,
     location: null,
     ...overrides,
   };

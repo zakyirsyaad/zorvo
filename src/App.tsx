@@ -10,15 +10,11 @@ import { ChatCanvas } from "./components/ChatCanvas";
 import { HistoryElsewhereNote } from "./components/chat/HistoryElsewhereNote";
 import { ComposerDock, type ComposerHandle } from "./components/ComposerDock";
 import { RemovedAgentPanel } from "./components/RemovedAgentPanel";
-import { ActivityPanel } from "./components/activity/ActivityPanel";
 import { agentNameOr } from "./lib/agent-name";
-import { FilesPanel } from "./components/FilesPanel";
 import { ArtifactsPanel } from "./components/artifacts/ArtifactsPanel";
 import { ArtifactGallery } from "./components/artifacts/ArtifactGallery";
-import { useArtifactComments, useArtifactCommentSweep } from "./hooks/useArtifactComments";
-import { useArtifacts } from "./hooks/useArtifacts";
-import { useArtifactOpening } from "./hooks/useArtifactOpening";
-import { galleryRows, hasVersion, newestVersion, shownArtifactOf } from "./lib/artifacts";
+import { AppInspectorPane } from "./components/AppInspectorPane";
+import { useArtifactsWiring } from "./hooks/useArtifactsWiring";
 import { markersOf } from "./lib/file-markers";
 import { EmptyFolderState, FileDropOverlay } from "./components/AppPlaceholders";
 import { Toast, ToastStack } from "./components/ui/Toast";
@@ -28,77 +24,58 @@ import { SignInLayer } from "./components/SignInLayer";
 import { RecoveryCodeLayer } from "./components/private/RecoveryCodeLayer";
 import { SecretGuardDialog } from "./components/private/SecretGuardDialog";
 import { PrivateCreditsOutLayer } from "./components/private/PrivateCreditsOut";
-import { PrivateInspector } from "./components/private/PrivateInspector";
 import { PrivateLowBalanceRow } from "./components/private/PrivateLowBalanceRow";
 import { AgentInstallPanel } from "./components/AgentInstallPanel";
 import { installPanelAgentOf } from "./lib/install-panel";
 import { NewSessionAbove, NewSessionBelow } from "./components/workspace/NewSessionView";
-import { ChangesPanel } from "./components/changes/ChangesPanel";
 import { DiffView } from "./components/changes/DiffView";
 import { totalsOf } from "./lib/diff-stats";
 import { useInspector } from "./hooks/useInspector";
 import { useWindowWidth } from "./hooks/useWindowWidth";
 import { useNotice } from "./hooks/useNotice";
-import { Inspector } from "./components/inspector/Inspector";
-import { maxInspectorWidth, offeredTabs } from "./lib/inspector";
+import { offeredTabs } from "./lib/inspector";
 import { useReviewComments } from "./hooks/useReviewComments";
 import { useReviewWiring } from "./hooks/useReviewWiring";
 import type { ReviewSlot } from "./hooks/useReviewMessage";
 import { useSecretGuard } from "./hooks/useSecretGuard";
 import { useTurnsEnded } from "./hooks/useTurnsEnded";
-import { usePullRequest } from "./hooks/usePullRequest";
-import { useWorkspacePullRequests } from "./hooks/useWorkspacePullRequests";
-import { createdFilesOf } from "./lib/created-files";
+import { usePullRequestsWiring } from "./hooks/usePullRequestsWiring";
 import { overviewOf } from "./lib/session-overview";
 import { useOverviewCollapse } from "./hooks/useOverviewCollapse";
 import { OverviewCard } from "./components/overview/OverviewCard";
 import { useAgentWork } from "./hooks/useAgentWork";
-import { newestSessionInFolder, pullRequestOfWork, pullRequestOnBranch, sessionPullRequestOf } from "./lib/pull-request-look";
 import { currentPlan } from "./lib/plan";
-import { useRepoPullRequests } from "./hooks/useRepoPullRequests";
 import { useAgentSignIn } from "./hooks/useAgentSignIn";
 import { useAgentSignInStatus } from "./hooks/useAgentSignInStatus";
 import { useDraftAgentCheck } from "./hooks/useDraftAgentCheck";
 import { useSettingsSignIn } from "./hooks/useSettingsSignIn";
 import { useLatest } from "./hooks/useLatest";
 import { useUnsentMessages } from "./hooks/useUnsentMessages";
-import { attachmentsFor, createSessionWorktree } from "./lib/session-worktree";
+import { QueuedMessages } from "./components/composer/QueuedMessages";
 import { sweepOrphans } from "./lib/orphan-sweep";
-import {
-  isWaitingForAnswer,
-  newSessionRecord,
-  namingFor,
-  titlePlaceOf,
-  type SessionSpec,
-  type StartSessionOptions,
-} from "./lib/session-start";
+import { isWaitingForAnswer } from "./lib/session-start";
 import { isAwaitingUser } from "./lib/acp-elicitation";
 import {
   folderNameOf,
-  isArchived,
   isListed,
-  isAutoName,
   workspacePathOf,
   mostRecentSessionId,
-  nextSessionName,
   patchSessionIn,
 } from "./lib/session-helpers";
 import { useAppearance } from "./hooks/useAppearance";
 import { usePersistedState } from "./hooks/usePersistedState";
+import { useAgentTasks } from "./hooks/useAgentTasks";
 import { useBackgroundTasks } from "./hooks/useBackgroundTasks";
+import { useNextStep } from "./hooks/useNextStep";
+import { requestBrowserOpen } from "./lib/browser";
 import { useSessionTaskTabs } from "./hooks/useSessionTaskTabs";
 import type { TaskTab } from "./hooks/useTaskTabs";
-import { TasksPanel } from "./components/tasks/TasksPanel";
 import { useTranscripts } from "./hooks/useTranscripts";
-import { usePrivateCreditsRefresh } from "./hooks/usePrivateCreditsRefresh";
-import { usePrivateTopupRequests } from "./hooks/usePrivateTopupRequests";
 import { PrivateTopupRequestCard } from "./components/private/PrivateTopupRequestCard";
 import { TopupProgress } from "./components/private/TopupProgress";
 import { isTopupActive } from "./lib/private-flow";
 import { usePrivateLowBalanceNotice } from "./hooks/usePrivateLowBalanceNotice";
-import { usePrivateUsage } from "./hooks/usePrivateUsage";
-import { usePrivateVerification } from "./hooks/usePrivateVerification";
-import { actionError, lowBalanceNote } from "./lib/private-credits";
+import { lowBalanceNote } from "./lib/private-credits";
 import { useAgentProfiles, useSuggestedFolders } from "./hooks/useDiscovery";
 import { useAutoInstall } from "./hooks/useAutoInstall";
 import { usedAgentIds } from "./lib/agent-catalog";
@@ -117,30 +94,37 @@ import { AppUpdateNotice } from "./components/AppUpdateNotice";
 import { restartWarning } from "./lib/app-update";
 import { useAppUpdate } from "./hooks/useAppUpdate";
 import { useAgentTools } from "./hooks/useAgentTools";
+import { withLinkChange, workerHandleOf, workerStateOf } from "./lib/workers";
+import { useComputerUse } from "./hooks/useComputerUse";
+import { isComputerUseCardId } from "./lib/computer-use-card";
+import { ComputerUseStatusLine } from "./components/chat/ComputerUseStatusLine";
 import { useBrowserOpening } from "./hooks/useBrowserOpening";
-import { BrowserPanel } from "./components/browser/BrowserPanel";
+import { useFileLinkOpening } from "./hooks/useFileLinkOpening";
 import { useOpenedSessions } from "./hooks/useOpenedSessions";
+import { createStartPlaces } from "./lib/start-places";
 import { ProfileFooter } from "./components/ProfileFooter";
 import { AgentsMenu } from "./components/sidebar/AgentsMenu";
 import { useNavigationHistory } from "./hooks/useNavigationHistory";
 import { useUserProfile } from "./hooks/useUserProfile";
 import { useGithubConnection } from "./hooks/useGithubConnection";
-import { usePrivateContinue, usePrivateWiring } from "./hooks/usePrivateWiring";
+import { usePrivateContinue, usePrivateRuntime, usePrivateWiring } from "./hooks/usePrivateWiring";
 import { useWorkspaceDetails } from "./hooks/useWorkspaceDetails";
 import { useBranchPicker } from "./hooks/useBranchPicker";
 import { usePopoutHost } from "./hooks/usePopoutHost";
 import { useSessionActions } from "./hooks/useSessionActions";
 import { useWorkspaceTerminals } from "./hooks/useWorkspaceTerminals";
 import { useTerminalDrawer } from "./hooks/useTerminalDrawer";
-import { TerminalDrawer } from "./components/terminal/TerminalDrawer";
 import { useDraftSessionList } from "./hooks/useDraftSessionList";
-import type { OpenNewSessionOptions } from "./hooks/useSessionImport";
 import { useSessionFork } from "./hooks/useSessionFork";
+import { useOutsideTeeConfirm } from "./hooks/useOutsideTeeConfirm";
+import { useAgentSwitch } from "./hooks/useAgentSwitch";
+import { useContinueActions } from "./hooks/useContinueActions";
+import { SWITCH_TEXT, continuedFromView, switchNote } from "./lib/agent-switch";
+import { useSwitchTargets } from "./hooks/useSwitchTargets";
 import { useSessionRewind } from "./hooks/useSessionRewind";
+import { useSessionStartWiring } from "./hooks/useSessionStartWiring";
 import { useUnreadMarks } from "./hooks/useUnreadMarks";
 import { useAcpEngine, type AttentionReason, type FirstMessage } from "./hooks/session-engine/useAcpEngine";
-import { ContextPanel } from "./components/context/ContextPanel";
-import { compactCommandOf } from "./lib/context-usage";
 import type { AcpConfigOption } from "./hooks/useAcpSessions";
 import { attentionBody, notifyIfAway } from "./lib/notify";
 import { pickFiles } from "./lib/file-picker";
@@ -150,29 +134,18 @@ import { isInUse, removedAgentName, removedAgentNameFor } from "./lib/enabled-ag
 import { isSetupOnly } from "./lib/acp-auth";
 import { recheckAgents } from "./lib/agent-recheck";
 import { useCompareDraft } from "./hooks/useCompareDraft";
-import { useCompareRun, useCompareRunRows } from "./hooks/useCompareRun";
-import { useCompareModelProbe } from "./hooks/useCompareModelProbe";
-import { useDelegation } from "./hooks/useDelegation";
-import { useNow } from "./hooks/useNow";
-import { DelegateDialog, type DelegateAgentChoice } from "./components/delegation/DelegateDialog";
-import { useDelegateDialog } from "./hooks/useDelegateDialog";
-import { delegatedStartOf, delegationChoicesFor as delegationChoicesForOptions } from "./lib/delegation-start";
+import { useCompareRunWiring } from "./hooks/useCompareRunWiring";
+import { delegationStatusFor, useDelegationRuntime, useDelegationUi } from "./hooks/useDelegationWiring";
+import { useMessageDeliveryWiring } from "./hooks/useMessageDeliveryWiring";
+import { DelegateDialog } from "./components/delegation/DelegateDialog";
 import { DelegationStatusLine } from "./components/delegation/DelegationStatusLine";
 import { DelegatedFromLine } from "./components/delegation/DelegatedFromLine";
 import { OpenedByLine } from "./components/delegation/OpenedByLine";
-import {
-  followUpSummary,
-  isOpenLink,
-  mentionBlockedReason,
-  openDelegateOf,
-  openDelegatesOf,
-  startSummary,
-  type MentionAgentStatus,
-} from "./lib/delegation";
+import { openDelegatesOf } from "./lib/delegation";
 import { compareModelControls } from "./lib/compare-models";
 import { lastOfRun, runOf } from "./lib/compare-run";
 import { compareAgentOptions } from "./lib/composer-controls";
-import { COMPARE_NOTE, DRAFT_COMPARE_HELPER, composerCommandsFor, composerNote, composerPlaceholder, composerStateFor } from "./lib/composer-state";
+import { COMPARE_NOTE, DRAFT_COMPARE_HELPER, composerCommandsFor, composerNote, composerInputsWithSwitch, composerPlaceholder, composerStateFor } from "./lib/composer-state";
 import {
   NO_CHOICES,
   rememberedChoice,
@@ -185,7 +158,7 @@ import {
   type AgentOptions,
   type ProbedOptions,
 } from "./lib/acp-draft";
-import type { AgentProfile, ArtifactCard, ArtifactComment, ReviewComment, Session, SessionWorktree, Settings } from "./types";
+import type { ArtifactComment, ReviewComment, DelegationLink, Session, Settings, WorkerTurnEnd } from "./types";
 import { replyBlockedReason } from "./lib/reply-quote";
 
 const NO_FOLDER_NOTICE = "Open a project folder first: choose one from the folder chip by the message box.";
@@ -213,7 +186,6 @@ export default function App() {
   /** Whether the next new session runs in its own worktree (a git repository only). */
   const [isWorktreeOn, setIsWorktreeOn] = useState(false);
   const [isCreatingWorktree, setIsCreatingWorktree] = useState(false);
-  const [isRaisingPrivateCap, setIsRaisingPrivateCap] = useState(false);
   /** Bumped after each of the active agent's turns, so its folder's branch is read again. */
   const [branchCheck, setBranchCheck] = useState(0);
   const [acpChoices, setAcpChoices] = useState<AcpChoices>(NO_CHOICES);
@@ -233,6 +205,11 @@ export default function App() {
   const [delegationMention, setDelegationMention] = useState<{ agentId: string; task: string } | null>(null);
   // Set once useDelegation is built: the engine's turns reach it through this, as it is built before the hook.
   const delegationTurnEndedRef = useRef<(sessionId: string, reason: AttentionReason) => void>(() => {});
+  const queueRewoundRef = useRef<(sessionId: string) => void>(() => {});
+  const queuePromptStartedRef = useRef<(sessionId: string) => void>(() => {});
+  const queueAgentEndedRef = useRef<(sessionId: string) => void>(() => {});
+  const queueTurnSettledRef = useRef<(sessionId: string, end: { how: WorkerTurnEnd }) => void>(() => {});
+  const delegationTurnSettledRef = useRef<(sessionId: string, end: { how: WorkerTurnEnd; reason?: string }) => void>(() => {});
   // Set once useDelegation is built: the engine's retries read why the pair blocks them, as it is built before the hook.
   const delegationBlockedRef = useRef<(sessionId: string) => string | null>(() => null);
 
@@ -240,19 +217,6 @@ export default function App() {
   const { state, isLoaded, updateState, getState, saveNow } = usePersistedState(reportError);
   useAppearance(state.settings.appearance, isLoaded, reportError);
   const { transcripts, transcriptStatus, ensureLoaded, updateMessages, saveSoon, removeTranscript, flush: flushTranscripts } = useTranscripts(reportError);
-  const updateSessionUsage = useCallback(
-    (sessionId: string, privateUsage: NonNullable<Session["privateUsage"]>) => {
-      updateState((prev) => patchSessionIn(prev, sessionId, { privateUsage }));
-    },
-    [updateState],
-  );
-  const privateUsage = usePrivateUsage({ sessions: state.sessions, updateSession: updateSessionUsage });
-  const privateVerification = usePrivateVerification({
-    updateMessages,
-    saveSoon,
-    isKnownSession: (id) => state.sessions.some((session) => session.id === id),
-    onCheck: privateUsage.refresh,
-  });
   const {
     agents,
     isLoaded: areAgentsLoaded,
@@ -393,51 +357,22 @@ export default function App() {
       setPickedAgentId(privateAgentId);
     },
   });
-  const topupRequests = usePrivateTopupRequests();
-  const [chatTopupSession, setChatTopupSession] = useState<string | null>(null);
-  const [isAnsweringTopup, setIsAnsweringTopup] = useState(false);
-  /** The user's answer to an agent's ask; an approval starts the existing checkout flow. */
-  const answerTopupRequest = useCallback(
-    async (sessionId: string, requestId: string, approve: boolean) => {
-      const request = topupRequests.requests[sessionId];
-      if (!request || request.requestId !== requestId || isAnsweringTopup) return;
-      setIsAnsweringTopup(true);
-      const ok = await topupRequests.answer(sessionId, requestId, approve);
-      setIsAnsweringTopup(false);
-      if (!ok) {
-        setNotice("That top-up request is no longer waiting.", "warning");
-        return;
-      }
-      if (approve) {
-        setChatTopupSession(sessionId);
-        void privateCredits.buy(request.usd);
-      }
-    },
-    [isAnsweringTopup, privateCredits, setNotice, topupRequests],
-  );
-  const isPrivateSessionId = useCallback(
-    (sessionId: string) => sessions.some((session) => session.id === sessionId && session.privateMode !== undefined),
-    [sessions],
-  );
-  // A private turn's model calls change the balance: read it again, at most once a minute across sessions.
-  const refreshPrivateCredits = usePrivateCreditsRefresh(privateCredits.refresh, isPrivateSessionId);
-  const verifyPrivateTurn = privateVerification.verifyTurn;
-  const onPrivateTurnEnd = useCallback(
-    (sessionId: string) => {
-      verifyPrivateTurn(sessionId);
-      refreshPrivateCredits(sessionId);
-    },
-    [verifyPrivateTurn, refreshPrivateCredits],
-  );
-  // A private session's low-balance row needs its model's price, so the catalog loads when it opens.
-  const activePrivateModelId = activeSession?.privateMode?.modelId;
-  const privateModels = privateCredits.models;
-  const loadPrivateCatalog = privateCredits.loadCatalog;
-  useEffect(() => {
-    if (activePrivateModelId !== undefined && privateModels === null) {
-      void loadPrivateCatalog();
-    }
-  }, [activePrivateModelId, privateModels, loadPrivateCatalog]);
+  const {
+    topupRequests,
+    chatTopupSession,
+    setChatTopupSession,
+    isAnsweringTopup,
+    answerTopupRequest,
+    onPrivateTurnEnd,
+  } = usePrivateRuntime({
+    sessions: state.sessions,
+    activeSession,
+    credits: privateCredits,
+    updateState,
+    updateMessages,
+    saveSoon,
+    setNotice,
+  });
   // Several agents each run in their own worktree, so Worktree is on whatever it was set to.
   const isWorktreeActive = canUseWorktree && (isWorktreeOn || compare.isCompare);
   const branchPicker = useBranchPicker({
@@ -493,6 +428,12 @@ export default function App() {
     [updateState],
   );
 
+  const updateLink = useCallback(
+    (sessionId: string, change: (link: DelegationLink) => DelegationLink) =>
+      updateState((prev) => withLinkChange(prev, sessionId, change)),
+    [updateState],
+  );
+
   const updateReviewComments = useCallback(
     (sessionId: string, change: (prev: ReviewComment[]) => ReviewComment[]) =>
       updateState((prev) => ({
@@ -526,7 +467,10 @@ export default function App() {
   /** Keeps a model or effort pick (as the agent settled it), so the agent's next session starts with it too. */
   const rememberPick = (profileId: string, configId: string, value: string, reported?: AcpConfigOption[]) => {
     // A private session's or draft's options are its TEE model's: they never become the agent's for ordinary drafts.
-    if (isPrivateLaunch) return;
+    if (!isPrivateLaunch) keepPick(profileId, configId, value, reported);
+  };
+  /** `rememberPick` without the private guard: for an agent picked to continue a private session in an ordinary one. */
+  const keepPick = (profileId: string, configId: string, value: string, reported?: AcpConfigOption[]) => {
     const preferredConfig = rememberedChoice(state.agentOptions?.[profileId], configId, value, reported);
     if (!preferredConfig) return;
     // The lists on offer follow too (an effort list depends on its model), so the next draft offers the same.
@@ -537,6 +481,7 @@ export default function App() {
   const rememberModelPick = (profileId: string, preferredModelId: string) => {
     if (!isPrivateLaunch) rememberAgentOptions(profileId, { preferredModelId });
   };
+  const keepModelPick = (profileId: string, preferredModelId: string) => rememberAgentOptions(profileId, { preferredModelId });
 
   const isComposerHiddenRef = useLatest(isComposerHidden);
   /** Whatever its status: a composer on its way to hiding would carry a message into the next session on screen. */
@@ -544,6 +489,8 @@ export default function App() {
     const session = sessions.find((s) => s.id === sessionId);
     return removedAgentName(agents.find((agent) => agent.id === session?.profileId), state.settings) !== null;
   };
+  // A rewound message names its session, and goes into no other session's box. A draft's message goes into the next composer shown.
+  const pendingRestoreRef = useRef<(FirstMessage & { sessionId?: string }) | null>(null);
   // A rewound message replaces the box, in the session the user is rewinding.
   const restoreMessage = (sessionId: string, text: string, attachments?: readonly string[]) => {
     setActiveSessionId(sessionId);
@@ -613,23 +560,6 @@ export default function App() {
       // A probe's lists are true for the model it ran, even where a session's report wins the shown ones.
       agentOptions: { ...prev.agentOptions, [profileId]: withEffortList(withProbed(prev.agentOptions?.[profileId], probed), probed) },
     }));
-  // A compare draft's model chips: an agent whose models are unknown is asked only when its chip opens.
-  const compareAgentIdsRef = useLatest(compare.agentIds);
-  const compareModelProbe = useCompareModelProbe({
-    cwd: shownFolderPath ?? undefined,
-    agentOptions: state.agentOptions,
-    onProbed: rememberProbed,
-    onSignedIn: signInStatus.markSignedIn,
-    onNeedsSignIn: (profileId) => {
-      // Marked as needing a sign-in, it can no longer be ticked, so it leaves the run; say so only if it was in it.
-      const wasInRun = compareAgentIdsRef.current.includes(profileId);
-      signInStatus.markNeeded(profileId);
-      if (wasInRun) {
-        const name = agents.find((a) => a.id === profileId)?.name ?? profileId;
-        setNotice(`${name} needs a sign-in, so it left the run. Pick it alone to sign in.`);
-      }
-    },
-  });
   // Settings → Agents shows the same sign-in state as the sidebar, and checks and fixes it.
   const settingsSignIn = useSettingsSignIn({
     cwd: shownFolderPath ?? workspaces[0]?.path,
@@ -669,6 +599,11 @@ export default function App() {
       delegationTurnEndedRef.current(id, reason);
       if (reason !== "needs-answer") setRunVersion((n) => n + 1);
     },
+    onTurnSettled: (id, end) => {
+      // The user's queued message goes first: the worker reports that wait for a free coordinator are drained from an effect.
+      queueTurnSettledRef.current(id, end);
+      delegationTurnSettledRef.current(id, end);
+    },
     onAuthRequired: (session, methods, unsent) => {
       if (!compareRun.isInRun(session.id)) {
         signIn.handBack(session, methods, unsent);
@@ -678,6 +613,8 @@ export default function App() {
       signInStatus.markNeeded(session.profileId);
       compareRun.keepSignIn(session.id, { methods, unsent });
     },
+    onAgentEnded: (id) => queueAgentEndedRef.current(id),
+    onPromptStarted: (id) => queuePromptStartedRef.current(id),
     onTurnFailed: (sessionId, error) =>
       error ? setFailedTurns((prev) => ({ ...prev, [sessionId]: error })) : clearFailedTurn(sessionId),
     // Read when a retry runs, long after the render that built the engine: the latest hook decides.
@@ -704,6 +641,8 @@ export default function App() {
 
   const sessionById = (sessionId: string) => sessions.find((s) => s.id === sessionId);
   const { rewind, restart, isRestarting, cancelRestart, rewoundOptionsOf } = useSessionRewind({
+    onRewound: (sessionId) => queueRewoundRef.current(sessionId),
+    onFilesRestored: () => inspector.changes.reload(),
     agents,
     transcripts,
     acp,
@@ -740,13 +679,7 @@ export default function App() {
   const isDraggingFiles = useFileDrop(handleDroppedFiles, reportError);
 
   const turnsEnded = useTurnsEnded(Boolean(activeSessionId) && isSessionBusy(activeSessionId));
-  // The pages each session's agent showed; the backend owns them and says when they change.
-  const artifacts = useArtifacts(useMemo(() => sessions.map((session) => session.id), [sessions]));
-  const sessionArtifacts = useMemo(() => (activeSession ? artifacts.bySession.get(activeSession.id) ?? [] : []), [artifacts.bySession, activeSession]);
-  // The files the agent created in this session, listed in the Output tab under its pages.
   const activeTranscript = activeSessionId ? transcripts[activeSessionId] : undefined;
-  const activeCwd = activeSession?.cwd;
-  const createdFiles = useMemo(() => createdFilesOf(activeTranscript ?? [], activeCwd), [activeTranscript, activeCwd]);
   const backgroundTasks = useBackgroundTasks({
     sessions,
     transcripts,
@@ -761,6 +694,14 @@ export default function App() {
   const overviewCollapse = useOverviewCollapse();
   const taskTabs = useSessionTaskTabs({ sessionId: activeSessionId ?? null, transcripts, tasks: backgroundTasks.tasks });
   const activeInfo = activeSession ? acp.info[activeSession.id] : undefined;
+  const agentTasks = useAgentTasks({
+    sessionId: activeSession?.id ?? null,
+    agentId: activeSession?.profileId,
+    acpSessionId: activeSession?.acpSessionId,
+    isRunning: activeSession !== undefined && activeSession.status !== "terminated",
+    messages: activeTranscript ?? [],
+    turnKey: activeInfo?.turnsEnded ?? 0,
+  });
   const inspectorTabs = offeredTabs({
     hasFolder: Boolean(filesFolder),
     isRepository,
@@ -780,60 +721,58 @@ export default function App() {
       if (tab === "terminal" && filesFolder) terminalDrawer.ensureShell(filesFolder.path);
     },
   });
-  const onArtifactShown = useArtifactOpening({
-    activeSessionId: activeSession?.id ?? null,
-    viewed: inspector.viewedArtifact,
-    showTab: () => inspector.show("artifacts"),
-    view: inspector.viewArtifact,
-  });
-  useBrowserOpening({ sessionId: activeSession?.id ?? null, show: () => inspector.show("browser"), onError: reportError });
-  const gallery = useMemo(
-    () => galleryRows(sessions, artifacts.bySession, (profileId) => agentNameOr(agents.find((agent) => agent.id === profileId))),
-    [sessions, artifacts.bySession, agents],
-  );
-  // The last artifact may go while the gallery is open: then there is nothing to show, and the chat is back.
-  const isGalleryShown = isGalleryOpen && gallery.length > 0;
-  const openFromGallery = (sessionId: string, artifactId: string) => {
-    handleSelectSession(sessionId);
-    // For the session about to show, whose id is its view: the one on screen now may be another.
-    inspector.viewArtifact({ artifactId, version: null }, sessionId);
-    inspector.show("artifacts");
-  };
-  const artifactIds = useMemo(() => new Set(sessionArtifacts.map((artifact) => artifact.id)), [sessionArtifacts]);
-  /** A chat card's Open: the version it marks, in the Artifacts tab (the newest is followed, not pinned). */
-  const openArtifactCard = (card: ArtifactCard) => {
-    const artifact = sessionArtifacts.find((candidate) => candidate.id === card.artifactId);
-    if (!artifact) return;
-    inspector.viewArtifact({ artifactId: card.artifactId, version: card.version === newestVersion(artifact) ? null : card.version });
-    inspector.show("artifacts");
-  };
   // Memoized: the stats object only changes when they are read again.
   const fileMarkers = useMemo(() => markersOf(inspector.headStats, inspector.filesPrefix), [inspector.headStats, inspector.filesPrefix]);
   // A tab that no longer applies (another folder, a draft) does not show.
   const inspectorTab = inspector.tab && inspectorTabs.includes(inspector.tab) ? inspector.tab : null;
-  // The open artifact's page takes the chat's place: only on the Artifacts tab of a session that still has one.
-  const isArtifactExpanded = inspector.isArtifactExpanded && inspectorTab === "artifacts" && sessionArtifacts.length > 0;
-  // The artifact page on screen, for its comments: the Artifacts tab's viewer shows it, expanded or not.
-  const shownArtifact = inspectorTab === "artifacts" ? shownArtifactOf(sessionArtifacts, inspector.viewedArtifact, createdFiles.length) : undefined;
-  const viewedVersion = inspector.viewedArtifact?.artifactId === shownArtifact?.id ? inspector.viewedArtifact?.version : null;
-  const shownVersion = shownArtifact ? (viewedVersion ?? newestVersion(shownArtifact)) : 0;
-  const shownPage =
-    activeSession && shownArtifact && hasVersion(shownArtifact, shownVersion)
-      ? { sessionId: activeSession.id, artifactId: shownArtifact.id, version: shownVersion }
-      : null;
+  // The Browser tab's Expand: the inspector takes the whole stage, the main sheet hidden, and the page's native view
+  // only moves (its box grows), so the page keeps what it holds.
+  const isBrowserExpanded = inspector.isBrowserExpanded && inspectorTab === "browser" && activeSession !== undefined;
   // The review wiring is built further down; its `forget` reaches the comments through this ref.
   const forgetReviewRef = useRef<((ids: readonly string[]) => void) | null>(null);
   const forgetInMessage = useCallback((ids: readonly string[]) => forgetReviewRef.current?.(ids), []);
-  const artifactComments = useArtifactComments({
-    sessionId: activeSession?.id,
-    comments: activeSession?.artifactComments,
-    update: updateArtifactComments,
-    shownPage,
-    forget: forgetInMessage,
+  const {
+    sessionArtifacts,
+    sessionCanvases,
+    sessionMotions,
+    sessionVideos,
+    sessionDesignSystems,
+    createdFiles,
+    onArtifactShown,
+    gallery,
+    isGalleryShown,
+    openFromGallery,
+    openCanvasFromGallery,
+    openDesignSystemFromGallery,
+    artifactIds,
+    openArtifactCard,
+    isArtifactExpanded,
+    artifactComments,
+    expandArtifact,
+  } = useArtifactsWiring({
+    sessions,
+    activeSession,
+    activeSessionId,
+    activeTranscript,
+    agents,
+    inspector,
+    inspectorTab,
+    isGalleryOpen,
+    onSelectSession: (sessionId) => handleSelectSession(sessionId),
+    updateArtifactComments,
+    forgetInMessage,
+    onError: reportError,
+  });
+  useBrowserOpening({ sessionId: activeSession?.id ?? null, show: () => inspector.show("browser"), onError: reportError });
+  useFileLinkOpening({
+    folder: filesFolder?.path,
+    viewFile: (relative) => {
+      inspector.viewFile(relative);
+      inspector.show("files");
+    },
     onError: reportError,
   });
   useAgentWork(sessions, transcripts, patchSession);
-  useArtifactCommentSweep(sessions, artifacts.bySession, artifacts.readSessions, updateArtifactComments, forgetInMessage);
   /** Shows a subagent's or a shell command's task in the inspector, beside its session's chat. */
   const openTask = (sessionId: string, tab: TaskTab) => {
     taskTabs.open(sessionId, tab);
@@ -850,46 +789,20 @@ export default function App() {
   const [chatJump, setChatJump] = useState<{ messageId: string; nonce: number } | null>(null);
   // The diff view shows beside the chat, or in its place once expanded.
   const isDiffOpen = inspector.isDiffOpen && Boolean(filesFolder) && isRepository;
-  // Every session folder's pull requests, one gh call per folder, for the sidebar and the top bar.
-  const listedFolders = useMemo(
-    () => [...new Set(sessions.filter((session) => !isArchived(session)).map(workspacePathOf))],
-    [sessions],
-  );
-  const busyFolders = sessions.filter((session) => isSessionBusy(session.id)).map(workspacePathOf);
-  const folderPullRequests = useWorkspacePullRequests(listedFolders, github.status?.state === "signed-in", busyFolders, {
-    liveFolder: activeSession ? workspacePathOf(activeSession) : undefined,
+  const { pullRequests, pullRequestOf, repoPullRequests, openPullRequest } = usePullRequestsWiring({
+    sessions,
+    activeSession,
+    isSessionBusy,
+    isGithubSignedIn: github.status?.state === "signed-in",
+    isRepository,
+    shownFolderPath,
+    branch: workspaceDetails?.branch,
+    changesFolderPath: inspectorTab === "changes" ? filesFolder?.path : undefined,
+    turnsEnded,
+    suppressRepoError: Boolean(githubProblem),
+    reportError,
+    setNotice,
   });
-  const newestInFolder = useMemo(() => newestSessionInFolder(sessions), [sessions]);
-  const pullRequestOf = useCallback(
-    (session: Session) => {
-      const folder = folderPullRequests.get(workspacePathOf(session));
-      return folder ? sessionPullRequestOf(session, folder, newestInFolder) : null;
-    },
-    [folderPullRequests, newestInFolder],
-  );
-  // The top bar reads the same list; its own call is only for a branch outside the 100 newest.
-  const shownFolder = activeSession ? folderPullRequests.get(workspacePathOf(activeSession)) : undefined;
-  // A session in the folder's own checkout first shows the pull request its agent made, often from a worktree of its own.
-  const workPullRequest =
-    shownFolder && activeSession && !activeSession.worktree ? pullRequestOfWork(shownFolder, activeSession.agentWork) : null;
-  const listedPullRequest =
-    workPullRequest ?? (shownFolder ? pullRequestOnBranch(shownFolder, workspaceDetails?.branch ?? null) : null);
-  const ownPullRequest = usePullRequest(
-    isRepository && !listedPullRequest ? shownFolderPath : undefined,
-    workspaceDetails?.branch ?? undefined,
-    turnsEnded,
-  );
-  const pullRequest = listedPullRequest ?? ownPullRequest;
-  // Read only while the Changes panel shows them.
-  const repoPullRequests = useRepoPullRequests(
-    inspectorTab === "changes" ? filesFolder?.path : undefined,
-    turnsEnded,
-    // The panel already says gh is missing or signed out and points to Settings; gh's own error would only repeat it.
-    githubProblem ? () => {} : reportError,
-  );
-  const openPullRequest = (url: string) => {
-    invoke("open_external_url", { url }).catch((error) => setNotice(`Could not open the pull request: ${String(error)}`));
-  };
   const openLink = (url: string) => {
     invoke("open_external_url", { url }).catch((error) => setNotice(`Could not open the link: ${String(error)}`));
   };
@@ -899,12 +812,22 @@ export default function App() {
   // defined further down and only called when a tool call or an answer arrives.
   // The independent sessions an agent opens through the tools. `startSession` is defined
   // further down and only called when a call is allowed.
+  const [startPlaces] = useState(createStartPlaces);
   const openedSessions = useOpenedSessions({
     sessions,
     agents: agentsInUse,
     isBusy: (sessionId) => isSessionBusy(sessionId),
+    isWaiting: (sessionId) => isSessionWaiting(sessionId),
+    places: startPlaces,
     startSession: (spec, first, options) => startSession(spec, first, options),
   });
+  const readMessages = async (sessionId: string) => {
+    const live = transcripts[sessionId] ?? [];
+    if (transcriptStatus[sessionId] === "ready") return live;
+    if (transcriptStatus[sessionId] === "failed") throw new Error("unreadable");
+    // Not opened in this run: read what was saved, then what arrived since.
+    return savedThenLive(await loadTranscript(sessionId), live);
+  };
   const agentTools = useAgentTools({
     sessions,
     // Only the agents the user has in use, as the @ list and the dialog offer: an agent
@@ -912,141 +835,92 @@ export default function App() {
     agents: agentsInUse,
     statusOf: (agentId) => {
       const agent = agentsInUse.find((candidate) => candidate.id === agentId);
-      return agent === undefined ? "not-installed" : delegationStatusOf(agent);
+      return agent === undefined ? "not-installed" : delegationStatusFor(agent, signInStatus.stateOf);
     },
-    delegatesOf: (sessionId) =>
-      openDelegatesOf(sessionId, sessions).map((delegate) => ({
-        agentId: delegate.profileId,
-        state: isSessionWaiting(delegate.id) ? "needs-answer" : isSessionBusy(delegate.id) ? "working" : "idle",
-        task: delegate.delegatedFrom?.task ?? "",
-      })),
-    giveTask: (sourceId, agentId, task, options) => delegation.giveTask(sourceId, agentId, task, options),
+    workersOf: (sessionId) =>
+      openDelegatesOf(sessionId, sessions).flatMap((worker) => {
+        const link = worker.delegatedFrom;
+        const handle = workerHandleOf(worker);
+        if (link === undefined || link === null || handle === undefined) return [];
+        return [
+          {
+            handle,
+            agent: worker.profileId,
+            title: worker.name,
+            state:
+              workerStateOf({ link, isBusy: isSessionBusy(worker.id), isWaiting: isSessionWaiting(worker.id) }) ?? "idle",
+            outcome: link.outcome?.result ?? null,
+          },
+        ];
+      }),
+    startWorker: (coordinatorId, input) => delegation.startWorker(coordinatorId, input),
+    sendToWorker: (coordinatorId, workerId, task) => delegation.sendToWorker(coordinatorId, workerId, task),
+    recordDone: (workerId, done) => delegation.recordDone(workerId, done),
     workspaces,
     openSession: openedSessions.open,
     openedOf: openedSessions.openedOf,
     updateMessages,
+    flushUpdates: () => acp.flushQueued(),
     onAttention: (sessionId, reason) => notifyAttention(sessionId, reason),
     onNotice: (message) => setNotice(message),
     onArtifactShown,
-    messagesOf: async (sessionId) => {
-      const live = transcripts[sessionId] ?? [];
-      if (transcriptStatus[sessionId] === "ready") return live;
-      if (transcriptStatus[sessionId] === "failed") throw new Error("unreadable");
-      // Not opened in this run: read what was saved, then what arrived since.
-      return savedThenLive(await loadTranscript(sessionId), live);
-    },
+    messagesOf: readMessages,
     stateOf: (sessionId) =>
       isSessionWaiting(sessionId) ? "needs-answer" : isSessionBusy(sessionId) ? "working" : "idle",
     stopTurn: (sessionId) => handleInterrupt(sessionId),
   });
+  const computerUse = useComputerUse({
+    agentNameOf: (sessionId) => {
+      const profileId = sessionById(sessionId)?.profileId;
+      return agents.find((agent) => agent.id === profileId)?.name ?? "The agent";
+    },
+    updateMessages,
+    onAttention: (sessionId, reason) => notifyAttention(sessionId, reason),
+    onNotice: (message) => setNotice(message),
+  });
   const isSessionWaiting = (sessionId: string) =>
     agentTools.isWaiting(sessionId) ||
+    computerUse.isWaiting(sessionId) ||
     isWaitingForAnswer(sessionById(sessionId), transcripts[sessionId] ?? [], () => isSessionBusy(sessionId));
 
-  /** Records a new session and shows it, unless `focus` is false; the agent is started by its engine. */
-  const recordSession = (spec: SessionSpec, options?: { focus?: boolean }): Session => {
-    const session = newSessionRecord(spec);
-    const { initialMessages } = spec;
-    updateState((prev) => ({ ...prev, sessions: [session, ...prev.sessions] }));
-    if (initialMessages) updateMessages(session.id, () => initialMessages);
-    if (options?.focus !== false) setActiveSessionId(session.id);
-    return session;
-  };
-
-  /**
-   * Starts a session. A compare run passes the `choices` of this session's own agent (the draft's belong to
-   * the draft agent) and clears the draft's once after the whole run, and `focus: false` to leave the view alone.
-   */
-  const startSession = (spec: SessionSpec, first?: FirstMessage, options?: StartSessionOptions) => {
-    const session = recordSession(spec, options);
-    void acp.start(session, first, options?.choices ?? startChoices).then((isTaken) => {
-      if (!isTaken && first) giveBackMessage(session.id, first.text, first.attachments);
-    });
-    // The picks went with the session; a later draft starts from the model picked last.
-    if (!options?.choices) setAcpChoices(NO_CHOICES);
-  };
-
-  /**
-   * Starts a session in the active workspace with the agent picked for it, in
-   * a new worktree of it when Worktree is on.
-   */
-  const handleNewSession = async (first?: FirstMessage) => {
-    // The backend rejects relative and missing cwds, so never spawn without a path.
-    if (!activeWorkspace) {
-      setNotice(NO_FOLDER_NOTICE, "warning");
-      return;
-    }
-    if (!newSessionAgent) {
-      setNotice(noAgentNotice(agentsInUse), "warning");
-      return;
-    }
-    rememberFolder(activeWorkspace);
-    // Read now: the draft, and its Private chip with it, is gone once the session starts.
-    const { privateMode } = privateDraft;
-    const sessionPrivateMode = privateMode
-      ? { ...privateMode, ...(state.settings.paymentSource === "ownKey" ? { ownKey: true } : {}) }
-      : undefined;
-    const naming = first
-      ? namingFor(first, { agentName: newSessionAgent.name, folderName: activeWorkspace.name })
-      : { name: nextSessionName(sessions) };
-    const { name } = naming;
-    let worktree: SessionWorktree | null = null;
-    let cwd = activeWorkspace.path;
-    let message = first;
-    // The composer stays busy until the worktree and its attachments are ready, so a second Send cannot start.
-    if (isWorktreeActive) setIsCreatingWorktree(true);
-    try {
-      if (isWorktreeActive) {
-        try {
-          ({ worktree, cwd } = await createSessionWorktree(activeWorkspace.path, name, branchPicker.baseBranch));
-        } catch (error) {
-          setNotice(`Could not create a worktree: ${String(error)}`);
-          // The user may have opened another session meanwhile: the message goes
-          // back into the new session it was written for, not that one's composer.
-          openNewSession(activeWorkspace.path, newSessionAgent.id);
-          if (first) composerRef.current?.restore(first.text, first.attachments);
-          return;
-        }
-      }
-      if (worktree && first?.attachments?.length) {
-        // The composer attached paths in the main folder: the agent gets its worktree's files instead.
-        try {
-          message = { ...first, attachments: await attachmentsFor(activeWorkspace.path, cwd, first.attachments) };
-        } catch (error) {
-          setNotice(`Could not point the attachments into the worktree: ${String(error)}`);
-        }
-      }
-    } finally {
-      setIsCreatingWorktree(false);
-    }
-    setPickedAgentId(null);
-    compare.reset();
-    startSession({ agent: newSessionAgent, cwd, ...naming, worktree, privateMode: sessionPrivateMode }, message);
-    // The base was this session's: the next draft starts from the folder's own branch.
-    if (worktree) branchPicker.reset();
-  };
-
-  /** Makes `path` the active workspace; a folder only old sessions still use is added back to the recents. */
-  const chooseFolder = (path: string) => {
-    if (workspaces.some((ws) => ws.path === path)) selectWorkspace(path);
-    else rememberFolder({ name: folderNameOf(path), path });
-  };
-
-  /**
-   * Shows a new, empty session: the folder and agent can still be changed in
-   * the composer, and the agent starts with the first message.
-   */
-  const openNewSession = (path?: string, agentId?: string, options?: OpenNewSessionOptions) => {
-    setGalleryOpen(false);
-    if (path) chooseFolder(path);
-    setPickedAgentId(agentId ?? null);
-    compare.reset();
-    // A fresh draft: picks left from an earlier one would override the model picked last.
-    // A failed import returns to the draft it started from, so its picks stay: it did not open.
-    if (!options?.keepChoices) setAcpChoices(NO_CHOICES);
-    setActiveSessionId("");
-    setActiveRunId(null);
-  };
+  const {
+    recordSession,
+    startSession,
+    handleNewSession,
+    chooseFolder,
+    openNewSession,
+    handleSelectSession,
+    openRun,
+    navigateTo,
+  } = useSessionStartWiring({
+    sessions,
+    workspaces,
+    activeWorkspace,
+    agentsInUse,
+    newSessionAgent,
+    privateDraftMode: privateDraft.privateMode,
+    paymentSource: state.settings.paymentSource,
+    isWorktreeActive,
+    baseBranch: branchPicker.baseBranch,
+    startChoices,
+    noFolderNotice: NO_FOLDER_NOTICE,
+    startAcp: acp.start,
+    updateState,
+    updateMessages,
+    setActiveSessionId,
+    setActiveRunId,
+    setPickedAgentId,
+    setGalleryOpen,
+    setAcpChoices,
+    setIsCreatingWorktree,
+    selectWorkspace,
+    rememberFolder,
+    resetCompare: compare.reset,
+    resetBranchPicker: branchPicker.reset,
+    giveBackMessage,
+    composerRef,
+    setNotice,
+  });
 
   const forkSession = useSessionFork({
     source: activeSession,
@@ -1057,120 +931,85 @@ export default function App() {
     startSession,
     onNotice: setNotice,
   });
+  const teeConfirm = useOutsideTeeConfirm();
+  // The agents a conversation can continue with, the session's own first; none where no other agent is offered.
+  const switchAgents = useSwitchTargets({
+    session: activeSession,
+    messageCount: (transcripts[activeSessionId] ?? []).length,
+    agentsInUse,
+    signInOf: signInStatus.stateOf,
+  });
+  // Another agent picked in the composer: the next message starts its session with this conversation.
+  const agentSwitch = useAgentSwitch({ sessions, agentsInUse, transcripts, agentOptions: state.agentOptions, forkSession });
+  const pendingSwitch = activeSession ? agentSwitch.pendingOf(activeSession.id) : undefined;
+  const switchAgent = pendingSwitch ? agents.find((candidate) => candidate.id === pendingSwitch.agentId) : undefined;
+  // While another agent is picked, an @Agent at the start is part of the message, never a delegation.
+  const shownMention = switchAgent ? null : delegationMention;
+  const { forkFromMessage, pickSwitchAgent } = useContinueActions({
+    activeSession,
+    agents,
+    agentOptions: state.agentOptions,
+    forkSession,
+    pick: agentSwitch.pick,
+    confirmOutsideTee: teeConfirm.ask,
+    onNotice: setNotice,
+  });
 
-  const { creditsOutReason, creditsOutNote, continueAgents, continueWithAgent } = usePrivateContinue({
+  const {
+    creditsOutReason,
+    creditsOutNote,
+    continueAgents,
+    continueWithAgent,
+    isRaisingCap,
+    raiseCap,
+    startUncappedSession,
+    switchToCredits,
+  } = usePrivateContinue({
     credits: privateCredits,
     activeSession,
+    sessions,
     agents,
     agentsInUse,
     transcripts,
     agentOptions: state.agentOptions,
     openNewSession,
     forkSession,
+    patchSession,
+    startSession,
+    updateSettings: (patch) => updateSettings(patch),
+    setNotice,
   });
 
-  const handleRaisePrivateCap = async () => {
-    const session = activeSession;
-    const cap = session?.privateMode?.sessionCap;
-    if (!session?.privateMode || cap === undefined || isRaisingPrivateCap) return;
-    setIsRaisingPrivateCap(true);
-    try {
-      const raised = await invoke<number>("private_raise_session_cap", {
-        sessionId: session.id,
-        credits: cap * 2,
-      });
-      patchSession(session.id, {
-        privateMode: { ...session.privateMode, sessionCap: raised },
-      });
-      privateCredits.clearCreditsOut(session.id);
-    } catch (error) {
-      setNotice(actionError("raise", String(error)), "warning");
-    } finally {
-      setIsRaisingPrivateCap(false);
-    }
-  };
-
-  /** Starts a fresh private session from this one, with no cap. */
-  const handleNewPrivateSession = () => {
-    if (!activeSession?.privateMode) return;
-    const last = (transcripts[activeSession.id] ?? []).at(-1);
-    if (last) {
-      void forkSession(last.id, { uncappedPrivate: true });
-      return;
-    }
-    const agent = agents.find((candidate) => candidate.id === activeSession.profileId);
-    if (!agent) return;
-    startSession({
-      agent,
-      cwd: activeSession.cwd,
-      name: nextSessionName(sessions),
-      privateMode: { modelId: activeSession.privateMode.modelId },
-    });
-  };
-
-  /**
-   * Switches this Mac to Zorvo credits and starts a fresh credits session from this one: the running
-   * agent holds an own-key proxy token, so only a new process can pay with credits.
-   */
-  const handleSwitchToCredits = () => {
-    updateSettings({ paymentSource: "credits" });
-    const session = activeSession;
-    if (!session?.privateMode) return;
-    privateCredits.clearCreditsOut(session.id);
-    const last = (transcripts[session.id] ?? []).at(-1);
-    if (last) {
-      void forkSession(last.id, { creditsPrivate: true });
-      return;
-    }
-    const agent = agents.find((candidate) => candidate.id === session.profileId);
-    if (!agent) return;
-    startSession({
-      agent,
-      cwd: session.cwd,
-      name: nextSessionName(sessions),
-      privateMode: { modelId: session.privateMode.modelId },
-    });
-  };
-
-  const handleSelectSession = (sessionId: string) => {
-    setGalleryOpen(false);
-    setActiveSessionId(sessionId);
-    // An agent picked for a new session that was never started is forgotten.
-    setPickedAgentId(null);
-    compare.reset();
-    const selected = sessionById(sessionId);
-    const workspacePath = selected && workspacePathOf(selected);
-    if (workspacePath && workspaces.some((ws) => ws.path === workspacePath)) selectWorkspace(workspacePath);
-  };
-
-  /** Whether a session's agent can take a prompt now: the test a delegation report is delivered by. */
-  const canPrompt = (sessionId: string): boolean => {
-    const session = sessionById(sessionId);
-    if (session === undefined || session.status !== "running") return false;
-    if (isSessionBusy(sessionId) || isSessionWaiting(sessionId) || isAgentRemovedFor(sessionId)) return false;
-    const agent = agents.find((candidate) => candidate.id === session.profileId);
-    return agent !== undefined && isAgentReady(agent) && signInStatus.stateOf(agent.id) !== "needed";
-  };
-
-  const delegation = useDelegation({
+  const { delegation, endForArchived: endDelegationsForArchived } = useDelegationRuntime({
     sessions,
     agents,
     transcripts,
-    isBusy: isSessionBusy,
-    canPrompt,
-    isWaiting: isSessionWaiting,
+    agentOptions: state.agentOptions,
+    isSessionBusy,
+    isSessionWaiting,
+    isAgentRemovedFor,
+    signInStateOf: signInStatus.stateOf,
+    startPlaces,
     send: acp.send,
+    stopAgent: acp.stop,
+    resumeAgent: acp.resume,
+    canReopen: (sessionId) => acp.info[sessionId]?.canReopen === true,
+    isTurnUnderWay: acp.isTurnUnderWay,
+    hasLiveTasks: (sessionId) =>
+      backgroundTasks.tasks.some((task) => task.kind === "shell" && task.sessionId === sessionId),
+    hasFailedTurn: (sessionId) => Boolean(failedTurns[sessionId]),
+    hasQueuedMessages: (sessionId) => queue.queueOf(sessionId).length > 0,
+    ensureLoaded,
+    patchSession,
     startSession,
     selectSession: handleSelectSession,
-    patchSession,
+    updateLink,
+    readMessages,
     giveBack: giveBackMessage,
     onNotice: setNotice,
-  });
-  // The engine was built before this hook: its turn ends reach it through the ref.
-  delegationTurnEndedRef.current = delegation.onTurnEnded;
-  // A retry reads this when it runs: the hook's latest verdict, not the render that built the engine.
-  useEffect(() => {
-    delegationBlockedRef.current = delegation.sendBlockedReason;
+    delegationTurnEndedRef,
+    delegationTurnSettledRef,
+    delegationBlockedRef,
   });
 
   /**
@@ -1186,20 +1025,7 @@ export default function App() {
     const latestSessions = getState().sessions;
     const isArchivedNow = latestSessions.find((session) => session.id === sessionId)?.archivedAt != null;
     if (!isArchivedNow) return;
-    delegation.end(sessionId);
-    for (const delegate of openDelegatesOf(sessionId, latestSessions)) delegation.end(delegate.id);
-  };
-
-  /** Shows a run's panel in the chat's place; no session stays selected, or the panel would not show. */
-  const openRun = (runId: string) => {
-    setGalleryOpen(false);
-    setActiveSessionId("");
-    setPickedAgentId(null);
-    compare.reset();
-    setActiveRunId(runId);
-    const run = runOf(sessions, runId);
-    const workspacePath = run && workspacePathOf(run.sessions[0]);
-    if (workspacePath && workspaces.some((ws) => ws.path === workspacePath)) selectWorkspace(workspacePath);
+    endDelegationsForArchived(sessionId, latestSessions);
   };
 
   /** Stops the agent's current turn; the session stays open for the next message. */
@@ -1207,10 +1033,6 @@ export default function App() {
     // A rewound session's fresh agent has not started yet: only its start is called off.
     if (isRestarting(sessionId)) cancelRestart(sessionId);
     else acp.interrupt(sessionId, transcripts[sessionId]);
-  };
-
-  const navigateTo = (sessionId: string | null) => {
-    if (sessionId) handleSelectSession(sessionId);
   };
 
   const updateSettings = (patch: Partial<Settings>) =>
@@ -1282,115 +1104,54 @@ export default function App() {
     recordSession, openSession: handleSelectSession, discardSession: sessionActions.discardSession, openNewSession, requestSignIn: signIn.auth.requestSignIn,
   });
 
-  /** Resolves to whether the agent took the message. */
-  const sendTo = async (sessionId: string, message: FirstMessage) => {
-    compareRun.dropSignIn(sessionId);
-    const session = sessionById(sessionId);
-    // A numbered session takes its title from the first thing the user asks.
-    const isFirstMessage = !(transcripts[sessionId]?.some((m) => m.role === "user") ?? false);
-    const sent = await acp.send(sessionId, message.text, message.attachments);
-    if (sent && session && isFirstMessage && isAutoName(session.name) && !session.namedByUser) {
-      patchSession(sessionId, { titleSource: undefined, ...namingFor(message, titlePlaceOf(session, agents)) });
-    }
-    return sent;
-  };
-
-  /** Sends what the composer held; a message the delegation pair blocks, or the agent did not take, goes back. */
-  const sendFromComposer = (sessionId: string, message: FirstMessage) => {
-    if (delegation.sendBlockedReason(sessionId) !== null) {
-      giveBackMessage(sessionId, message.text, message.attachments);
-      return;
-    }
-    void sendTo(sessionId, message).then((isTaken) => {
-      if (!isTaken) giveBackMessage(sessionId, message.text, message.attachments);
-    });
-  };
-
-  /**
-   * Continues an ended ACP session: a fresh agent process loads it, then gets
-   * the message. A rewound one has no agent session left to load.
-   */
-  const resumeSession = (session: Session, message: FirstMessage) => {
-    compareRun.dropSignIn(session.id);
-    if (!session.acpSessionId) {
-      void restart(session, message, startChoices);
-      setAcpChoices(NO_CHOICES);
-      return;
-    }
-    // Continuing an archived session brings it back into the list.
-    patchSession(session.id, { status: "running", endedAt: null, exitCode: null, archivedAt: null });
-    void acp.resume(session, session.acpSessionId, message, startChoices).then((isTaken) => {
-      if (!isTaken) giveBackMessage(session.id, message.text, message.attachments);
-    });
-    setAcpChoices(NO_CHOICES);
-  };
-
-  // Read when a run's worktrees are done, seconds after the click: an empty session id also means a run's panel.
-  const isDraftRef = useLatest(isNewSessionDraft);
-  // A rewound message names its session, and goes into no other session's box. A draft's message goes into the next composer shown.
-  const pendingRestoreRef = useRef<(FirstMessage & { sessionId?: string }) | null>(null);
-  useEffect(() => {
-    const pending = pendingRestoreRef.current;
-    if (!pending) return;
-    if (pending.sessionId !== undefined && !sessions.some((s) => s.id === pending.sessionId)) pendingRestoreRef.current = null;
-    if (!pendingRestoreRef.current || !composerRef.current || isComposerHidden) return;
-    if (pending.sessionId !== undefined && (pending.sessionId !== activeSessionId || isAgentRemovedFor(pending.sessionId))) return;
-    pendingRestoreRef.current = null;
-    composerRef.current.restore(pending.text, pending.attachments);
-  });
-  const rowSources = { isBusy: isSessionBusy, transcripts, failedTurns };
-  const compareRun = useCompareRun({
-    repoPath: activeWorkspace?.path ?? "",
-    baseBranch: branchPicker.baseBranch,
+  const {
+    compareModelProbe,
+    compareRun,
+    sessionOfItsOwn,
+    runRows,
+    handleNewRun,
+  } = useCompareRunWiring({
+    sessions,
+    activeSession,
+    activeSessionId,
+    activeRun,
+    activeWorkspace,
+    shownFolderPath,
+    isNewSessionDraft,
+    isComposerHidden,
+    isComposerHiddenRef,
+    composerRef,
+    pendingRestoreRef,
+    agents,
     agentOptions: state.agentOptions,
+    compareAgentIds: compare.agentIds,
+    baseBranch: branchPicker.baseBranch,
+    noFolderNotice: NO_FOLDER_NOTICE,
+    isSessionBusy,
+    transcripts,
+    failedTurns,
+    isAgentRemovedFor,
     startSession,
-    isOnDraft: () => isDraftRef.current,
-    openRun: setActiveRunId,
-    setIsBusy: setIsCreatingWorktree,
-    // The user may have opened another session meanwhile: the message goes back into the new session it was written for.
-    restoreMessage: (message, agentId) => {
-      if (!isDraftRef.current || !activeWorkspace) openNewSession(activeWorkspace?.path, agentId);
-      // The message waits for the new draft to show the composer.
-      if (composerRef.current && !isComposerHiddenRef.current) composerRef.current.restore(message.text, message.attachments);
-      else pendingRestoreRef.current = message;
-    },
-    onStarted: () => {
+    openNewSession,
+    rememberFolder,
+    setActiveRunId,
+    setActiveSessionId,
+    setIsCreatingWorktree,
+    onRunStarted: () => {
       setPickedAgentId(null);
       compare.reset();
       setAcpChoices(NO_CHOICES);
       branchPicker.reset();
     },
-    onNotice: setNotice,
+    rememberProbed,
+    markSignedIn: signInStatus.markSignedIn,
+    markSignInNeeded: signInStatus.markNeeded,
+    askSignIn: signIn.handBackKept,
     archiveSession: sessionActions.archiveSession,
     readSessions: () => getState().sessions,
-    openSession: setActiveSessionId,
-    agentName: (profileId) => agents.find((a) => a.id === profileId)?.name ?? "The agent",
-    sessions,
-    sources: rowSources,
-    askSignIn: signIn.handBackKept,
-    // A notification that cannot be shown is not worth an error banner: the panel has it all.
-    notifyRun: (notice) => void notifyIfAway(notice).catch(() => {}),
+    ensureLoaded,
+    setNotice,
   });
-  // The session on screen when it is not in a compare run (a run's sessions share one title, as the sidebar's menu has it).
-  const sessionOfItsOwn = activeSession && !compareRun.isInRun(activeSession.id) ? activeSession : undefined;
-  // However a session comes on screen, its refusal is taken up there: only now does its composer show.
-  const { takeSignIn } = compareRun;
-  const refusedHere = compareRun.signInNeeded.get(activeSessionId);
-  useEffect(() => {
-    if (refusedHere) takeSignIn(activeSessionId);
-  }, [activeSessionId, refusedHere, takeSignIn]);
-
-  const runRows = useCompareRunRows(activeRun, { ...rowSources, signInNeeded: compareRun.signInNeeded, ensureLoaded });
-  /** Starts the ticked agents on one prompt, each in its own worktree. */
-  const handleNewRun = (message: FirstMessage) => {
-    if (!activeWorkspace) {
-      setNotice(NO_FOLDER_NOTICE, "warning");
-      return;
-    }
-    rememberFolder(activeWorkspace);
-    const picked = compare.agentIds.flatMap((id) => agents.filter((a) => a.id === id));
-    void compareRun.startRun(picked, message);
-  };
 
   const canStartSession = Boolean(activeWorkspacePath && newSessionAgent);
   const isComposerDisabled =
@@ -1413,151 +1174,91 @@ export default function App() {
   rearmReviewRef.current = review.rearm;
   forgetReviewRef.current = review.forget;
 
-  /** What a delegation to an agent starts with: the picks, and the agent's remembered model and effort. */
-  const delegationChoicesFor = (agentId: string): AcpChoices =>
-    delegationChoicesForOptions(state.agentOptions?.[agentId]);
-
-  /** Sends to the active session, continues it when it can be resumed, or starts a new one (or a run). */
-  const handleSendMessage = (text: string, attachments?: string[]) => {
-    const message = { text, attachments };
-    // A mention is the whole message: it starts the other agent instead of sending this one.
-    if (delegationMention !== null && activeSession !== undefined) {
-      const sourceId = activeSession.id;
-      const { agentId, task } = delegationMention;
-      void delegation
-        .start(sourceId, agentId, task, {
-          attachments,
-          choices: delegationChoicesFor(agentId),
-        })
-        .then((isStarted) => {
-          if (!isStarted) giveBackMessage(sourceId, text, attachments);
-        });
-      return;
-    }
-    // The pair's report hand-over blocks both sides; nothing goes out, and held review comments stay held.
-    if (activeSession !== undefined && delegation.sendBlockedReason(activeSession.id) !== null) {
-      giveBackMessage(activeSession.id, text, attachments);
-      return;
-    }
-    // The composer empties on Send, which clears the slot; keep it so the comments still go with this
-    // message after a secret review, whether the user picks Send anyway or edits and sends again.
-    const reviewSlot = review.slot;
-    const deliver = () => {
-      if (reviewSlot) review.rearm(reviewSlot);
-      if (activeSession && isActiveRunning) {
-        review.sendFrom(activeSession.id, text);
-        sendFromComposer(activeSession.id, message);
-      } else if (activeSession && isResumable) {
-        review.sendFrom(activeSession.id, text);
-        resumeSession(activeSession, message);
-      } else if (compare.isCompare) handleNewRun(message);
-      else void handleNewSession(message);
-    };
-    // A private message pauses here when it may hold a secret; nothing goes out until the user picks.
-    secretGuard.check(message, deliver, {
-      isEnabled: isPrivateLaunch && state.settings.secretGuard !== false,
-      root: activeSession?.cwd ?? activeWorkspacePath,
-      agentName: activeAgent?.name ?? newSessionAgent?.name ?? "The agent",
-      sessionId: activeSession?.id,
-      ...(reviewSlot ? { reviewSlot } : {}),
-    });
-  };
-
-  /** What the @ list and the dialog say about an agent: its install and sign-in state, as the draft's rows do. */
-  const delegationStatusOf = (agent: AgentProfile): MentionAgentStatus => {
-    if (!isAgentReady(agent)) return "not-installed";
-    const signIn = signInStatus.stateOf(agent.id);
-    return signIn === "needed" ? "needs-sign-in" : signIn === "ready" ? "ready" : "not-checked";
-  };
-
-  const mentionedAgent =
-    delegationMention === null ? undefined : agents.find((agent) => agent.id === delegationMention.agentId);
-
-  // A mention is the whole message, so the @ group shows only for a session of its own that may delegate.
-  const activeDelegateBlockedReason = sessionOfItsOwn
-    ? delegation.delegateBlockedReason(sessionOfItsOwn.id)
-    : null;
-  const mayDelegateHere =
-    activeSession !== undefined &&
-    !compareRun.isInRun(activeSession.id) &&
-    activeSession.delegatedFrom == null &&
-    activeDelegateBlockedReason !== "";
-  const delegationAgents = mayDelegateHere
-    ? agentsInUse.map((agent) => ({
-        id: agent.id,
-        name: agent.name,
-        status: delegationStatusOf(agent),
-      }))
-    : undefined;
-
-  const delegateDialog = useDelegateDialog({
+  const {
+    queue,
+    sendTo,
+    sendFromComposer,
+    resumeSession,
+    canQueueActive,
+    isQueueingActive,
+    isQueueFull,
+    handleSendMessage,
+  } = useMessageDeliveryWiring({
+    sessions,
+    activeSession,
+    activeSessionId,
+    isActiveRunning,
+    isResumable,
+    activeWorkspacePath,
     agents,
+    activeAgent,
+    newSessionAgent,
     agentOptions: state.agentOptions,
-    probe: compareModelProbe,
-    sourceId: activeSession?.id,
-    start: delegation.start,
+    transcripts,
+    startChoices,
+    setAcpChoices,
+    isCompare: compare.isCompare,
+    isPrivateLaunch,
+    isSecretGuardEnabled: state.settings.secretGuard !== false,
+    delegationMention: shownMention,
+    delegation,
+    review,
+    secretGuardCheck: secretGuard.check,
+    dropCompareSignIn: compareRun.dropSignIn,
+    sendAcp: acp.send,
+    resumeAcp: acp.resume,
+    isAcpBusy: acp.isBusy,
+    isTurnUnderWay: acp.isTurnUnderWay,
+    isStarting: acp.isStarting,
+    isRestarting,
+    isSessionWaiting,
+    restartSession: restart,
+    handleInterrupt,
+    handleNewRun,
+    handleNewSession,
+    patchSession,
+    giveBackMessage,
+    composerRef,
+    onNotice: setNotice,
+    queueTurnSettledRef,
+    queueAgentEndedRef,
+    queuePromptStartedRef,
+    queueRewoundRef,
+    agentSwitch,
+  });
+
+  const {
+    activeDelegateBlockedReason,
+    delegateDialog,
+    delegationAgents,
+    delegationBlock,
+    delegationSummary,
+    delegationSendLabel,
+    delegateAgents,
+    delegationEnds,
+    onDelegate,
+    openerSession,
+    delegationView,
+    shownDelegationViews,
+    delegationNow,
+  } = useDelegationUi({
+    sessions,
+    activeSession,
+    activeSessionId,
+    sessionOfItsOwn,
+    agents,
+    agentsInUse,
+    agentOptions: state.agentOptions,
+    signInStateOf: signInStatus.stateOf,
+    isInCompareRun: compareRun.isInRun,
+    isSessionBusy,
+    delegationMention: shownMention,
+    delegation,
+    compareModelProbe,
     composerRef,
     menuButtonRef: moreOptionsButtonRef,
   });
 
-  const mentionBlock = delegationMention === null || mentionedAgent === undefined
-    ? null
-    : mentionBlockedReason({
-        agentName: mentionedAgent.name,
-        task: delegationMention.task,
-        status: delegationStatusOf(mentionedAgent),
-        delegateReason: activeSession ? delegation.delegateBlockedReason(activeSession.id, mentionedAgent.id) : null,
-      });
-  // Why Send waits: the mention's own reason first, then the pair's report hand-over.
-  const delegationBlock = mentionBlock ?? (activeSession ? delegation.sendBlockedReason(activeSession.id) : null) ?? undefined;
-  /** What B starts on, under A's prompt; only while the mention names an agent that can start. */
-  const delegationSummary =
-    delegationMention !== null && mentionedAgent !== undefined && mentionBlock === null
-      ? {
-          // The agent already has a delegate here: the task goes to it, and nothing new starts.
-          text:
-            activeSession !== undefined && openDelegateOf(activeSession.id, mentionedAgent.id, sessions) !== undefined
-              ? followUpSummary(mentionedAgent.name)
-              : startSummary({
-                  agentName: mentionedAgent.name,
-                  ...delegatedStartOf(state.agentOptions?.[mentionedAgent.id]),
-                }),
-          onChange: (attachments?: readonly string[]) =>
-            delegateDialog.open({
-              initialAgentId: mentionedAgent.id,
-              initialTask: delegationMention.task,
-              attachments,
-              clearsComposer: true,
-              returnsFocusToMenu: false,
-            }),
-        }
-      : undefined;
-  const delegationSendLabel =
-    delegationMention !== null && mentionedAgent !== undefined ? `Delegate to ${mentionedAgent.name}` : undefined;
-
-  const delegateAgents: readonly DelegateAgentChoice[] = agentsInUse.map((agent) => ({
-    profile: agent,
-    status: delegationStatusOf(agent),
-    // Its task would go to the session it already has here, which keeps its own model and mode.
-    ...(activeSession !== undefined && openDelegateOf(activeSession.id, agent.id, sessions) !== undefined
-      ? { hasDelegate: true }
-      : {}),
-  }));
-
-  // End delegation: one item per open delegate of A, or B's own open link. A delegated session offers no Delegate of its own.
-  const openDelegates = sessionOfItsOwn ? openDelegatesOf(sessionOfItsOwn.id, sessions) : [];
-  const delegationEnds =
-    openDelegates.length > 0
-      ? openDelegates.map((delegate) => ({
-          label:
-            openDelegates.length === 1
-              ? "End delegation"
-              : `End delegation to ${agents.find((agent) => agent.id === delegate.profileId)?.name ?? delegate.profileId}`,
-          run: () => delegation.end(delegate.id),
-        }))
-      : sessionOfItsOwn !== undefined && isOpenLink(sessionOfItsOwn.delegatedFrom)
-        ? [{ label: "End delegation", run: () => delegation.end(sessionOfItsOwn.id) }]
-        : undefined;
   // The session's agent may give other agents tasks without asking: the menu takes that back.
   const onStopAllowingDelegation =
     sessionOfItsOwn !== undefined && agentTools.hasGrant(sessionOfItsOwn.id)
@@ -1567,34 +1268,19 @@ export default function App() {
     sessionOfItsOwn !== undefined && agentTools.hasBrowserGrant(sessionOfItsOwn.id)
       ? () => agentTools.revokeBrowserGrant(sessionOfItsOwn.id)
       : undefined;
-  const onDelegate =
-    sessionOfItsOwn !== undefined && sessionOfItsOwn.delegatedFrom == null
-      ? () => delegateDialog.open({ clearsComposer: false, returnsFocusToMenu: true })
+  const activeComputerUse = sessionOfItsOwn ? computerUse.grantOf(sessionOfItsOwn.id) : undefined;
+  const onStopComputerUse =
+    sessionOfItsOwn !== undefined && activeComputerUse !== undefined
+      ? () => computerUse.stop(sessionOfItsOwn.id)
       : undefined;
-
-  // A's line while B works or waits, and B's while A works on its report; while A is in a turn its own status shows.
-  // The session whose agent opened this one, when it still exists.
-  const openerSession = activeSession?.openedBy ? sessionById(activeSession.openedBy.sessionId) : undefined;
-  const delegationViews = activeSession ? delegation.viewsFor(activeSession.id) : [];
-  // B's own line, or the first of A's: the region that announces the lines stays mounted on it.
-  const delegationView = delegationViews[0] ?? null;
-  const shownDelegationViews = isSessionBusy(activeSessionId)
-    ? []
-    : delegationViews.filter(
-        (view) =>
-          (view.role === "source" &&
-            (view.state === "working" || view.state === "needs-answer" || view.state === "failed")) ||
-          view.state === "source-working",
-      );
-  const isDelegationWorking = shownDelegationViews.some(
-    (view) => view.state === "working" || view.state === "source-working",
-  );
-  // One-second ticks while a working line shows; the time is read in whole seconds, as the canvas draws it.
-  const delegationNow = useNow(1000, isDelegationWorking);
 
   const chooseOption = (sessionId: string, cardId: string, optionId: string, answers?: Record<string, string>) => {
     // A card Zorvo made for an agent's tool call is answered by Zorvo's tools, not by the agent.
     if (agentTools.chooseCard(sessionId, cardId, optionId)) return;
+    // So is an agent's request to use apps: the ticks go to Zorvo's backend as row keys.
+    if (computerUse.chooseCard(sessionId, cardId, optionId, answers)) return;
+    // One that is no longer open (its call ended) has no answer to give, least of all to the agent.
+    if (isComputerUseCardId(cardId)) return;
     acp.chooseOption(sessionId, transcripts[sessionId], cardId, optionId, answers);
   };
 
@@ -1656,32 +1342,59 @@ export default function App() {
             shellTasks: sessionShellTasks,
             pages: sessionArtifacts,
             files: createdFiles,
-            pullRequest,
+            pullRequests,
+            agentTasks: agentTasks?.tasks,
+            agentTasksAsOf: agentTasks?.asOf,
           })
         : null,
-    [activeSession, activeTranscript, isActiveSessionBusy, sessionShellTasks, sessionArtifacts, createdFiles, pullRequest],
+    [activeSession, activeTranscript, isActiveSessionBusy, sessionShellTasks, sessionArtifacts, createdFiles, pullRequests, agentTasks],
   );
   const sessionPlan = currentPlan(currentMessages);
-  const composer = composerStateFor({
-    session: activeSession,
-    draftAgent,
-    acpChoices: startChoices,
-    setAcpChoices,
-    agentOptions,
-    acp,
-    onPick: rememberPick,
-    onPickModel: rememberModelPick,
-    isPrivate: privateDraft.isOn,
-  });
+  const composer = composerStateFor(
+    composerInputsWithSwitch(
+      {
+        session: activeSession,
+        draftAgent,
+        acpChoices: startChoices,
+        setAcpChoices,
+        agentOptions,
+        acp,
+        onPick: rememberPick,
+        onPickModel: rememberModelPick,
+        isPrivate: privateDraft.isOn,
+      },
+      // The picked agent's chips: a pick edits the pending switch, never the running session.
+      pendingSwitch && switchAgent && activeSession
+        ? {
+            agent: switchAgent,
+            choices: pendingSwitch.choices,
+            setChoices: (choices) => agentSwitch.setChoices(activeSession.id, choices),
+            // The new session is ordinary even from a private one, so its picks are remembered for that agent.
+            onPick: keepPick,
+            onPickModel: keepModelPick,
+          }
+        : undefined,
+    ),
+  );
+  // Another agent is picked and this session's agent is still in its turn, or waits on the user: Send waits.
+  const isSourceWaiting = activeSession ? isSessionWaiting(activeSession.id) : false;
+  const switchWaits =
+    switchAgent && activeSession && (isSessionBusy(activeSession.id) || isSourceWaiting)
+      ? { agent: activeAgent?.name ?? "The agent", isWaiting: isSourceWaiting }
+      : undefined;
   // Several agents are not asked and nothing is picked for them yet: Send only waits for the single agent's install or sign-in.
   // The note promises one worktree each, so while the folder is not known to be a repository (still loading, or unreadable) Send waits too.
   const isSendWaiting = compare.isCompare
     ? !canUseWorktree
-    : draftNeedsInstall || draftNeedsSignIn || privateDraft.blocksSend || creditsOutReason !== undefined;
+    : // A switch to another agent leaves the TEE for an ordinary session: this session's credits do not hold it back.
+      draftNeedsInstall || draftNeedsSignIn || privateDraft.blocksSend || (creditsOutReason !== undefined && !switchAgent);
   // A draft's message is still being checked for secrets: a second Send would start a second session.
   // Only Send waits; disabling the box would take the focus away from what the user types next.
   const isCheckingDraftSecrets = isNewSessionDraft && secretGuard.isCheckingDraft;
-  const isSendBlocked = isSendWaiting || isCheckingDraftSecrets || review.blocksSend || delegationBlock !== undefined;
+  // The composer's own rule for a blocked Send; a queued row's Send now follows it, with the note the composer shows.
+  const isComposerSendBlocked = isSendWaiting || isCheckingDraftSecrets || review.blocksSend || delegationBlock !== undefined;
+  // The switch waits only for the composer's own Send: queued messages and the next-step box still go to this session.
+  const isSendBlocked = isComposerSendBlocked || isQueueFull || switchWaits !== undefined;
   const privateModelId = activeSession?.privateMode?.modelId ?? privateDraft.privateMode?.modelId;
   const privateModel = privateCredits.models?.find((model) => model.id === privateModelId);
   const privateSessionCap = activeSession?.privateMode?.sessionCap;
@@ -1700,9 +1413,36 @@ export default function App() {
     compareCount: compare.agentIds.length,
     agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
     agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
-    privateNote: isPrivateLaunch ? privateDraft.note ?? creditsOutNote : undefined,
+    privateNote: isPrivateLaunch && !switchAgent ? privateDraft.note ?? creditsOutNote : undefined,
     delegationBlock,
+    queueFull: isQueueFull,
+    switchWaits,
+    commentsWaitFor: canQueueActive && review.slot?.sessionId === activeSessionId ? activeAgent?.name ?? "The agent" : undefined,
     continuesSession: isResumable || Boolean(activeSession),
+  });
+  // The box under a finished turn: its buttons send through the composer's own Send.
+  const nextStep = useNextStep({
+    session: activeSession ?? null,
+    sessions,
+    messages: currentMessages,
+    isBusy: activeSession ? isSessionBusy(activeSession.id) : false,
+    isWaiting: activeSession ? isSessionWaiting(activeSession.id) : false,
+    // A rewound session has no agent session to resume: its restart is not a press's to start.
+    canResume: isResumable && Boolean(activeSession?.acpSessionId),
+    blockedReason: isComposerSendBlocked ? composerNoteText ?? "You can't send right now." : undefined,
+    pullRequest: activeSession ? pullRequestOf(activeSession) : null,
+    tasks: backgroundTasks.tasks,
+    send: (sessionId, text) => {
+      const session = sessions.find((s) => s.id === sessionId);
+      // An ended session (every one after a restart) continues the way the composer's Send continues it.
+      if (session && session.status !== "running") {
+        return resumeSession(session, { text }, { keepUnsent: true }).then((isTaken) => isTaken === true);
+      }
+      return sendFromComposer(sessionId, { text }, false);
+    },
+    updateMessages,
+    openUrl: openPullRequest,
+    openPreview: requestBrowserOpen,
   });
   const composerCommands = composerCommandsFor({
     isRunning: isActiveRunning,
@@ -1743,6 +1483,11 @@ export default function App() {
     );
   }
 
+  // A canvas's Pick and Build put text in the message box on the same terms as Reply.
+  const canvasInsertBlockedReason = replyBlockedReason({ isComposerHidden, isComposerDisabled, isHeldElsewhere: review.isHeldFor(activeSessionId) });
+  // An expanded canvas hides the composer, so it is left first and the text lands where it can be seen.
+  const canvasInsertText = review.insertCanvasText;
+
   return (
     <main className="flex h-screen w-screen flex-col bg-ground text-fg-secondary">
       {/* Hidden, not unmounted, while Settings shows: a draft, its comments and the terminals stay as they were. */}
@@ -1768,6 +1513,7 @@ export default function App() {
           isSessionBusy={isSessionBusy}
           pullRequestOf={pullRequestOf}
           isSessionWaiting={isSessionWaiting}
+          usesComputer={(sessionId) => computerUse.grantOf(sessionId) !== undefined}
           onStopSession={handleInterrupt}
           onDeleteSession={sessionActions.deleteSession}
           onRenameSession={sessionActions.renameSession}
@@ -1786,6 +1532,7 @@ export default function App() {
                   agents={agents}
                   settings={state.settings}
                   signInStateOf={signInStatus.stateOf}
+                  signIn={settingsSignIn}
                   onSetUpAgent={(profileId) => {
                     openNewSession(undefined, profileId);
                     // Asks again even when this agent is already the draft's: its panel may have been dismissed.
@@ -1803,12 +1550,15 @@ export default function App() {
             <ArtifactGallery
               rows={gallery}
               onOpen={openFromGallery}
+              onOpenCanvas={openCanvasFromGallery}
+              onOpenDesignSystem={openDesignSystemFromGallery}
+              onError={reportError}
               onShowSidebar={isSidebarHidden ? () => setSidebarHidden(false) : undefined}
               notice={settingsPage.section === null && noticeToast}
             />
           )}
           {/* Hidden, not unmounted, under the gallery: the composer keeps its text. */}
-          <div data-sheet="main" className={`${isGalleryShown ? "hidden" : "flex"} min-w-0 flex-1 flex-col overflow-hidden rounded-panel border border-border bg-sheet`}>
+          <div data-sheet="main" className={`${isGalleryShown || isBrowserExpanded ? "hidden" : "flex"} min-w-0 flex-1 flex-col overflow-hidden rounded-panel border border-border bg-sheet`}>
             <TopBar
               onShowSidebar={isSidebarHidden ? () => setSidebarHidden(false) : undefined}
               hasTrafficLights={isSidebarHidden}
@@ -1829,6 +1579,7 @@ export default function App() {
               delegationEnds={delegationEnds}
               onStopAllowingDelegation={onStopAllowingDelegation}
               onStopAllowingBrowser={onStopAllowingBrowser}
+              onStopComputerUse={onStopComputerUse}
               moreButtonRef={moreOptionsButtonRef}
               workspaceName={activeSession ? folderNameOf(workspacePathOf(activeSession)) : activeWorkspace?.name}
               // A run takes its folder from its first session, never from the last folder chosen.
@@ -1896,12 +1647,20 @@ export default function App() {
                   ) : activeSession && (currentMessages.length > 0 || isSessionBusy(activeSessionId) || activeSession.historyElsewhere) ? (
                     <ChatCanvas
                       conversationId={activeSessionId}
+                      visualSessionId={activeSessionId ?? undefined}
                       messages={currentMessages}
+                      nextStep={nextStep}
                       jumpTo={chatJump}
                       onJumped={() => setChatJump(null)}
                       agentName={activeAgent?.name}
                       agentProfileId={activeSession?.profileId}
-                      onForkBranch={(messageId) => void forkSession(messageId)}
+                      onForkBranch={forkFromMessage}
+                      forkAgents={switchAgents}
+                      continuedFromOf={(mark) => {
+                        const view = continuedFromView(mark, sessions, agents, activeAgent?.name ?? "The agent");
+                        const { sourceId } = view;
+                        return { ...view, onOpenSource: sourceId ? () => handleSelectSession(sourceId) : undefined };
+                      }}
                       onReply={(quote) => composerRef.current?.insertText(quote)}
                       onOpenUrl={openLink}
                       privateModelId={activeSession?.privateMode?.modelId}
@@ -1911,7 +1670,7 @@ export default function App() {
                         isComposerDisabled,
                         isHeldElsewhere: review.isHeldFor(activeSessionId),
                       })}
-                      onRewind={(messageId) => { compareRun.dropSignIn(activeSessionId); void rewind(activeSession, messageId); }}
+                      onRewind={(messageId, options) => { compareRun.dropSignIn(activeSessionId); void rewind(activeSession, messageId, options); }}
                       // The sidebar and the top bar say where a session runs; only an imported
                       // session's note sits above its first message.
                       header={
@@ -1932,6 +1691,9 @@ export default function App() {
                             canAct
                           />
                         ) : undefined
+                      }
+                      computerUseStatus={
+                        <ComputerUseStatusLine grant={activeComputerUse} onStop={onStopComputerUse} />
                       }
                       // Always mounted for a session, so the first line it draws is announced.
                       delegationStatus={
@@ -1985,6 +1747,7 @@ export default function App() {
                         (!isAwaitingUser(currentMessages) || acp.stopAskedAt(activeSessionId) !== undefined)
                       }
                       failures={acp.failuresOf(activeSessionId)}
+                      agentTasks={agentTasks}
                       onStop={() => handleInterrupt(activeSessionId)}
                       stopAskedAt={acp.stopAskedAt(activeSessionId)}
                       onEndAgent={() => void acp.endAgent(activeSessionId)}
@@ -2037,6 +1800,9 @@ export default function App() {
                         agentId={isPrivateLaunch ? undefined : (activeSession?.profileId ?? (activeRun ? undefined : newSessionAgent?.id))}
                         showTerminal={settingsPage.section === null}
                         panelTarget={draftSignInSlot}
+                        onCancelLogin={settingsSignIn.cancelSignIn}
+                        onFinishLogin={settingsSignIn.finishSignIn}
+                        onRetryLogin={settingsSignIn.retrySignIn}
                       />
                       {activeTopupRequest && (
                         <PrivateTopupRequestCard
@@ -2070,12 +1836,12 @@ export default function App() {
                         agents={continueAgents.map((agent) => ({ id: agent.id, name: agent.name }))}
                         onOpenSettings={() => settingsPage.open("private")}
                         onContinue={continueWithAgent}
-                        onNewSession={handleNewPrivateSession}
-                        onRaise={() => void handleRaisePrivateCap()}
-                        isRaising={isRaisingPrivateCap}
+                        onNewSession={startUncappedSession}
+                        onRaise={() => void raiseCap()}
+                        isRaising={isRaisingCap}
                         paymentSource={activeIsOwnKey ? "ownKey" : "credits"}
                         ownKeySaved={ownKeySaved}
-                        onSwitchToCredits={handleSwitchToCredits}
+                        onSwitchToCredits={switchToCredits}
                         onOpenDashboard={() => openLink("https://cloud.near.ai/")}
                       />
                       {installPanelAgent
@@ -2097,14 +1863,37 @@ export default function App() {
                   </div>
                   {/* 24px at the sides and 20px under it, as the canvas draws the composer's dock. */}
                   {/* A draft's composer sits inside its column, with the agent's sessions right under it. */}
+                  {activeSession && (
+                    <div hidden={isComposerHidden} className="flex justify-center px-6">
+                      <QueuedMessages
+                        messages={queue.queueOf(activeSessionId)}
+                        agentName={activeAgent?.name ?? "The agent"}
+                        hold={isActiveRunning ? queue.holdOf(activeSessionId) : queue.queueOf(activeSessionId).length > 0 ? "ended" : null}
+                        announcement={queue.announcementFor(activeSessionId).text}
+                        announcementKey={queue.announcementFor(activeSessionId).key}
+                        sessionId={activeSessionId}
+                        isStarting={acp.isStarting(activeSessionId)}
+                        sendNowBlockedReason={
+                          (isComposerSendBlocked || (!isActiveRunning && !isResumable)) && queue.queueOf(activeSessionId).length > 0
+                            ? (composerNoteText ?? `${activeAgent?.name ?? "The agent"} cannot continue right now.`)
+                            : undefined
+                        }
+                        onFocusComposer={() => composerRef.current?.focus()}
+                        onSendNow={(id) => queue.sendNow(activeSessionId, id)}
+                        onEdit={(id) => queue.edit(activeSessionId, id)}
+                        onRemove={(id) => queue.remove(activeSessionId, id)}
+                      />
+                    </div>
+                  )}
                   <div hidden={isComposerHidden} className={`flex justify-center px-6 ${isNewSessionDraft ? "" : "pb-5"}`}>
                     <ComposerDock
                       controls={compare.isCompare ? {} : composer.controls}
                       isThinking={Boolean(activeSession) && isSessionBusy(activeSessionId)}
                       onStop={activeSession ? () => handleInterrupt(activeSessionId) : undefined}
+                      queueing={isQueueingActive}
                       disabled={isComposerDisabled}
                       sendDisabled={isSendBlocked}
-                      placeholder={composerPlaceholder({
+                      placeholder={switchAgent ? `Message ${switchAgent.name}` : composerPlaceholder({
                         isRunning: isActiveRunning,
                         isCreatingWorktree,
                         isResumable,
@@ -2124,7 +1913,8 @@ export default function App() {
                       onNotice={reportError}
                       pasteScope={activeSessionId || "draft"}
                       isHidden={isComposerHidden || settingsPage.section !== null}
-                      commands={compare.isCompare ? [] : composerCommands}
+                      // The source agent's commands mean nothing to the agent picked to continue with.
+                      commands={compare.isCompare || switchAgent ? [] : composerCommands}
                       sendLabel={
                         delegationSendLabel ??
                         (privateDraft.isOn
@@ -2135,6 +1925,28 @@ export default function App() {
                       }
                       agentName={activeSession ? activeAgent?.name : newSessionAgent?.name}
                       sessionAgent={activeSession && activeAgent ? { profileId: activeAgent.id, name: activeAgent.name } : undefined}
+                      agentPicker={
+                        activeSession && switchAgents.length > 1
+                          ? {
+                              targets: switchAgents,
+                              pickedId: pendingSwitch?.agentId ?? activeSession.profileId,
+                              isPrivate: Boolean(activeSession.privateMode),
+                              // Comments written for this session's agent never go to another one.
+                              disabledReason: review.slot?.sessionId === activeSession.id ? SWITCH_TEXT.reviewLock : undefined,
+                              onPick: pickSwitchAgent,
+                            }
+                          : undefined
+                      }
+                      switchNote={
+                        activeSession && switchAgent
+                          ? {
+                              text: switchNote(switchAgent.name, activeAgent?.name ?? "This agent"),
+                              keepLabel: `Keep ${activeAgent?.name ?? "this agent"}`,
+                              onKeep: () => agentSwitch.keep(activeSession.id),
+                            }
+                          : undefined
+                      }
+                      sendName={switchAgent ? `Send to ${switchAgent.name} in a new session` : undefined}
                       privateDraft={isNewSessionDraft ? privateDraft : undefined}
                       privateSessionLine={privateSessionLine}
                       compareModels={
@@ -2174,7 +1986,8 @@ export default function App() {
                       contextUsage={isActiveRunning ? acp.info[activeSessionId]?.usage : undefined}
                       onOpenContext={() => inspector.show("context")}
                       mentions={filesFolder ? { root: filesFolder.path, loadFiles: () => shell.loadWorkspaceFiles(filesFolder.path) } : undefined}
-                      delegationAgents={delegationAgents}
+                      // While another agent is picked an @Agent is plain text, so no agent is offered to delegate to.
+                      delegationAgents={switchAgent ? [] : delegationAgents}
                       onDelegationMentionChange={setDelegationMention}
                       delegationSummary={delegationSummary}
                       folder={
@@ -2255,9 +2068,17 @@ export default function App() {
                     isExpanded
                     onToggleExpanded={() => inspector.setArtifactExpanded(false)}
                     onError={reportError}
+                    onNotice={setNotice}
+                    canvases={sessionCanvases}
+                    motions={sessionMotions}
+                    videos={sessionVideos}
+                    designSystems={sessionDesignSystems}
+                    turnsEnded={turnsEnded}
                     comments={artifactComments}
                     addReview={review.addArtifactReview}
                     cwd={activeSession.cwd}
+                    onInsertText={canvasInsertText}
+                    insertBlockedReason={canvasInsertBlockedReason}
                   />
                   {/* The chat, which draws the app's notice, is hidden under an expanded page: a failure here
                       (export, rename, delete, a page that cannot be shown) is said here. The page hides under it. */}
@@ -2282,164 +2103,64 @@ export default function App() {
             </div>
           </div>
           {inspectorTab && !isArtifactExpanded && !isGalleryShown && (
-            <Inspector
-              tab={inspectorTab}
-              tabs={inspectorTabs}
-              width={inspector.width}
-              maxWidth={maxInspectorWidth(windowWidth, !isSidebarHidden)}
-              counts={{ changes: inspector.changes.changes?.length, artifacts: sessionArtifacts.length + createdFiles.length || undefined, tasks: taskTabs.tabs.length || undefined }}
-              isViewingFile={inspectorTab === "files" && inspector.viewedFile !== null}
-              onSelect={inspector.show}
-              onResize={inspector.setWidth}
-              onClose={() => {
-                inspector.close();
-                inspectorButtonRef.current?.focus();
+            <AppInspectorPane
+              inspectorTab={inspectorTab}
+              inspectorTabs={inspectorTabs}
+              inspector={inspector}
+              windowWidth={windowWidth}
+              isSidebarHidden={isSidebarHidden}
+              isBrowserExpanded={isBrowserExpanded}
+              inspectorButtonRef={inspectorButtonRef}
+              filesFolder={filesFolder}
+              activeSession={activeSession}
+              activeSessionId={activeSessionId}
+              activeSessionIdRef={activeSessionIdRef}
+              activeAgent={activeAgent}
+              activeInfo={activeInfo}
+              isActiveRunning={isActiveRunning}
+              isRepository={isRepository}
+              turnsEnded={turnsEnded}
+              transcripts={transcripts}
+              transcriptStatus={transcriptStatus}
+              currentMessages={currentMessages}
+              isAcpBusy={acp.isBusy}
+              isSessionBusy={isSessionBusy}
+              repoPullRequests={repoPullRequests}
+              openPullRequest={openPullRequest}
+              githubProblem={githubProblem}
+              onOpenGithubSettings={() => settingsPage.open("github")}
+              onOpenPrivateSettings={() => settingsPage.open("private")}
+              diffStats={diffStats}
+              review={review}
+              taskTabs={taskTabs}
+              backgroundTasks={backgroundTasks}
+              onJumpToMessage={(messageId) => setChatJump((prev) => ({ messageId, nonce: (prev?.nonce ?? 0) + 1 }))}
+              onInsertPaths={(paths) => insertPaths(paths)}
+              onRevealFolder={(path) => shell.revealFolder(path)}
+              fileMarkers={fileMarkers}
+              isComposerHidden={isComposerHidden}
+              isComposerDisabled={isComposerDisabled}
+              composerRef={composerRef}
+              onSendFromComposer={(sessionId, text) => {
+                void sendFromComposer(sessionId, { text });
               }}
-            >
-              {inspectorTab === "changes" && filesFolder && (
-                <ChangesPanel
-                  key={filesFolder.path}
-                  rootPath={filesFolder.path}
-                  rootName={filesFolder.name}
-                  changes={inspector.changes.changes}
-                  version={inspector.changes.version}
-                  onReload={inspector.changes.reload}
-                  pullRequests={repoPullRequests}
-                  onOpenPullRequest={openPullRequest}
-                  githubProblem={githubProblem}
-                  onOpenGithubSettings={() => settingsPage.open("github")}
-                  diffStats={diffStats}
-                  onOpenDiff={() => inspector.openDiff()}
-                  stats={inspector.headStats ?? undefined}
-                  statsFailed={inspector.headStatsFailed}
-                  targets={inspector.targets}
-                  targetsFailed={inspector.targetsFailed}
-                  review={activeSession ? review.review : undefined}
-                  addReview={activeSession ? review.addReview : undefined}
-                />
-              )}
-              {inspectorTab === "tasks" && activeSession && (
-                <TasksPanel
-                  tabs={taskTabs}
-                  sessionId={activeSession.id}
-                  messages={transcripts[activeSession.id] ?? []}
-                  tasks={backgroundTasks.tasks}
-                  agentName={activeAgent?.name ?? "The agent"}
-                  isBusy={acp.isBusy(activeSession.id)}
-                  onStop={backgroundTasks.stop}
-                />
-              )}
-              {inspectorTab === "activity" && activeSession && (
-                <ActivityPanel
-                  key={activeSession.id}
-                  messages={transcripts[activeSession.id]}
-                  transcript={transcriptStatus[activeSession.id] ?? "loading"}
-                  session={activeSession}
-                  isRepository={isRepository}
-                  isBusy={isSessionBusy(activeSession.id)}
-                  version={inspector.changes.version}
-                  headStats={inspector.headStats}
-                  headStatsFailed={inspector.headStatsFailed}
-                  onJump={(messageId) => setChatJump((prev) => ({ messageId, nonce: (prev?.nonce ?? 0) + 1 }))}
-                  agentName={agentNameOr(activeAgent)}
-                  onShowChanges={() => inspector.show("changes")}
-                />
-              )}
-              {inspectorTab === "files" && filesFolder && (
-                <FilesPanel
-                  key={filesFolder.path}
-                  rootPath={filesFolder.path}
-                  rootName={filesFolder.name}
-                  onInsertPath={(path) => insertPaths([path])}
-                  onRevealRoot={() => filesFolder && shell.revealFolder(filesFolder.path)}
-                  markers={fileMarkers}
-                  viewedFile={inspector.viewedFile}
-                  onViewFile={inspector.viewFile}
-                  onCloseFile={inspector.closeFile}
-                  version={inspector.changes.version}
-                  filesPrefix={inspector.filesPrefix}
-                  // Lines go into the message box only when Reply could: shown, enabled, not holding another session's comments.
-                  onInsertText={
-                    replyBlockedReason({ isComposerHidden, isComposerDisabled, isHeldElsewhere: review.isHeldFor(activeSessionId) })
-                      ? undefined
-                      : (text) => composerRef.current?.insertText(text)
-                  }
-                />
-              )}
-              {inspectorTab === "context" && activeSession && activeInfo?.usage && (
-                <ContextPanel
-                  key={activeSession.id}
-                  sessionId={activeSession.id}
-                  agentId={activeSession.profileId}
-                  agentName={activeAgent?.name ?? "The agent"}
-                  cwd={activeSession.cwd}
-                  usage={activeInfo.usage}
-                  turnUsage={activeInfo.turnUsage ?? []}
-                  turnsEnded={activeInfo.turnsEnded ?? 0}
-                  messages={currentMessages}
-                  // An ended session's agent is gone: the command would go to a closed connection.
-                  compactCommand={isActiveRunning ? compactCommandOf(activeInfo.commands) : null}
-                  isBusy={acp.isBusy(activeSession.id)}
-                  onCompact={(command) => sendFromComposer(activeSession.id, { text: `/${command}` })}
-                />
-              )}
-              {inspectorTab === "artifacts" && activeSession && (
-                <ArtifactsPanel
-                  key={activeSession.id}
-                  sessionId={activeSession.id}
-                  artifacts={sessionArtifacts}
-                  viewed={inspector.viewedArtifact}
-                  onView={inspector.viewArtifact}
-                  isExpanded={false}
-                  onToggleExpanded={() => {
-                    // A page that opened by itself is pinned when it takes the chat's place: a file the agent
-                    // makes meanwhile would otherwise turn the tab back into a list under the expanded page,
-                    // and comments would lose the page they are on.
-                    if (!inspector.viewedArtifact && shownArtifact) inspector.viewArtifact({ artifactId: shownArtifact.id, version: null });
-                    inspector.setArtifactExpanded(true);
-                  }}
-                  onError={reportError}
-                  comments={artifactComments}
-                  addReview={review.addArtifactReview}
-                  cwd={activeSession.cwd}
-                  files={createdFiles}
-                  filesRoot={filesFolder?.path}
-                  agentName={activeAgent?.name}
-                  onOpenFile={(relative) => {
-                    inspector.viewFile(relative);
-                    inspector.show("files");
-                  }}
-                />
-              )}
-              {inspectorTab === "private" && activeSession?.privateMode && (
-                <PrivateInspector
-                  session={activeSession}
-                  credits={privateCredits}
-                  messages={currentMessages}
-                  onTopUp={() => settingsPage.open("private")}
-                  onOpenUrl={openLink}
-                />
-              )}
-              {inspectorTab === "browser" && activeSession && <BrowserPanel
-                key={activeSession.id}
-                sessionId={activeSession.id}
-                onError={reportError}
-                onAddContext={replyBlockedReason({ isComposerHidden, isComposerDisabled, isHeldElsewhere: review.isHeldFor(activeSessionId) })
-                  ? undefined
-                  : (text) => {
-                    if (activeSessionIdRef.current === activeSession.id) composerRef.current?.insertText(text);
-                  }}
-              />}
-              {inspectorTab === "terminal" && filesFolder && (
-                <TerminalDrawer
-                  folderPath={filesFolder.path}
-                  folderName={filesFolder.name}
-                  terminals={terminals}
-                  startingFor={terminalDrawer.startingFor}
-                  onStartShell={terminalDrawer.startShell}
-                />
-              )}
-            </Inspector>
+              sessionArtifacts={sessionArtifacts}
+              createdFiles={createdFiles}
+              sessionCanvases={sessionCanvases}
+              sessionMotions={sessionMotions}
+              sessionVideos={sessionVideos}
+              sessionDesignSystems={sessionDesignSystems}
+              artifactComments={artifactComments}
+              onExpandArtifact={expandArtifact}
+              canvasInsertText={canvasInsertText}
+              canvasInsertBlockedReason={canvasInsertBlockedReason}
+              privateCredits={privateCredits}
+              onOpenUrl={openLink}
+              terminals={terminals}
+              terminalDrawer={terminalDrawer}
+              onError={reportError}
+              onNotice={setNotice}
+            />
           )}
         </div>
       </section>
@@ -2464,9 +2185,7 @@ export default function App() {
         onShowRecoveryCode={recoveryDialog.show}
         onRestoringChange={recoveryDialog.setIsRestoring}
         onOpenUrl={openLink}
-        // Development builds only until agents get the computer-use tools (the plan's Tasks 9 to 12):
-        // a release must not ship a switch that asks macOS for permissions and then does nothing.
-        computerUse={import.meta.env.DEV ? computerUseSetting : undefined}
+        computerUse={computerUseSetting}
       />
       <RecoveryCodeLayer
         credits={privateCredits}
@@ -2481,6 +2200,7 @@ export default function App() {
           onEdit={secretGuard.edit}
         />
       )}
+      {teeConfirm.dialog}
       {delegateDialog.dialog !== null && (
         <DelegateDialog
           agents={delegateAgents}

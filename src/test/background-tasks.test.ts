@@ -181,6 +181,7 @@ describe("backgroundTasksOf", () => {
         startedAt: 70_000,
         sessionId: "s1",
         pid: 11,
+        ports: [5173],
       },
     ]);
   });

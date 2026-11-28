@@ -1,5 +1,8 @@
 import { useCallback } from 'react';
-import { openingFor, type ShownArtifact, type ViewedArtifact } from '../lib/artifacts';
+import { canvasOpeningFor, openingFor, type ShownArtifact, type ViewedArtifact } from '../lib/artifacts';
+
+/** What an agent showed: a page, or a canvas by its key. */
+export type ShownOutput = ShownArtifact | { kind: 'canvas' | 'motion' | 'video' | 'design-system'; key: string };
 import { useLatest } from './useLatest';
 
 export interface ArtifactOpeningDeps {
@@ -14,16 +17,41 @@ export interface ArtifactOpeningDeps {
 
 /**
  * What the window does when an agent shows a page: a new artifact of the
- * session on screen opens the Artifacts tab on it. Nothing else moves: a new
+ * session on screen opens the Artifacts tab on it, and so does a canvas, unless it is open already. Nothing else moves: a new
  * version reaches the viewer by itself while it follows the newest, and Zorvo
  * never switches sessions for a page.
  */
-export function useArtifactOpening(deps: ArtifactOpeningDeps): (sessionId: string, shown: ShownArtifact) => void {
+export function useArtifactOpening(deps: ArtifactOpeningDeps): (sessionId: string, shown: ShownOutput) => void {
   const latest = useLatest(deps);
   return useCallback(
     (sessionId, shown) => {
       const { activeSessionId, viewed, showTab, view } = latest.current;
-      const opening = openingFor({ isOnScreen: activeSessionId !== null && sessionId === activeSessionId, shown, viewed });
+      const isOnScreen = activeSessionId !== null && sessionId === activeSessionId;
+      if ('kind' in shown && shown.kind === 'motion') {
+        if (!isOnScreen || viewed?.motionKey === shown.key) return;
+        view({ motionKey: shown.key });
+        showTab();
+        return;
+      }
+      if ('kind' in shown && shown.kind === 'design-system') {
+        if (!isOnScreen || viewed?.designSystemKey === shown.key) return;
+        view({ designSystemKey: shown.key });
+        showTab();
+        return;
+      }
+      if ('kind' in shown && shown.kind === 'video') {
+        if (!isOnScreen || viewed?.videoKey === shown.key) return;
+        view({ videoKey: shown.key });
+        showTab();
+        return;
+      }
+      if ('kind' in shown) {
+        if (canvasOpeningFor({ isOnScreen, key: shown.key, viewed }) !== 'show-tab') return;
+        view({ canvasKey: shown.key });
+        showTab();
+        return;
+      }
+      const opening = openingFor({ isOnScreen, shown, viewed });
       if (opening !== 'show-tab') return;
       view({ artifactId: shown.artifact.id, version: null });
       showTab();

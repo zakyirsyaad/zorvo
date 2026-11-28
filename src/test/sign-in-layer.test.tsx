@@ -46,7 +46,7 @@ describe("the sign-in layer", () => {
 
     // The same element gets the text; the panel's own progress region is a second one.
     expect(screen.getAllByRole("status")[0]).toBe(announcer);
-    expect(announcer).toHaveTextContent(`Sign-in needed. Pick how ${agent.name} signs in. It uses its own tool; Zorvo never sees your password or key.`);
+    expect(announcer).toHaveTextContent(`Sign-in needed. ${agent.name} signs in with its own tool. Zorvo never sees your password or key.`);
     expect(screen.getByRole("region", { name: `Sign in to ${agent.name}` })).toBeInTheDocument();
   });
 

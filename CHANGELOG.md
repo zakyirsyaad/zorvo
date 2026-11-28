@@ -6,18 +6,174 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Added
 
-- **A browser beside the chat.** Open links or addresses in the Browser inspector tab, with session-isolated WebKit pages, navigation, console, snapshots and agent interactions. The 19 WebKit operations ask for a session grant on a card in the chat. Capture, downloads and file uploads are refused.
+- Continue a conversation with another agent: pick it from the agent menu in the composer, and your message starts its session with the conversation so far, or pick it from Fork from here under any reply. The new session marks where it continued.
 
 ### Changed
 
-- **A compact browser toolbar.** Navigation, the address and element selection share one row, with page tabs above it. Console and supported debugging tools have their own menu.
-- **Site information in the browser.** See the connection, cookie count and agent access for the current page, and clear its cookies and origin storage. A menu keeps a still image of the page behind it instead of showing an empty panel.
+- **WebKit-only Browser panel with chat permission cards.** Deferred Chromium/CDP debugging to a follow-up, moved agent browser grants and one-time WebKit file-upload approvals into ordinary chat cards, removed dead engine branches from `BrowserPanel`, and stopped sending non-URL address-bar text to Google.
 
 ### Fixed
 
 - **Browser tools wait for a new page.** An operation issued immediately after opening a tab waits for its page helper, instead of failing before the document is ready. The wait keeps its original tab and timeout.
-- **Private browser form values.** Snapshots omit passwords, one-time codes and card autocomplete values. Automatic popups are blocked and permitted page-created tabs stay in the background.
-- **Browser tabs survive an agent exit.** Ending or crashing an agent revokes its browser access without closing the user's pages or losing their login and unfinished forms.
+- **Private browser form values.** Snapshots omit passwords, one-time codes and card autocomplete values. Automatic popups are blocked with a quiet one-line notice in the panel (and reported in agent click results), and permitted page-created tabs stay in the background.
+- **Browser tabs survive an agent exit and close on archive.** Ending or crashing an agent revokes its browser access without closing the user's pages; archiving or deleting a session closes its browser views, and hitting the 8-session browser limit names the sessions still holding tabs.
+
+## [0.22.1] - 2026-11-27
+
+### Added
+
+- **Agents are told which design systems a folder holds before they design a page, a canvas or a motion.** A design system is a folder with a `design-system.json`; Zorvo looks for one in the session's folder and below it, never above it, names the default, and lists the tokens it could not read.
+- **An agent can make a design system for your project, from its code or from brand files you give it, and Zorvo shows it beside the chat.** Its brand book, its colours, type, spacing and shadows in each theme, every component's live preview, and its logos and fonts, in the Artifacts tab, the gallery and a card in the chat.
+- **A canvas can use your project's design system, and Theme switches every artboard.** Artboards load the system's tokens, styles and logos from `_ds/`, and pictures and exports follow the theme you pick.
+- **You can comment on a design system's tokens, components and brand book.** Comments go to the agent through the message box, as page comments do.
+- **A design system made from your code says when that code changed, and Sync again asks the agent to update it.**
+
+### Changed
+
+- **Google Antigravity runs through your own `agy` CLI.** When `agy` 1.5.17 or newer is on your PATH, Zorvo starts Antigravity with `agy acp` instead of its download of the registry's server, so your own subagents and skills from `~/.gemini/config` work in Zorvo too. Sessions you started before still continue. Without `agy`, nothing changes.
+- **Agents design pages and canvases with more care.** The guide an agent reads before it shows you a page or a canvas now tells it to follow your project's own design system when there is one, ask its questions once, write placeholders instead of made-up names and numbers, use real buttons, links and labels, and keep text readable in both themes. On a canvas it builds one artboard at a time, so you watch the screens appear.
+- **The folded session overview is a smaller pill.** It no longer repeats the lines added and removed, which the top bar already shows; it says how many tasks run, or Overview.
+
+### Fixed
+
+- **A reloaded window no longer keeps an artifact drawn over the chat.** When Zorvo's window reloaded, the page, canvas or video shown in the Artifacts tab stayed on screen at its old place, over the chat, with nothing that could close it. A reload now closes it, as it already closed the Browser panel's pages.
+
+## [0.22.0] - 2026-11-26
+
+Tagged but never published; its changes shipped in 0.22.1.
+
+## [0.21.2] - 2026-11-26
+
+### Fixed
+
+- **The overview card lists every pull request a session opened.** A session whose agent opened two pull requests showed only one, and which one changed with the branch the folder had checked out. The card now lists each pull request the agent made, newest first. Google Antigravity's pull requests are now recognised too: it names its commands in the tool's title, which Zorvo did not read.
+
+## [0.21.1] - 2026-11-26
+
+### Fixed
+
+- **The next-step box survives a restart.** After Zorvo restarted, the box under a session's last turn went inert or disappeared, since every session reads ended then. It now stays usable while the session can be continued, and a press continues the session with that message, as Send would.
+
+## [0.21.0] - 2026-11-26
+
+### Added
+
+- **Agents can make videos.** Ask any agent for a video or motion graphics and it writes a composition (a page that moves, with a `motion.json`), shows it beside the chat with a play head, checks stills with motion blur, and renders MP4s of every format you asked for, with sound only when you ask. Zorvo renders with WebKit and AVFoundation on your Mac: nothing is downloaded, and the preview is the same engine as the video. Export saves one format or all of them.
+- **The website shows Zorvo's download numbers.** A Numbers section right after Community shows installer downloads, self-updates and releases since the first one, with a chart of installer downloads by release day, all read from GitHub Releases when the site is built. Zorvo sends no telemetry, and the section says these are the only numbers there are. The quotes section is redrawn with one large quote and a highlighted phrase; it stays hidden until it has real quotes.
+- **Tell us how Zorvo works for you.** The website links to a short feedback form on GitHub, from the footer and from the Community section. It asks whether you still use Zorvo and what got in your way.
+- **Videos play in Zorvo.** An MP4 or MOV an agent shows (a Remotion render, say) gets a card in the chat and a player in Output, and the Files viewer plays videos in your project.
+- **Discard changes to a single file.** Each file in the Changes tab has a two-click Discard (or Delete, for new files) action to undo edits or remove an untracked file without leaving the inspector.
+- **Restore files when rewinding a chat.** Zorvo takes a lightweight git snapshot before each turn (leaving your index, stash and gitignored files untouched, and skipping untracked files over 5 MB), so Rewind offers a two-click **Rewind + files?** option that puts back the files the agent reported changing since that message. Nothing else in the repository is touched.
+
+### Fixed
+
+- **Commit and Create PR only after a turn that changed files.** The box under a finished turn offered them whenever the folder had uncommitted work, even after an answer that only read something. Now Zorvo offers them only when that turn edited files or the agent suggests them, and their message asks the agent to commit the changes it made.
+
+### Changed
+
+- **Fewer false "may be stuck" warnings.** An agent that sends nothing is now flagged after three minutes instead of one, since a model thinking at a high effort (Gemini in Antigravity, say) often works quietly for over a minute.
+
+## [0.20.1] - 2026-11-25
+
+### Fixed
+
+- **One scrollbar in the chat again.** Since 0.20.0 the area around the chat could scroll too, past the message box and into empty space, beside the chat's own scrollbar.
+
+## [0.20.0] - 2026-11-25
+
+### Added
+
+- **A button to jump back to the newest message.** Scroll up to read an earlier part of a chat and a round arrow appears above the composer; press it to return to the latest output, which the chat then follows again.
+
+### Changed
+
+- **The session overview is a panel beside the chat.** It runs the full height of the window behind a thin divider and is narrower, so the chat sits in the middle of its own space. On a narrow window it still opens as a card over the chat.
+- **The Zorvo logo over a new session is larger**, and so is the line under it. The logo and the card now sit together in the middle of the window.
+- **The Browser tab can take the whole window.** Expand, beside the browser tools, gives the page the room the chat had; Shrink or Escape brings the chat back, and the page keeps what it holds. Dragged by its edge, the Browser tab now widens as far as the window allows instead of stopping at 720px, and remembers its own width.
+
+### Fixed
+
+- **The chat keeps following an agent's reply.** It no longer stops following when part of the chat shrinks, such as a notice going away, and it now follows what grows without a new message, such as the next-step box or a picture that loads late.
+- **Choose File works in the Browser tab.** A page's file button now opens the file picker; before, clicking it did nothing.
+- **An agent can upload a file to a page you are signed in to.** After you approve the files and the site on a one-time card, the agent fills the page's file field in the Browser tab itself, where before it could only use a separate Chromium window without your sign-in. The files must be in the session's folder.
+
+## [0.19.0] - 2026-11-25
+
+### Added
+
+- **A next-step box at the end of a turn.** Under an agent's last reply, Zorvo shows what changed in the repository, and the agent's short recap and question. Its buttons send your answer as a message, so Commit, Create PR or Merge is one click.
+
+## [0.18.0] - 2026-11-25
+
+### Changed
+
+- **Agent updates come as soon as the registry lists them.** A new version of an agent no longer waits a week before Zorvo offers it.
+- **The dark theme's panels are darker, closer to the sidebar.** The chat, the inspector, your messages, the composer and the cards on them sit nearer the window's black.
+- **While an agent works, the chat shows Zorvo's logo at work.** Its two chevrons light in turn and its cursor blinks, in place of the green dot. With Reduce motion on, the logo stands still.
+- **A new session shows Zorvo's logo** and the line "Every coding agent. One desktop." above the card where you write the first message.
+- **Signing in to an agent takes fewer steps.** The sign-in card leads with one button, and other ways to sign in fold under it. A way that needs an API key shows the line to add to your shell, with Copy. A failed sign-in says what to try next.
+- **Sign in from the Agents menu without leaving your session.** Sign in and Check now work inside the agent's row in the sidebar menu, where before they opened a new session.
+- **The sign-in terminal asks when you are done.** While an agent's sign-in or setup runs, press I've signed in (or I'm done) to have Zorvo check. Cancel now stops it without checking.
+- **One set of words for sign-in everywhere:** Ready, Needs sign-in, Not checked yet. In Settings, an agent never checked has Check sign-in as its button, with one line saying what checking does.
+
+### Fixed
+
+- **A key you add to your shell is seen when you come back to Zorvo.** The automatic check on returning to the window now reads your shell again first, so you no longer have to press Check again.
+
+- **Slash commands work as a session's first message.** A command such as `/logout` or `/compact` now reaches the agent exactly as you typed it. Before, Zorvo put a hidden note in front of it, so the agent could read it as ordinary text.
+
+## [0.17.0] - 2026-11-22
+
+### Added
+
+- **Qwen Code's background agents show in the overview card.** While Qwen Code runs agents of its own in the background, the card lists each one with what it last did. An agent that has done nothing for five minutes is marked quiet, and the chat says so.
+- **Sign in again from Settings.** An agent that reads Ready has Sign in again in its menu, to switch account or run its setup again.
+- **A link to a file in a reply can be opened.** A file in the session's folder opens in the Files tab. Any other file is shown in Finder.
+- **Send while an agent works.** A message you send during a turn waits above the composer and goes out when the turn ends. Send now stops the turn first. When you press Stop yourself, the messages keep waiting until you send one.
+
+### Changed
+
+- An agent now starts workers by itself when you ask it to split work or run parts in parallel, where before it could run them as background tasks of its own that Zorvo cannot show.
+- **Output is called Artifacts again.** The tab, the sidebar entry, the gallery and the section of the overview card say Artifacts. They still list the pages an agent showed and the files it made.
+- **A link in a reply opens in Zorvo's browser.** A click shows the page in the Browser tab beside the chat. Right-click a link to open it in your own browser. Mail links, and links in a session's own window, still open outside.
+- **Settings, Agents: the switches come first.** "Working together" and "Computer use" are above the list of agents, where the long list no longer hides them.
+- **A running command is named by its program.** In the overview card a command reads `node server.js --port 1420`, not the start of a long path, and its second line says the ports it listens on, not the session's name. Hover it for the whole command.
+
+### Fixed
+
+- **Codex no longer shows two running tasks that are its own.** The overview card listed Zorvo's tool bridge and Codex's helper process as shell commands the agent had started.
+- The inspector's tab strip no longer draws a scrollbar over the tab names when the tabs do not fit.
+
+## [0.16.0] - 2026-11-22
+
+### Added
+
+- **An agent can show a diagram or a mockup inside its reply.** The picture sits between the paragraphs of the answer and follows the light and dark theme. Nothing in it runs and it has no links. From its menu you can copy it as an image or save it as SVG, HTML or PNG, and Expand shows it larger.
+
+## [0.15.0] - 2026-11-21
+
+### Added
+
+- **Agents can look at apps on your Mac, when you let them.** Turn it on in Settings, under Agents. An agent then asks before it uses an app, on a card that shows each app as it is on this Mac (its name, where it is and who signed it), and you tick the ones it may use in that session. For now an agent can only look: read a window's contents and take a picture of it. Zorvo itself, your passwords and System Settings are never offered; browsers are view only, terminals and code editors click only. A line under the chat and a mark in the sidebar show which sessions may use apps, a small bar stays on top of your screen while an agent is looking, and **Stop computer use** ends it at once. What an agent sees goes to its model provider.
+- A worker can record whether its task succeeded or failed.
+- Workers report back in one message, including one that stopped, failed or whose agent exited, and after Zorvo restarts.
+- An agent can start several workers, of one agent or several, in your folder or each in a worktree of its own, and give an idle worker a further task.
+- A worker's agent ends two minutes after its turn. The session stays, and a new task reopens it.
+- **A browser beside the chat.** Open links or addresses in the Browser inspector tab, with session-isolated WebKit pages, navigation, console, snapshots and agent interactions. Browser tools ask for a session grant; sending files asks separately. Chromium debug opens an isolated installed Chrome or Brave window for full network, file, trace, CPU, heap and optional Lighthouse tools.
+- **Design canvas.** An agent can show several screens side by side: a flow, variants of one screen or a whole redesign, as artboards in labelled sections beside the chat. Pan with two fingers or by dragging, pinch to zoom, and jump to a section or fit the view from the header; select an artboard to focus on it and step to the previous or next one. Comment on text or an element inside an artboard, or on the whole artboard, and add the comments to your next message. **Pick** keeps one variant of a screen, and **Build this** and **Build section** ask the agent to build the screens in your repository; each puts a message in the box for you to edit and send. **Export** saves one artboard as PNG or PDF, every artboard as PNG files, or the whole canvas as one PDF; a PNG is drawn at 2×. The canvas is a folder in your project, `canvas.json` and one HTML file per artboard, so git keeps its history and any session can open it again; deleting a session keeps the files. Artboards out of view show as pictures, kept on this Mac.
+
+### Changed
+
+- **The website shows what Zorvo does now.** A new Output section shows a page beside the chat with a comment on it, a new Canvas section shows artboards side by side with one picked and commented, and a new docs page, Pages and canvases, explains both. The Delegate section shows an agent starting two workers and their report coming back in one message. The picture of the window has the session overview card and a pull request in the sidebar, the feature list names the browser, the overview, the context panel, pull requests and subagent tabs, and Control says an agent can look at apps on your Mac only after you tick them. The site no longer says the build is not signed. The privacy docs say what a page, the Browser tab and computer use can reach.
+- **The website's header and first screen.** The section links are under a Product menu that opens under the pointer, with Docs beside it, and Discord, X and GitHub are icons that open in a new tab; on a phone the header has a menu button. The agents strip moves slowly through eighteen agents and stops under the pointer. The Download button shows how often the Mac app was downloaded, read from GitHub Releases when the site is built. The page says "coding agents" where it said "ACP registry". A new Community section, right under the agents strip, shows Zorvo's launch post from X as a card with its video, and links Discord, X and GitHub; the card leads to Zorvo's profile on X. A Questions section before the last Download answers what people ask first: the price, API keys, which agent to start with, what to install, Windows and Linux, and where your code goes. The page scrolls smoothly, and the footer is uncovered as the page above it scrolls away. With Reduce motion on, none of this moves.
+- **The website counts visits and measures its speed.** It uses Vercel Web Analytics and Speed Insights, which set no cookies. The privacy page says what they receive. The app still sends no telemetry.
+- **The website is easier for search engines to read.** Every docs page has a title that says what it is for and a description of full length, the questions on the home page are in its structured data, the sitemap says when each page last changed, and links shared on X name Zorvo's account. Logos further down the page load when they come near, and the video and the agent icons are kept by the browser between visits.
+- **A compact browser toolbar.** Navigation, the address and element selection share one row, with page tabs above it. Browser choices and debugging tools have their own menu.
+- **Site information in the browser.** See the connection, cookie count and agent access for the current page, and clear its cookies and origin storage. A menu keeps a still image of the page behind it instead of showing an empty panel.
+
+### Fixed
+
+- A new session keeps the name from your first message. With Claude Agent it could be named after a note Zorvo sends the agent, which you never wrote.
 - **Browser tools on sites with a strict content policy.** Native JavaScript expressions and console reads use WebKit's page-world compiler, so a site's ban on `eval` does not block the tools. The site's policy remains unchanged.
 - **Closing browser pages releases their process state.** Closed views cancel pending operations and ask WebKit to end and reset the page process, including a page running a script that never yields.
 - **Browser tabs and page controls.** A tab strip, blank new tabs and the page menu now follow the compact browser layout, with native page zoom, copying/opening links and a clearable list of recent pages. Diagnostic tools have their own menu.
@@ -458,7 +614,19 @@ Tagged but never published; its fix shipped in 0.11.2.
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.14.1...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.22.1...HEAD
+[0.22.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.22.0...v0.22.1
+[0.22.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.21.2...v0.22.0
+[0.21.2]: https://github.com/zakyirsyaad/zorvo/compare/v0.21.1...v0.21.2
+[0.21.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.21.0...v0.21.1
+[0.21.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.20.1...v0.21.0
+[0.20.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.20.0...v0.20.1
+[0.20.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.19.0...v0.20.0
+[0.19.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.18.0...v0.19.0
+[0.18.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.17.0...v0.18.0
+[0.17.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.16.0...v0.17.0
+[0.16.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.15.0...v0.16.0
+[0.15.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.14.1...v0.15.0
 [0.14.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.13.0...v0.13.1

@@ -1,4 +1,36 @@
 import { LINKS } from "../../lib/links";
+import { BrandIcon, type Brand } from "../ui/BrandIcon";
+
+/** The sections of the page that say what Zorvo does, as the Product menu lists them. */
+const PRODUCT = [
+  { id: "sessions", title: "Sessions", text: "One project, many agents, each in a session of its own." },
+  { id: "compare", title: "Compare", text: "One prompt, up to four agents, each in its own worktree." },
+  { id: "delegate", title: "Delegate", text: "Hand a task to another agent, or let an agent start workers." },
+  { id: "review", title: "Review", text: "Comment on a line of a diff and send it back." },
+  { id: "output", title: "Output", text: "A report, a diagram or a mockup, shown as a page beside the chat." },
+  { id: "canvas", title: "Canvas", text: "Several screens as artboards, to compare, pick and build." },
+  { id: "control", title: "Control", text: "Approvals, the plan, and what the agent did." },
+  { id: "features", title: "All features", text: "The inspector, the browser, files, fork and rewind." },
+] as const;
+
+const SOCIALS: ReadonlyArray<{ brand: Brand; href: string; name: string; size?: number }> = [
+  { brand: "discord", href: LINKS.discord, name: "Discord" },
+  { brand: "x", href: LINKS.x, name: "X", size: 18 },
+  { brand: "github", href: LINKS.repository, name: "GitHub" },
+];
+
+function Socials() {
+  return (
+    <>
+      {SOCIALS.map(({ brand, href, name, size }) => (
+        <a key={brand} className="focus-ring lp-icon-link" href={href} target="_blank" rel="noopener noreferrer">
+          <BrandIcon brand={brand} size={size} />
+          <span className="sr-only">{name}, opens in a new tab</span>
+        </a>
+      ))}
+    </>
+  );
+}
 
 /** `anchorBase` is "/" on pages other than the home page, so the section links lead back to it. */
 export function SiteHeader({ anchorBase = "" }: { anchorBase?: "" | "/" }) {
@@ -16,23 +48,60 @@ export function SiteHeader({ anchorBase = "" }: { anchorBase?: "" | "/" }) {
           <span className="text-[22px] font-semibold tracking-[-0.04em]">zorvo</span>
         </a>
         <nav className="lp-nav gap-1" aria-label="Sections">
-          <a className="focus-ring lp-btn lp-btn-ghost" href={`${anchorBase}#compare`}>Compare</a>
-          <a className="focus-ring lp-btn lp-btn-ghost" href={`${anchorBase}#delegate`}>Delegate</a>
-          <a className="focus-ring lp-btn lp-btn-ghost" href={`${anchorBase}#review`}>Review</a>
-          <a className="focus-ring lp-btn lp-btn-ghost" href={`${anchorBase}#features`}>Features</a>
+          {/* Opens under the pointer and on keyboard focus, by CSS alone. The script adds a click, Escape and
+              the expanded state. */}
+          <div className="lp-nav-item" data-menu="">
+            <button type="button" className="focus-ring lp-btn lp-btn-ghost cursor-pointer" aria-haspopup="true" aria-expanded="false" aria-controls="product-menu">
+              Product
+              <svg className="lp-ico lp-chev w-3.5 h-3.5" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M6 9l6 6 6-6" />
+              </svg>
+            </button>
+            <div className="lp-menu" id="product-menu">
+              <div className="lp-menu-panel">
+                {PRODUCT.map(({ id, title, text }) => (
+                  <a key={id} className="focus-ring" href={`${anchorBase}#${id}`}>
+                    <b>{title}</b>
+                    <span>{text}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          </div>
           <a className="focus-ring lp-btn lp-btn-ghost" href={`${anchorBase}#private`}>Private mode</a>
-          {/* Hidden from 861px to 985px, where the six links would not fit beside the buttons. The footer
-              links the privacy docs at every width. */}
-          <a className="focus-ring lp-btn lp-btn-ghost min-[861px]:max-[985px]:hidden" href={`${anchorBase}#privacy`}>Privacy</a>
-        </nav>
-        <span className="flex items-center gap-1 ml-auto min-[861px]:justify-self-end">
-          {/* Hidden on a phone, and from 861px to 1140px, where it would make this side wider than the
-              logo's and push the section links off the middle. The footer has the link at every width. */}
-          <a className="focus-ring lp-btn lp-btn-ghost max-[520px]:hidden min-[861px]:max-[1140px]:hidden" href={LINKS.repository}>GitHub</a>
+          <a className="focus-ring lp-btn lp-btn-ghost" href={`${anchorBase}#privacy`}>Privacy</a>
           <a className="focus-ring lp-btn lp-btn-ghost" href={LINKS.docs}>Docs</a>
-          <a className="focus-ring lp-btn lp-btn-outline h-10" data-press="" href={LINKS.download}>
+        </nav>
+        <span className="flex items-center ml-auto min-[861px]:justify-self-end">
+          {/* On a phone the three links are in the menu. */}
+          <span className="flex items-center max-[860px]:hidden">
+            <Socials />
+          </span>
+          <a className="focus-ring lp-btn lp-btn-outline h-10 ml-2" data-press="" href={LINKS.download}>
             Download
           </a>
+          <button type="button" className="focus-ring lp-icon-link cursor-pointer ml-1 min-[861px]:hidden" popoverTarget="site-menu">
+            <svg className="lp-ico w-5 h-5" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7h16" />
+              <path d="M4 12h16" />
+              <path d="M4 17h16" />
+            </svg>
+            <span className="sr-only">Menu</span>
+          </button>
+        </span>
+      </div>
+      <div className="lp-sheet" id="site-menu" popover="auto">
+        <span className="lp-sub pt-3 pb-1">Product</span>
+        {PRODUCT.map(({ id, title }) => (
+          <a key={id} className="focus-ring lp-sheet-link" href={`${anchorBase}#${id}`}>{title}</a>
+        ))}
+        <span className="h-px bg-border my-2" />
+        <a className="focus-ring lp-sheet-link" href={`${anchorBase}#private`}>Private mode</a>
+        <a className="focus-ring lp-sheet-link" href={`${anchorBase}#privacy`}>Privacy</a>
+        <a className="focus-ring lp-sheet-link" href={LINKS.docs}>Docs</a>
+        <span className="h-px bg-border my-2" />
+        <span className="flex -ml-3">
+          <Socials />
         </span>
       </div>
     </header>

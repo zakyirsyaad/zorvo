@@ -18,6 +18,8 @@ mod sites_smoke;
 #[cfg(all(target_os = "macos", debug_assertions))]
 mod smoke;
 #[cfg(all(target_os = "macos", debug_assertions))]
+mod upload_smoke;
+#[cfg(all(target_os = "macos", debug_assertions))]
 pub use smoke::{frontend_ready, smoke};
 
 #[derive(Clone, Copy, Debug, serde::Deserialize)]
@@ -273,6 +275,98 @@ pub async fn execute(app: &AppHandle, session_id: String, args: Value) -> Result
     }
 }
 
+/// The tab, frame, ref, upload id and grant of an upload request, for the internal upload
+/// operations, so a revoked grant or a cancelled call still stops them.
+#[cfg(target_os = "macos")]
+fn upload_target(args: &Value, operation: &str) -> Value {
+    let mut target = serde_json::json!({ "operation": operation });
+    for (from, to) in [
+        ("tabId", "tabId"),
+        ("tabID", "tabId"),
+        ("frameId", "frameId"),
+        ("frameID", "frameId"),
+        ("ref", "ref"),
+        ("uploadId", "uploadId"),
+        ("_zorvoCallId", "_zorvoCallId"),
+        ("_zorvoGrant", "_zorvoGrant"),
+    ] {
+        if let Some(value) = args.get(from).filter(|v| !v.is_null()) {
+            target[to] = value.clone();
+        }
+    }
+    target
+}
+
+/// The origin an upload would go to (the input's frame's, else the page's) and the tab it is on.
+#[cfg(target_os = "macos")]
+pub async fn upload_page(
+    app: &AppHandle,
+    session: String,
+    args: &Value,
+) -> Result<(String, String), String> {
+    let page = native::execute(app, session, upload_target(args, "__upload_page")).await?;
+    match (page["origin"].as_str(), page["tabId"].as_str()) {
+        (Some(origin), Some(tab)) => Ok((origin.to_owned(), tab.to_owned())),
+        _ => Err("Open a web page before uploading files.".into()),
+    }
+}
+
+/// Whether `ref` names an enabled file input.
+#[cfg(target_os = "macos")]
+pub async fn upload_check(app: &AppHandle, session: String, args: &Value) -> Result<bool, String> {
+    Ok(
+        native::execute(app, session, upload_target(args, "__upload_check"))
+            .await?
+            .get("fileInput")
+            == Some(&Value::Bool(true)),
+    )
+}
+
+/// Arms the tab with the staged files for `origin` under `args.uploadId` and clicks the input.
+#[cfg(target_os = "macos")]
+pub async fn upload_arm(
+    app: &AppHandle,
+    session: String,
+    args: &Value,
+    origin: &str,
+    staged: &[std::path::PathBuf],
+) -> Result<(), String> {
+    let mut target = upload_target(args, "__upload_arm");
+    target["origin"] = serde_json::json!(origin);
+    target["staged"] = serde_json::json!(staged
+        .iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect::<Vec<_>>());
+    native::execute(app, session, target).await.map(|_| ())
+}
+
+/// `taken` once a file chooser took the upload, `waiting` while it may still, else `expired`.
+#[cfg(target_os = "macos")]
+pub async fn upload_state(
+    app: &AppHandle,
+    session: String,
+    args: &Value,
+) -> Result<String, String> {
+    native::execute(app, session, upload_target(args, "__upload_state"))
+        .await?
+        .get("state")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| "The upload state could not be read.".into())
+}
+
+/// Withdraws an armed upload. It carries no call grant: taking files back must work even after the
+/// grant was revoked, and it can only remove what an upload armed.
+#[cfg(target_os = "macos")]
+pub async fn upload_disarm(app: &AppHandle, session: String, args: &Value) -> Result<(), String> {
+    let mut target = upload_target(args, "__upload_disarm");
+    if let Some(object) = target.as_object_mut() {
+        object.remove("_zorvoCallId");
+        object.remove("_zorvoGrant");
+    }
+    native::execute(app, session, target).await.map(|_| ())
+}
+
 #[tauri::command]
 pub async fn browser_bounds(
     app: AppHandle,
@@ -293,6 +387,7 @@ pub async fn browser_bounds(
 }
 
 pub fn close_session(app: &AppHandle, session_id: String) {
+    crate::browser_upload::forget(&session_id);
     #[cfg(target_os = "macos")]
     {
         native::close_session(app, session_id);

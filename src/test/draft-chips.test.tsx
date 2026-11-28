@@ -172,7 +172,7 @@ describe("the agent chip", () => {
     expect(dialog.getByText("Pick more than one to compare")).toBeInTheDocument();
     expect(dialog.getByText("With two or more agents, each runs in its own worktree in its safest mode.")).toBeInTheDocument();
     expect(dialog.getByText("Ready")).toBeInTheDocument();
-    expect(dialog.getByText("Not checked")).toBeInTheDocument();
+    expect(dialog.getByText("Not checked yet")).toBeInTheDocument();
     expect(dialog.getByRole("option", { name: "Codex" }).querySelector("img, [aria-hidden='true']")).not.toBeNull();
   });
 

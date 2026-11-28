@@ -8,6 +8,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - Continue a conversation with another agent: pick it from the agent menu in the composer, and your message starts its session with the conversation so far, or pick it from Fork from here under any reply. The new session marks where it continued.
 
+### Fixed
+
+- **Next step buttons match the active branch and stay flexible.** Switching branches no longer carries over an earlier branch's pull request; `wrap_up` now supports `push` and up to three custom replies of 40 characters each, `Create PR` adapts its message when commits are already made, and earlier turn boxes no longer show disabled buttons.
+
 ## [0.22.1] - 2026-11-27
 
 ### Added

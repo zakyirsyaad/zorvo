@@ -514,7 +514,7 @@ export interface ChatMessage {
 }
 
 /** An action a next-step box can offer; the agent may pick one of them in `wrap_up`. */
-export type NextStepAction = 'commit' | 'create_pr' | 'merge' | 'auto_merge' | 'open_preview' | 'open_pr';
+export type NextStepAction = 'commit' | 'push' | 'create_pr' | 'merge' | 'auto_merge' | 'open_preview' | 'open_pr';
 
 /** What an agent's `wrap_up` left on its reply, and what the user pressed in the box. */
 export interface NextStep {

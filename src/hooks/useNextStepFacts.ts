@@ -108,20 +108,21 @@ function factsOf(
     .filter((task) => task.kind === 'shell' && task.sessionId === session.id && (task.ports?.length ?? 0) > 0)
     .flatMap((task) => (task.ports ?? []).map((port) => ({ port, command: task.name })))
     .sort((a, b) => a.port - b.port);
+  const matchingPr = pullRequest && (!own?.branch || pullRequest.branch === own.branch) ? pullRequest : null;
   return {
     ...(own?.changes ? { changes: own.changes } : {}),
     ...(own?.branch !== undefined ? { branch: own.branch } : {}),
     ...(own?.ahead !== undefined ? { ahead: own.ahead } : {}),
     ...(own?.hasUpstream !== undefined ? { hasUpstream: own.hasUpstream } : {}),
     ...(own?.isDefaultBranch !== undefined ? { isDefaultBranch: own.isDefaultBranch } : {}),
-    ...(pullRequest
+    ...(matchingPr
       ? {
           pr: {
-            number: pullRequest.number,
-            url: pullRequest.url,
-            state: pullRequest.state,
-            checks: pullRequest.checks,
-            ...(pullRequest.mergeState ? { mergeState: pullRequest.mergeState } : {}),
+            number: matchingPr.number,
+            url: matchingPr.url,
+            state: matchingPr.state,
+            checks: matchingPr.checks,
+            ...(matchingPr.mergeState ? { mergeState: matchingPr.mergeState } : {}),
           },
         }
       : {}),

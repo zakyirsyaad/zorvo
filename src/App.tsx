@@ -1519,6 +1519,21 @@ export default function App() {
           onRenameSession={sessionActions.renameSession}
           onPinSession={sessionActions.pinSession}
           onArchiveSession={(sessionId, isArchived) => void handleArchiveSession(sessionId, isArchived)}
+          onRevealFolder={(path) => shell.revealFolder(path)}
+          onCopyFolderPath={(path) => {
+            if (!navigator.clipboard?.writeText) {
+              setNotice("Could not copy the folder path.");
+              return;
+            }
+            void navigator.clipboard.writeText(path).catch((error) => {
+              setNotice(`Could not copy the folder path: ${String(error)}`);
+            });
+          }}
+          onArchiveFolderSessions={(path) => void sessionActions.archiveWorkspaceSessions(path, isSessionBusy)}
+          onRemoveFolder={(path) => {
+            sessionActions.deleteWorkspaceSessions(path);
+            removeFolder(path);
+          }}
           footer={
             <ProfileFooter
               name={userProfile.name}

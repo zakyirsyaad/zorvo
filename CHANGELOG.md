@@ -6,6 +6,7 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ### Added
 
+- Right-click context menu (and hover `⋯` menu) on project folders in the sidebar to start a new session, reveal in Finder, copy the folder path, collapse or expand, archive idle sessions, or permanently remove the project and its sessions from Zorvo (without deleting files on disk).
 - Continue a conversation with another agent: pick it from the agent menu in the composer, and your message starts its session with the conversation so far, or pick it from Fork from here under any reply. The new session marks where it continued.
 
 ### Changed

@@ -61,7 +61,7 @@ async fn run(app: &AppHandle, url: &str, served: Arc<Served>) -> Result<Value, S
         .as_str()
         .ok_or("Placement browser tab missing.")?
         .to_string();
-    super::dialog_smoke::wait_document(app, SESSION, &tab, url, None).await?;
+    super::smoke::wait_document(app, SESSION, &tab, url, None).await?;
     execute(app, SESSION.into(), json!({"operation":"fill","tabId":tab,"selector":"#input","value":"retained while showing artifact"})).await?;
     let before = evaluate(app, &tab, "window.smokeDocument").await?;
     let shown = store.show(SESSION, "/placement.html", Some("Placement integration"),

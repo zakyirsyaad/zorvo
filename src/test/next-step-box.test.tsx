@@ -75,12 +75,15 @@ describe("NextStepBox", () => {
     expect(screen.getByText("Sign in to Claude Code to send.")).toBeTruthy();
   });
 
-  it("shows an earlier turn's box inert, with the answer", () => {
-    render(<NextStepBox step={{ ...STEP, answered: { label: "Create PR", at: 1 } }} agentName="Claude Code" view={null} />);
+  it("shows an earlier turn's box inert without disabled buttons, keeping the recorded answer", () => {
+    const { rerender } = render(<NextStepBox step={{ ...STEP, answered: { label: "Create PR", at: 1 } }} agentName="Claude Code" view={null} />);
     const box = screen.getByRole("region", { name: "Next step" });
     expect(box.textContent).not.toContain("feat/status-words");
-    expect(screen.getAllByRole("button").every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
     expect(box.textContent).toContain("You answered Create PR");
+
+    rerender(<NextStepBox step={STEP} agentName="Claude Code" view={null} />);
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
   });
 
   it("shows the words only in a popout", () => {

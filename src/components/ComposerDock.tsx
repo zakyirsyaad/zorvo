@@ -750,7 +750,7 @@ export function ComposerDock({
 
         {/* Wraps instead of overflowing: a draft can show folder, agent, mode, model and effort at once. */}
         <div data-composer-row="" className="flex flex-wrap items-center gap-1 text-ui-sm">
-          <div className="flex min-w-0 flex-wrap items-center gap-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-0.5">
             {onAttach && (
               <IconButton
                 label="Add attachment"
@@ -834,54 +834,65 @@ export function ComposerDock({
 
           </div>
 
-          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          <div className="ml-auto flex shrink-0 items-center justify-end gap-1.5">
             {contextUsage && <ContextMeter {...contextUsage} onOpen={onOpenContext} />}
             {privateSessionLine && (
               <span className="text-caption text-fg-subtle">{privateSessionLine}</span>
             )}
 
-            {isThinking && onStop && (
-              <IconButton
-                variant="outline"
-                label="Stop agent"
-                title="Stop the agent's current turn"
-                onClick={onStop}
-              >
-                <Square size={11} />
-              </IconButton>
-            )}
-            {isQueueing ? (
-              <IconButton
-                variant="primary"
-                label="Queue message"
-                title={agentName ? `Sent when ${agentName} finishes.` : "Sent when the turn ends."}
-                aria-describedby={sendBlockedNoteId}
-                onClick={handleSend}
-                disabled={isSendEmpty || !canSend}
-              >
-                <ArrowUp size={14} />
-              </IconButton>
-            ) : isThinking && onStop ? null : sendLabel ? (
-              <Button
-                variant="primary"
-                aria-describedby={sendBlockedNoteId}
-                onClick={handleSend}
-                disabled={isSendEmpty || !canSend}
-              >
-                {sendLabel}
-                <ArrowUp size={12} aria-hidden="true" />
-              </Button>
-            ) : (
-              <IconButton
-                variant="primary"
-                label={sendName ?? "Send message"}
-                aria-describedby={sendBlockedNoteId}
-                onClick={handleSend}
-                disabled={isSendEmpty || !canSend}
-              >
-                <ArrowUp size={14} />
-              </IconButton>
-            )}
+            {(() => {
+              // One action slot: Stop while a turn runs and the box is empty; Queue once the user types or attaches.
+              if (isQueueing && !isSendEmpty) {
+                return (
+                  <IconButton
+                    variant="primary"
+                    label="Queue message"
+                    title={agentName ? `Sent when ${agentName} finishes.` : "Sent when the turn ends."}
+                    aria-describedby={sendBlockedNoteId}
+                    onClick={handleSend}
+                    disabled={!canSend}
+                  >
+                    <ArrowUp size={14} />
+                  </IconButton>
+                );
+              }
+              if (isThinking && onStop) {
+                return (
+                  <IconButton
+                    variant="outline"
+                    label="Stop agent"
+                    title="Stop the agent's current turn"
+                    onClick={onStop}
+                  >
+                    <Square size={11} />
+                  </IconButton>
+                );
+              }
+              if (sendLabel) {
+                return (
+                  <Button
+                    variant="primary"
+                    aria-describedby={sendBlockedNoteId}
+                    onClick={handleSend}
+                    disabled={isSendEmpty || !canSend}
+                  >
+                    {sendLabel}
+                    <ArrowUp size={12} aria-hidden="true" />
+                  </Button>
+                );
+              }
+              return (
+                <IconButton
+                  variant="primary"
+                  label={sendName ?? "Send message"}
+                  aria-describedby={sendBlockedNoteId}
+                  onClick={handleSend}
+                  disabled={isSendEmpty || !canSend}
+                >
+                  <ArrowUp size={14} />
+                </IconButton>
+              );
+            })()}
           </div>
         </div>
         {privateDraft?.paymentLine && (

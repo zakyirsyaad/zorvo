@@ -8,6 +8,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - Continue a conversation with another agent: pick it from the agent menu in the composer, and your message starts its session with the conversation so far, or pick it from Fork from here under any reply. The new session marks where it continued.
 
+### Changed
+
+- **One Send / Stop button in the composer.** While a turn runs, the composer shows Stop when the box is empty and switches to Queue message once you type or attach files, instead of showing both buttons side by side; tighter chip spacing keeps the composer bar on one row.
+
 ## [0.22.1] - 2026-11-27
 
 ### Added

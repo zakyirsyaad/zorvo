@@ -1597,6 +1597,14 @@ export default function App() {
                       agentName={activeAgent?.name}
                       agentProfileId={activeSession?.profileId}
                       onForkBranch={(messageId) => void forkSession(messageId)}
+                      continuedFromOf={(mark) => {
+                        const origin = sessions.find((session) => session.id === mark.sessionId);
+                        return {
+                          agentName: activeAgent?.name ?? "The agent",
+                          sourceName: origin?.name ?? null,
+                          onOpenSource: origin ? () => handleSelectSession(origin.id) : undefined,
+                        };
+                      }}
                       onReply={(quote) => composerRef.current?.insertText(quote)}
                       onOpenUrl={openLink}
                       privateModelId={activeSession?.privateMode?.modelId}

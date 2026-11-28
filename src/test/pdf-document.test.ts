@@ -35,8 +35,7 @@ describe("openPdf", () => {
   });
 
   it("keeps the task alive for a file that opens, and ends it when the document is destroyed", async () => {
-    const destroyDocument = vi.fn(() => Promise.resolve());
-    outcome = () => Promise.resolve({ numPages: 2, getPage: () => Promise.resolve(page), destroy: destroyDocument });
+    outcome = () => Promise.resolve({ numPages: 2, getPage: () => Promise.resolve(page) });
 
     const doc = await openPdf(new Uint8Array([1]));
 
@@ -44,6 +43,6 @@ describe("openPdf", () => {
     expect(doc.firstPageRatio).toBeCloseTo(1.4);
     expect(destroyTask).not.toHaveBeenCalled();
     doc.destroy();
-    expect(destroyDocument).toHaveBeenCalled();
+    expect(destroyTask).toHaveBeenCalledTimes(1);
   });
 });

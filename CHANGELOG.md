@@ -21,6 +21,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - **The session overview toggle lives in the top bar.** Folding the overview no longer leaves a floating pill inside the chat sheet; the top bar button beside the inspector opens and closes it on both wide and narrow sheets, with a dot when tasks are running while it is closed.
 - **One Send / Stop button in the composer.** While a turn runs, the composer shows Stop when the box is empty and switches to Queue message once you type or attach files, instead of showing both buttons side by side; tighter chip spacing keeps the composer bar on one row.
 
+- **Next step buttons match the active branch and stay flexible.** Switching branches no longer carries over an earlier branch's pull request; `wrap_up` now supports `push` and up to three custom replies of 40 characters each, `Create PR` adapts its message when commits are already made, and earlier turn boxes no longer show disabled buttons.
+
 ## [0.22.1] - 2026-11-27
 
 ### Added

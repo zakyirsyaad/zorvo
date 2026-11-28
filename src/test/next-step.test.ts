@@ -75,6 +75,11 @@ describe('offeredActions', () => {
     expect(offeredActions({}, { turnChanged: false, pick: 'commit' })).toEqual([]);
   });
 
+  it('offers Push when picked on unpushed commits or after changes on an open PR branch', () => {
+    expect(offeredActions({ ahead: 1, hasUpstream: false }, { turnChanged: false, pick: 'push' })).toEqual(['push']);
+    expect(offeredActions({ ahead: 1, hasUpstream: true, pr: pr() }, CHANGED)).toContain('push');
+  });
+
   it('keeps the two that only open a page whatever the turn did', () => {
     expect(offeredActions({ preview: { port: 5173, command: 'pnpm dev' } }, { turnChanged: false })).toEqual(['open_preview']);
   });
@@ -116,9 +121,11 @@ describe('buttonsOf', () => {
     expect(buttonsOf(undefined, facts, CHANGED).map((b) => b.label)).toEqual(['Commit', 'Create PR']);
   });
 
-  it('gives each action its message', () => {
+  it('gives each action its message, adapting Create PR when commits are already made', () => {
     const [commit] = buttonsOf(undefined, facts, CHANGED);
     expect(commit).toMatchObject({ kind: 'action', message: 'Commit the changes you made.' });
+    const [pushPr] = buttonsOf({ recap: 'Committed.', pick: 'create_pr' }, { ahead: 1, hasUpstream: false }, { turnChanged: false });
+    expect(pushPr).toMatchObject({ kind: 'action', action: 'create_pr', message: 'Push this branch and open a pull request.' });
   });
 });
 
@@ -158,6 +165,7 @@ describe('turnChangedFiles', () => {
 describe('messageOf', () => {
   it('has the exact sentences and none for the two that only open a page', () => {
     expect(messageOf('commit')).toBe('Commit the changes you made.');
+    expect(messageOf('push')).toBe('Push this branch.');
     expect(messageOf('create_pr')).toBe('Commit the changes you made, push them and open a pull request.');
     expect(messageOf('merge')).toBe('Merge the pull request.');
     expect(messageOf('auto_merge')).toBe('Turn on auto-merge for the pull request.');
@@ -168,6 +176,7 @@ describe('messageOf', () => {
   it('labels every action', () => {
     expect(ACTION_LABELS).toEqual({
       commit: 'Commit',
+      push: 'Push',
       create_pr: 'Create PR',
       merge: 'Merge',
       auto_merge: 'Turn on auto-merge',
@@ -187,9 +196,20 @@ describe('parseNextStep', () => {
     expect(parseNextStep({ answered: { label: 'Create PR', at: 1 } })).toEqual({ answered: { label: 'Create PR', at: 1 } });
   });
 
+  it('keeps up to three replies up to 40 chars and filters invalid items instead of dropping all', () => {
+    expect(parseNextStep({ recap: 'Done.', replies: ['Option 1', 'Option 2', 'Option 3 with a slightly longer label'] })).toEqual({
+      recap: 'Done.',
+      replies: ['Option 1', 'Option 2', 'Option 3 with a slightly longer label'],
+    });
+    expect(parseNextStep({ recap: 'Done.', replies: ['Keep me', 'x'.repeat(41), 'Also keep', 'Extra fourth'] })).toEqual({
+      recap: 'Done.',
+      replies: ['Keep me', 'Also keep', 'Extra fourth'],
+    });
+  });
+
   it('drops fields over their limits or of the wrong kind', () => {
     expect(parseNextStep({ recap: 'r'.repeat(301), ask: 'Ok?' })).toEqual({ ask: 'Ok?' });
-    expect(parseNextStep({ recap: 'Done.', replies: ['a', 'b', 'c'] })).toEqual({ recap: 'Done.' });
+    expect(parseNextStep({ recap: 'Done.', replies: ['x'.repeat(41)] })).toEqual({ recap: 'Done.' });
     expect(parseNextStep({ recap: 'Done.', pick: 'deploy' })).toEqual({ recap: 'Done.' });
     expect(parseNextStep({ recap: 'Done.', answered: { label: 3, at: 'x' } })).toEqual({ recap: 'Done.' });
   });

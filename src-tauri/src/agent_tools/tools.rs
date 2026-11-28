@@ -38,10 +38,11 @@ pub const MAX_FILES: usize = 50;
 /// `wrap_up`'s limits, in characters, and the actions an agent may pick.
 pub const MAX_RECAP_CHARS: usize = 300;
 pub const MAX_ASK_CHARS: usize = 100;
-pub const MAX_REPLIES: usize = 2;
-pub const MAX_REPLY_CHARS: usize = 24;
-pub const WRAP_UP_ACTIONS: [&str; 6] = [
+pub const MAX_REPLIES: usize = 3;
+pub const MAX_REPLY_CHARS: usize = 40;
+pub const WRAP_UP_ACTIONS: [&str; 7] = [
     "commit",
+    "push",
     "create_pr",
     "merge",
     "auto_merge",
@@ -179,7 +180,7 @@ pub fn tool_list() -> Value {
         json!({"name":"browser_guide","description":"List browser operations, parameters, engine limits and permission rules.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}),
         json!({
             "name": "wrap_up",
-            "description": "Call once at the end of a turn that changed files or leaves the user a decision. recap: two or three short sentences on what is now true and what is not done. ask: the one decision that is the user's, as a question. pick: the action you recommend, if Zorvo offers it. replies: up to two short answers the user may give. Then end your turn.",
+            "description": "Call once at the end of a turn that changed files or leaves the user a decision. recap: two or three short sentences on what is now true and what is not done. ask: the one decision that is the user's, as a question. pick: the action you recommend, if Zorvo offers it. replies: up to three short answers the user may give. Then end your turn.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1305,8 +1306,8 @@ mod tests {
         let cases = [
             json!({"recap": "r".repeat(301)}),
             json!({"recap": "Done.", "ask": "a".repeat(101)}),
-            json!({"recap": "Done.", "replies": ["a", "b", "c"]}),
-            json!({"recap": "Done.", "replies": ["x".repeat(25)]}),
+            json!({"recap": "Done.", "replies": ["a", "b", "c", "d"]}),
+            json!({"recap": "Done.", "replies": ["x".repeat(41)]}),
             json!({"recap": "Done.", "pick": "deploy"}),
         ];
         for case in cases {
@@ -1325,13 +1326,16 @@ mod tests {
     fn wrap_up_trims_and_keeps_its_fields() {
         let clean = validate(
             "wrap_up",
-            &json!({"recap": " Done. ", "ask": "Merge?", "pick": "merge", "replies": ["Not yet"]}),
+            &json!({"recap": " Done. ", "ask": "Push?", "pick": "push", "replies": ["Not yet", "Open PR instead", "Keep local"]}),
         )
         .unwrap();
         assert_eq!(clean["recap"], "Done.");
-        assert_eq!(clean["ask"], "Merge?");
-        assert_eq!(clean["pick"], "merge");
-        assert_eq!(clean["replies"], json!(["Not yet"]));
+        assert_eq!(clean["ask"], "Push?");
+        assert_eq!(clean["pick"], "push");
+        assert_eq!(
+            clean["replies"],
+            json!(["Not yet", "Open PR instead", "Keep local"])
+        );
     }
     #[test]
     fn show_visual_takes_exactly_one_source() {

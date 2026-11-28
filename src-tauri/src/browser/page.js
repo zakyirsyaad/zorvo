@@ -31,6 +31,13 @@
     }
     return pickText(levels.join(' > '), 2048);
   }
+  window.addEventListener('click', event => {
+    if (!event.isTrusted || window !== window.top || picker) return;
+    const link = event.composedPath().find(node => node instanceof HTMLAnchorElement);
+    if (link?.target.toLowerCase() === '_blank' && /^https?:\/\//i.test(link.href)) {
+      post({kind:'popup-link', document:prefix, url:link.href});
+    }
+  }, true);
   // Capture handlers are installed at document start before page-authored handlers.
   // Hover stays inside the native page; only a trusted final click crosses the data handler.
   window.addEventListener('pointermove', event => {
@@ -59,7 +66,6 @@
       event.preventDefault(); event.stopImmediatePropagation(); stopPicker(true);
     }
   }, true);
-  const name = el => bounded(el.getAttribute('aria-label') || el.labels?.[0]?.textContent || el.getAttribute('alt') || el.getAttribute('title') || el.textContent || el.getAttribute('placeholder')) .trim();
   function ref(el) {
     let id = reverse.get(el);
     if (!id || !refs.has(id)) {
@@ -80,9 +86,34 @@
     }
     return elements.slice(0, 1000);
   }
+  // Snapshots are a default read, so never include credentials or payment data
+  // already present in a form. Explicit page-world evaluate remains grant-bound.
+  const sensitiveValue = el => el.type === 'password' || (el.getAttribute('autocomplete') || '').toLowerCase().split(/\s+/)
+    .some(token => ['current-password', 'new-password', 'one-time-code'].includes(token) || token.startsWith('cc-'));
+  // Textarea defaults also appear inside wrapping labels. Exclude sensitive
+  // control subtrees from both generated names and the default page text.
+  // Text nodes include what the page hides, which innerText left out. Where
+  // WebKit can say so (Safari 17.4), an element that is not rendered is skipped.
+  const rendered = el => typeof el.checkVisibility !== 'function' || el.checkVisibility({checkVisibilityCSS:true, visibilityProperty:true});
+  function readableText(root, limit = 1000) {
+    if (!root || sensitiveValue(root)) return '';
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        if (node.parentElement && !rendered(node.parentElement)) return NodeFilter.FILTER_REJECT;
+        for (let parent = node.parentElement; parent; parent = parent.parentElement) {
+          if (sensitiveValue(parent) || ['SCRIPT','STYLE','NOSCRIPT','TEMPLATE'].includes(parent.tagName)) return NodeFilter.FILTER_REJECT;
+          if (parent === root) break;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    let text = '', count = 0, node;
+    while (count++ < 20000 && text.length < limit && (node = walker.nextNode())) text += node.textContent + ' ';
+    return bounded(text, limit);
+  }
+  const name = el => bounded(el.getAttribute('aria-label') || readableText(el.labels?.[0]) || el.getAttribute('alt') || el.getAttribute('title') || readableText(el) || el.getAttribute('placeholder')).trim();
   const describe = el => ({ref: ref(el), role: el.getAttribute('role') || el.localName, name: name(el),
-    // A password stays in the page: its type and ref are enough to fill the field.
-    ...(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement ? {...(el.type === 'password' ? {} : {value: bounded(el.value)}), type: el.type, disabled: el.disabled} : {}),
+    ...(el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement ? {...(!sensitiveValue(el) ? {value: bounded(el.value)} : {}), type: el.type, disabled: el.disabled} : {}),
     ...(el instanceof HTMLInputElement && ['checkbox','radio'].includes(el.type) ? {checked: el.checked} : {}),
     ...(el instanceof HTMLAnchorElement ? {url: bounded(el.href, 8192)} : {})});
   function fill(el, value) {
@@ -152,7 +183,7 @@
             picker = {nonce:a.nonce,overlay,timer:setTimeout(() => stopPicker(true),60000)};
             return result({active:true});
           }
-          case 'snapshot': return result({engine:'WebKit', url:location.href, title:document.title, controls:controls().map(describe), text:bounded(document.body?.innerText, 30000), documentHidden:document.hidden});
+          case 'snapshot': return result({engine:'WebKit', url:location.href, title:document.title, controls:controls().map(describe), text:readableText(document.body, 30000), documentHidden:document.hidden});
           case 'find': { const term = bounded(a.text ?? a.query).toLowerCase(); return result(controls().filter(e => name(e).toLowerCase().includes(term)).map(describe)); }
           case 'wait': {
             const end = performance.now() + Math.min(30000, Math.max(0, Number(a.timeoutMs ?? 10000)));
@@ -167,29 +198,8 @@
             el.scrollBy({left:Number(a.x ?? a.deltaX ?? 0), top:Number(a.y ?? a.deltaY ?? 600), behavior:'instant'});
             return result({scrolled:true});
           }
-          case 'fill_form':
-            if (!Array.isArray(a.fields) || a.fields.length > 100) throw new Error('Provide up to 100 fields.');
-            for (const field of a.fields) {
-              const input=target(field);
-              if (input instanceof HTMLInputElement && ['checkbox','radio'].includes(input.type)) { if(input.checked!==Boolean(field.value)) input.click(); }
-              else if (input instanceof HTMLSelectElement) {
-                const values=Array.isArray(field.value)?field.value.map(String):[String(field.value)];
-                for(const option of input.options) option.selected=values.includes(option.value);
-                input.dispatchEvent(new Event('input',{bubbles:true})); input.dispatchEvent(new Event('change',{bubbles:true}));
-              } else fill(input, bounded(field.value, 100000));
-            }
-            return result({filled:a.fields.length});
           case 'click': el=target(a); if(a.button && a.button!=='left') el.dispatchEvent(new MouseEvent(a.button==='right'?'contextmenu':'auxclick',{bubbles:true,button:a.button==='right'?2:1})); else { el.click(); if(a.count===2){el.click();el.dispatchEvent(new MouseEvent('dblclick',{bubbles:true,detail:2}));} } return result({clicked:true, trusted:false});
           case 'upload_target': el=target(a); return result({fileInput: el instanceof HTMLInputElement && el.type==='file' && !el.disabled});
-          case 'hover': el=target(a); el.dispatchEvent(new MouseEvent('mouseover',{bubbles:true})); el.dispatchEvent(new MouseEvent('mousemove',{bubbles:true})); return result({hovered:true,trusted:false});
-          case 'drag': {
-            el=target({...a,ref:a.from??a.ref}); const to=target({ref:a.to??a.toRef,selector:a.toSelector}); const dataTransfer=new DataTransfer();
-            el.dispatchEvent(new DragEvent('dragstart',{bubbles:true,dataTransfer}));
-            to.dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer}));
-            to.dispatchEvent(new DragEvent('drop',{bubbles:true,dataTransfer}));
-            el.dispatchEvent(new DragEvent('dragend',{bubbles:true,dataTransfer}));
-            return result({dragged:true,trusted:false});
-          }
           case 'fill': fill(target(a), bounded(a.value ?? a.text, 100000)); return result({filled:true,trusted:false});
           case 'select': {
             el=target(a); if (!(el instanceof HTMLSelectElement)) throw new Error('The element is not a select.');
@@ -199,16 +209,13 @@
             return result({values:[...el.selectedOptions].map(o=>o.value)});
           }
           case 'check': el=target(a); if (!(el instanceof HTMLInputElement) || !['checkbox','radio'].includes(el.type)) throw new Error('The element is not a checkbox or radio.'); if(el.checked !== (a.checked ?? true)) el.click(); return result({checked:el.checked});
-          case 'press': {
-            el=a.ref||a.selector?target(a):document.activeElement; if(!el) throw new Error('No element is focused.');
-            const key=bounded(a.key,64); el.dispatchEvent(new KeyboardEvent('keydown',{key,bubbles:true}));
-            if(key==='Enter' && el.form) el.form.requestSubmit();
-            el.dispatchEvent(new KeyboardEvent('keyup',{key,bubbles:true})); return result({pressed:key,trusted:false});
-          }
           default: throw new Error('Unsupported embedded browser operation.');
         }
       } catch (error) { return JSON.stringify({ok:false,error:bounded(error.message,2000)}); }
     }
   })});
   post({kind:'frame',document:prefix});
+  // A page restored from the back-forward cache keeps this helper and runs no
+  // document-start script, so it has to say again which document is showing.
+  window.addEventListener('pageshow', event => { if (event.persisted) post({kind:'frame',document:prefix}); });
 })();

@@ -1,4 +1,4 @@
-export type BrowserEngine = "webkit" | "chromium";
+export type BrowserEngine = "webkit";
 
 export interface BrowserTab {
   id: string;
@@ -8,6 +8,7 @@ export interface BrowserTab {
   canGoBack: boolean;
   canGoForward: boolean;
   zoomFactor?: number;
+  blockedPopup?: string | null;
 }
 
 export interface BrowserVisit {
@@ -20,13 +21,12 @@ export interface BrowserSessionState {
   sessionId: string;
   tabs: BrowserTab[];
   activeTabId: string | null;
-  dialog?: { type: "alert" | "confirm" | "prompt"; message: string; defaultText?: string; url: string } | null;
 }
 
-/** Address-bar text is a destination or an explicit search, never a shell command. */
+/** Address-bar text must identify a web destination; it is never sent to a search provider. */
 export function browserAddress(input: string): string {
   const text = input.trim();
-  if (!text) throw new Error("Enter an address or search terms.");
+  if (!text) throw new Error("Enter an HTTP or HTTPS address.");
   if (/^(?:\/|~\/|[a-z]:[\\/])/i.test(text)) throw new Error("Use the Files tab to open a local path.");
   // "TODO: fix login" starts like a scheme too; an address has no white space after it.
   const hasScheme = /^https?:\/\//i.test(text) || (/^[a-z][a-z\d+.-]*:/i.test(text) && !/\s/.test(text));
@@ -39,7 +39,7 @@ export function browserAddress(input: string): string {
   if (!/\s/.test(text) && (/^(localhost|127\.\d+\.\d+\.\d+|\[::1\])(?::\d+)?(?:\/|$)/i.test(text) || /^[\w-]+(?:\.[\w-]+)+(?::\d+)?(?:[/?#]|$)/.test(text))) {
     return new URL((/^(localhost|127\.|\[::1\])/i.test(text) ? "http://" : "https://") + text).href;
   }
-  return "https://www.google.com/search?q=" + encodeURIComponent(text);
+  throw new Error("Enter a complete web address, such as example.com or http://localhost:3000. Search is not configured.");
 }
 
 export const BROWSER_OPEN = "zorvo:browser-open";

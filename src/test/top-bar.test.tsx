@@ -291,6 +291,17 @@ describe("TopBar", () => {
       expect(onStopAllowingDelegation).toHaveBeenCalledTimes(1);
     });
 
+    it("keeps browser revocation beside delegation revocation", () => {
+      const onStopAllowingBrowser = vi.fn();
+      renderTopBar({ sessionName: "Alpha", onStopAllowingDelegation: vi.fn(), onStopAllowingBrowser });
+      fireEvent.click(screen.getByRole("button", { name: "More options" }));
+      expect(screen.getAllByRole("menuitem").map(item => item.textContent)).toEqual([
+        "Stop allowing delegation", "Stop allowing browser access",
+      ]);
+      fireEvent.click(screen.getByRole("menuitem", { name: "Stop allowing browser access" }));
+      expect(onStopAllowingBrowser).toHaveBeenCalledOnce();
+    });
+
     it("offers Stop computer use only while the session holds a grant", () => {
       const onStopComputerUse = vi.fn();
       renderTopBar({ sessionName: "Alpha", onArchive: vi.fn(), onStopComputerUse });
@@ -442,6 +453,40 @@ describe("TopBar", () => {
     it("has no background-task chip: a session's tasks are in its overview card", () => {
       renderTopBar({ sessionName: "A" });
       expect(screen.queryByRole("button", { name: /background task/ })).toBeNull();
+    });
+  });
+
+  describe("session overview toggle", () => {
+    it("renders no overview button without onToggleOverview", () => {
+      renderTopBar({ sessionName: "A" });
+      expect(screen.queryByRole("button", { name: /session overview/i })).toBeNull();
+    });
+
+    it("toggles session overview and reflects open state via aria-pressed", () => {
+      const onToggleOverview = vi.fn();
+      const { rerender } = renderTopBar({
+        sessionName: "A",
+        onToggleOverview,
+        isOverviewOpen: true,
+      });
+
+      const hideButton = screen.getByRole("button", { name: "Hide session overview" });
+      expect(hideButton.getAttribute("aria-pressed")).toBe("true");
+      fireEvent.click(hideButton);
+      expect(onToggleOverview).toHaveBeenCalledTimes(1);
+
+      rerender(
+        <TopBar
+          sessionName="A"
+          onToggleOverview={onToggleOverview}
+          isOverviewOpen={false}
+          overviewRunningCount={3}
+        />,
+      );
+      const showButton = screen.getByRole("button", { name: "Show session overview: 3 running" });
+      expect(showButton.getAttribute("aria-pressed")).toBe("false");
+      fireEvent.click(showButton);
+      expect(onToggleOverview).toHaveBeenCalledTimes(2);
     });
   });
 

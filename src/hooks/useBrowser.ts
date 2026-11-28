@@ -22,13 +22,12 @@ export function useBrowser(sessionId: string, engine: BrowserEngine) {
 
   useEffect(() => {
     let active = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
     const epoch = ++generation.current;
     setState({ sessionId, tabs: [], activeTabId: null });
     setError(null);
     setBusy(false);
     const unlisten = listen<unknown>("browser-state-changed", event => {
-      if (!active || engine !== "webkit") return;
+      if (!active) return;
       const next = readBrowserState(event.payload, sessionId);
       if (next) {
         refreshId.current++;
@@ -38,19 +37,13 @@ export function useBrowser(sessionId: string, engine: BrowserEngine) {
     const read = async () => {
       if (!active) return;
       try {
-        if (engine === "webkit" || !executions.current.has(epoch)) await refresh();
+        await refresh();
       } catch (reason) { if (active) setError(String(reason)); }
-      finally {
-        // Chromium can navigate or close from its separate window or an agent.
-        // Read metadata only, and wait for each read before scheduling another.
-        if (active && engine === "chromium") timer = setTimeout(() => { void read(); }, 2_000);
-      }
     };
     // Subscribe before reading, so an open-tab event cannot be lost during mount.
     void unlisten.then(read);
     return () => {
       active = false;
-      clearTimeout(timer);
       generation.current = epoch + 1;
       void unlisten.then(stop => stop());
     };

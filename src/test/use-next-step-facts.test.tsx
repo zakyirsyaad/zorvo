@@ -72,4 +72,18 @@ describe("useNextStepFacts", () => {
     window.dispatchEvent(new Event("focus"));
     await waitFor(() => expect(calls("session_branch_state")).toHaveLength(2));
   });
+
+  it("ignores a pull request that belongs to a different branch", async () => {
+    const stalePr: PullRequestStatus = { ...PR, branch: "feat/other-branch", number: 362 };
+    const { result } = renderHook(() => useNextStepFacts({ session: SESSION, isActive: true, pullRequest: stalePr, tasks: [] }));
+    await waitFor(() => expect(result.current.branch).toBe("feat/status-words"));
+    expect(result.current.pr).toBeUndefined();
+  });
+
+  it("withholds pullRequest until the session's own branch has been read", () => {
+    answer(() => new Promise(() => {}));
+    const { result } = renderHook(() => useNextStepFacts({ session: SESSION, isActive: true, pullRequest: PR, tasks: [] }));
+    expect(result.current.branch).toBeUndefined();
+    expect(result.current.pr).toBeUndefined();
+  });
 });

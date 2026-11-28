@@ -50,7 +50,7 @@
   --color-line-selected: rgba(161, 161, 170, 0.18);
 
   /* The chat's column: messages, cards, notices and the composer share it. */
-  --container-chat: 720px;
+  --container-chat: 640px;
   /* The new-session draft's column, and the compare run's columns side by side. */
   --container-draft: 780px;
   --container-compare: 1040px;

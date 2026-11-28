@@ -733,6 +733,7 @@ describe("the composer while another agent is picked", () => {
     render(
       <ComposerDock
         onSendMessage={() => {}}
+        agentPicker={{ targets, pickedId: "claude-acp", isPrivate: false, onPick: vi.fn() }}
         switchNote={{ text: "Your message starts a new Claude Code session that continues this one.", keepLabel: "Keep Qwen Code", onKeep }}
       />,
     );
@@ -761,13 +762,26 @@ describe("the composer while another agent is picked", () => {
     expect(screen.getByRole("button", { name: "Send to Claude Code in a new session" })).toBeInTheDocument();
   });
 
+  it("a composer with no agent picker has no switch live region", () => {
+    render(<ComposerDock onSendMessage={() => {}} />);
+
+    expect(document.querySelector("[data-switch-status]")).toBeNull();
+  });
+
   it("keeps the switch note's live region mounted before there is a note", () => {
-    const { rerender } = render(<ComposerDock onSendMessage={() => {}} />);
+    const picker = { targets, pickedId: "qwen-code", isPrivate: false, onPick: vi.fn() };
+    const { rerender } = render(<ComposerDock onSendMessage={() => {}} agentPicker={picker} />);
     const region = document.querySelector("[data-switch-status]");
     expect(region).not.toBeNull();
     expect(region?.textContent).toBe("");
 
-    rerender(<ComposerDock onSendMessage={() => {}} switchNote={{ text: "Starts a new session.", keepLabel: "Keep Qwen Code", onKeep: vi.fn() }} />);
+    rerender(
+      <ComposerDock
+        onSendMessage={() => {}}
+        agentPicker={picker}
+        switchNote={{ text: "Starts a new session.", keepLabel: "Keep Qwen Code", onKeep: vi.fn() }}
+      />,
+    );
 
     expect(document.querySelector("[data-switch-status]")).toBe(region);
     expect(region?.textContent).toBe("Starts a new session.");

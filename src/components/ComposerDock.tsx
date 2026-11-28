@@ -645,10 +645,12 @@ export function ComposerDock({
 
   return (
     <footer ref={containerRef} className={`w-full ${isDraft ? "max-w-draft" : "max-w-chat"} flex flex-col items-center select-none`}>
-      {/* Always mounted: a live region inserted with its text is often not read out. */}
-      <span role="status" data-switch-status="" className="sr-only">
-        {switchNote?.text ?? ""}
-      </span>
+      {/* Mounted with the agent picker, before any pick: a live region inserted with its text is often not read out. */}
+      {agentPicker && (
+        <span role="status" data-switch-status="" className="sr-only">
+          {switchNote?.text ?? ""}
+        </span>
+      )}
       {switchNote && (
         <div className="mb-3 flex w-full items-center gap-2 rounded-panel border border-border bg-surface-2 py-2 pl-3 pr-2 text-ui-sm text-fg-secondary">
           <Repeat size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />

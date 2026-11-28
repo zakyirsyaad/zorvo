@@ -277,6 +277,17 @@ async fn run(app: &AppHandle, url: &str, owned: &mut BTreeSet<i32>) -> Result<Va
     )
     .await?;
     let shared = evaluate(app, SESSION, &pages[1].tab, "document.cookie").await?;
+    // Ending an agent revokes its browser grant, but the session's manual
+    // pages, in-memory login store and unfinished form remain until deletion.
+    crate::browser_commands::forget(app, SESSION);
+    for page in &pages {
+        check_page(app, page).await?;
+    }
+    if evaluate(app, SESSION, &pages[0].tab, "document.cookie").await? != shared {
+        return Err(
+            "Revoking an ended agent's browser grant discarded manual page cookies.".into(),
+        );
+    }
     let other = open(app, OTHER, url).await?;
     process_sample(&super::native::smoke_state(app).await?, owned);
     let separate = evaluate(app, OTHER, &other, "document.cookie").await?;

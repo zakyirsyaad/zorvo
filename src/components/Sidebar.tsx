@@ -54,6 +54,11 @@ export interface SidebarProps {
   onRenameSession?: (sessionId: string, name: string) => void;
   onPinSession?: (sessionId: string, isPinned: boolean) => void;
   onArchiveSession?: (sessionId: string, isArchived: boolean) => void;
+  /** Each is offered in a folder's right-click / ⋯ menu when given. */
+  onRevealFolder?: (path: string) => void;
+  onCopyFolderPath?: (path: string) => void;
+  onArchiveFolderSessions?: (path: string) => void;
+  onRemoveFolder?: (path: string) => void;
   /** Bottom bar content, e.g. the user's profile. */
   footer?: ReactNode;
   /** Hidden, the sidebar stays mounted, so its folds and its search are there when it comes back. */
@@ -144,6 +149,10 @@ export function Sidebar({
   onRenameSession,
   onPinSession,
   onArchiveSession,
+  onRevealFolder,
+  onCopyFolderPath,
+  onArchiveFolderSessions,
+  onRemoveFolder,
   footer,
   isHidden = false,
   onHide,
@@ -271,20 +280,31 @@ export function Sidebar({
           </p>
         )}
         <ul aria-label="Workspaces" className="space-y-3">
-          {groups.map((group) => (
-            <FolderGroup
-              key={group.path}
-              group={group}
-              isActive={group.path === activeWorkspacePath}
-              isFolded={collapsedPaths.has(group.path)}
-              isForcedOpen={query !== "" || filter !== "all"}
-              onToggle={() => toggle(group.path)}
-              context={context}
-              agents={detectedAgents}
-              defaultAgentId={defaultAgentId}
-              onNewSessionIn={onNewSessionIn}
-            />
-          ))}
+          {groups.map((group) => {
+            const folderSessions = sessions.filter((s) => workspacePathOf(s) === group.path);
+            const hasBusySessions = folderSessions.some((s) => isSessionBusy(s.id));
+            const hasIdleSessions = folderSessions.some((s) => !isArchived(s) && !isSessionBusy(s.id));
+            return (
+              <FolderGroup
+                key={group.path}
+                group={group}
+                isActive={group.path === activeWorkspacePath}
+                isFolded={collapsedPaths.has(group.path)}
+                isForcedOpen={query !== "" || filter !== "all"}
+                onToggle={() => toggle(group.path)}
+                context={context}
+                agents={detectedAgents}
+                defaultAgentId={defaultAgentId}
+                onNewSessionIn={onNewSessionIn}
+                onRevealFolder={onRevealFolder}
+                onCopyFolderPath={onCopyFolderPath}
+                onArchiveFolderSessions={onArchiveFolderSessions}
+                onRemoveFolder={onRemoveFolder}
+                hasIdleSessions={hasIdleSessions}
+                hasBusySessions={hasBusySessions}
+              />
+            );
+          })}
         </ul>
         {archived.length > 0 && (
           <>

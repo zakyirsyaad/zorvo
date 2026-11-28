@@ -883,3 +883,30 @@ describe("normalizeTranscript - tool diffs", () => {
     expect(message.tools?.[0].details).toEqual([]);
   });
 });
+
+describe("a saved continued-from mark", () => {
+  const first = { id: "u", role: "user", content: "Fix it", timestamp: 1_000 };
+
+  it("keeps a well-formed continuedFrom mark", () => {
+    const [message] = normalizeTranscript([{ ...first, continuedFrom: { sessionId: "s-1", agentId: "qwen-code" } }]);
+    expect(message.continuedFrom).toEqual({ sessionId: "s-1", agentId: "qwen-code" });
+  });
+
+  it("drops a continuedFrom mark with an empty or missing id", () => {
+    for (const mark of [{ sessionId: "", agentId: "x" }, { agentId: "x" }, "s-1"]) {
+      const [message] = normalizeTranscript([{ ...first, continuedFrom: mark }]);
+      expect(message.content).toBe("Fix it");
+      expect("continuedFrom" in message).toBe(false);
+    }
+  });
+});
+
+describe("a continued-from mark's taking agent", () => {
+  it("keeps toAgentId when it is a string and drops it otherwise", () => {
+    const first = { id: "u", role: "user", content: "Fix it", timestamp: 1_000 };
+    const [kept] = normalizeTranscript([{ ...first, continuedFrom: { sessionId: "s-1", agentId: "qwen-code", toAgentId: "claude-acp" } }]);
+    expect(kept.continuedFrom).toEqual({ sessionId: "s-1", agentId: "qwen-code", toAgentId: "claude-acp" });
+    const [dropped] = normalizeTranscript([{ ...first, continuedFrom: { sessionId: "s-1", agentId: "qwen-code", toAgentId: 3 } }]);
+    expect(dropped.continuedFrom).toEqual({ sessionId: "s-1", agentId: "qwen-code" });
+  });
+});

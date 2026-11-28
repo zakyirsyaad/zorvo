@@ -1,12 +1,14 @@
 import { useEffect, type MutableRefObject, type RefObject } from 'react';
 import type { ComposerHandle } from '../components/ComposerDock';
 import { NO_CHOICES, type AcpChoices, type AgentOptions } from '../lib/acp-draft';
+import { SWITCH_TEXT } from '../lib/agent-switch';
 import { delegationChoicesFor as delegationChoicesForOptions } from '../lib/delegation-start';
 import type { QueuedMessage } from '../lib/queued-messages';
 import { isAutoName } from '../lib/session-helpers';
 import { namingFor, titlePlaceOf } from '../lib/session-start';
 import type { AgentProfile, ChatMessage, Session, WorkerTurnEnd } from '../types';
 import type { FirstMessage } from './session-engine/useAcpEngine';
+import type { AgentSwitch } from './useAgentSwitch';
 import type { useDelegation } from './useDelegation';
 import { useQueuedMessages } from './useQueuedMessages';
 import type { ReviewWiring } from './useReviewWiring';
@@ -53,6 +55,8 @@ export interface MessageDeliveryWiringDeps {
   queueAgentEndedRef: MutableRefObject<(sessionId: string) => void>;
   queuePromptStartedRef: MutableRefObject<(sessionId: string) => void>;
   queueRewoundRef: MutableRefObject<(sessionId: string) => void>;
+  /** Another agent picked in the composer: the message starts its session instead of reaching this one. */
+  agentSwitch: Pick<AgentSwitch, 'pendingOf' | 'send'>;
 }
 
 /**
@@ -97,6 +101,7 @@ export function useMessageDeliveryWiring(deps: MessageDeliveryWiringDeps) {
     giveBackMessage,
     composerRef,
     onNotice,
+    agentSwitch,
     queueTurnSettledRef,
     queueAgentEndedRef,
     queuePromptStartedRef,
@@ -223,6 +228,25 @@ export function useMessageDeliveryWiring(deps: MessageDeliveryWiringDeps) {
   /** Sends to the active session, continues it when it can be resumed, or starts a new one (or a run). */
   const handleSendMessage = (text: string, attachments?: string[]) => {
     const message = { text, attachments };
+    // Another agent is picked: the message starts its session with this conversation, and an @Agent at its start
+    // is part of what that agent reads. Nothing goes out while this session's agent is in its turn or waits.
+    if (activeSession !== undefined && agentSwitch.pendingOf(activeSession.id) !== undefined) {
+      const sourceId = activeSession.id;
+      if (isTurnUnderWay(sourceId) || isSessionWaiting(sourceId)) {
+        giveBackMessage(sourceId, text, attachments);
+        return;
+      }
+      // Comments written for this session's agent were added after the pick: they never go to another agent.
+      if (review.slot?.sessionId === sourceId) {
+        giveBackMessage(sourceId, text, attachments);
+        onNotice(SWITCH_TEXT.reviewLock);
+        return;
+      }
+      void agentSwitch.send(sourceId, attachments?.length ? { text, attachments } : { text }).then((isStarted) => {
+        if (!isStarted) giveBackMessage(sourceId, text, attachments);
+      });
+      return;
+    }
     // A mention is the whole message: it starts the other agent instead of sending this one.
     if (delegationMention !== null && activeSession !== undefined) {
       const sourceId = activeSession.id;

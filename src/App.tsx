@@ -118,6 +118,11 @@ import { useWorkspaceTerminals } from "./hooks/useWorkspaceTerminals";
 import { useTerminalDrawer } from "./hooks/useTerminalDrawer";
 import { useDraftSessionList } from "./hooks/useDraftSessionList";
 import { useSessionFork } from "./hooks/useSessionFork";
+import { useOutsideTeeConfirm } from "./hooks/useOutsideTeeConfirm";
+import { useAgentSwitch } from "./hooks/useAgentSwitch";
+import { useContinueActions } from "./hooks/useContinueActions";
+import { SWITCH_TEXT, continuedFromView, switchNote } from "./lib/agent-switch";
+import { useSwitchTargets } from "./hooks/useSwitchTargets";
 import { useSessionRewind } from "./hooks/useSessionRewind";
 import { useSessionStartWiring } from "./hooks/useSessionStartWiring";
 import { useUnreadMarks } from "./hooks/useUnreadMarks";
@@ -142,7 +147,7 @@ import { openDelegatesOf } from "./lib/delegation";
 import { compareModelControls } from "./lib/compare-models";
 import { lastOfRun, runOf } from "./lib/compare-run";
 import { compareAgentOptions } from "./lib/composer-controls";
-import { COMPARE_NOTE, DRAFT_COMPARE_HELPER, composerCommandsFor, composerNote, composerPlaceholder, composerStateFor } from "./lib/composer-state";
+import { COMPARE_NOTE, DRAFT_COMPARE_HELPER, composerCommandsFor, composerNote, composerInputsWithSwitch, composerPlaceholder, composerStateFor } from "./lib/composer-state";
 import {
   NO_CHOICES,
   rememberedChoice,
@@ -464,7 +469,10 @@ export default function App() {
   /** Keeps a model or effort pick (as the agent settled it), so the agent's next session starts with it too. */
   const rememberPick = (profileId: string, configId: string, value: string, reported?: AcpConfigOption[]) => {
     // A private session's or draft's options are its TEE model's: they never become the agent's for ordinary drafts.
-    if (isPrivateLaunch) return;
+    if (!isPrivateLaunch) keepPick(profileId, configId, value, reported);
+  };
+  /** `rememberPick` without the private guard: for an agent picked to continue a private session in an ordinary one. */
+  const keepPick = (profileId: string, configId: string, value: string, reported?: AcpConfigOption[]) => {
     const preferredConfig = rememberedChoice(state.agentOptions?.[profileId], configId, value, reported);
     if (!preferredConfig) return;
     // The lists on offer follow too (an effort list depends on its model), so the next draft offers the same.
@@ -475,6 +483,7 @@ export default function App() {
   const rememberModelPick = (profileId: string, preferredModelId: string) => {
     if (!isPrivateLaunch) rememberAgentOptions(profileId, { preferredModelId });
   };
+  const keepModelPick = (profileId: string, preferredModelId: string) => rememberAgentOptions(profileId, { preferredModelId });
 
   const isComposerHiddenRef = useLatest(isComposerHidden);
   /** Whatever its status: a composer on its way to hiding would carry a message into the next session on screen. */
@@ -926,6 +935,29 @@ export default function App() {
     startSession,
     onNotice: setNotice,
   });
+  const teeConfirm = useOutsideTeeConfirm();
+  // The agents a conversation can continue with, the session's own first; none where no other agent is offered.
+  const switchAgents = useSwitchTargets({
+    session: activeSession,
+    messageCount: (transcripts[activeSessionId] ?? []).length,
+    agentsInUse,
+    signInOf: signInStatus.stateOf,
+  });
+  // Another agent picked in the composer: the next message starts its session with this conversation.
+  const agentSwitch = useAgentSwitch({ sessions, agentsInUse, transcripts, agentOptions: state.agentOptions, forkSession });
+  const pendingSwitch = activeSession ? agentSwitch.pendingOf(activeSession.id) : undefined;
+  const switchAgent = pendingSwitch ? agents.find((candidate) => candidate.id === pendingSwitch.agentId) : undefined;
+  // While another agent is picked, an @Agent at the start is part of the message, never a delegation.
+  const shownMention = switchAgent ? null : delegationMention;
+  const { forkFromMessage, pickSwitchAgent } = useContinueActions({
+    activeSession,
+    agents,
+    agentOptions: state.agentOptions,
+    forkSession,
+    pick: agentSwitch.pick,
+    confirmOutsideTee: teeConfirm.ask,
+    onNotice: setNotice,
+  });
 
   const {
     creditsOutReason,
@@ -1172,7 +1204,7 @@ export default function App() {
     isCompare: compare.isCompare,
     isPrivateLaunch,
     isSecretGuardEnabled: state.settings.secretGuard !== false,
-    delegationMention,
+    delegationMention: shownMention,
     delegation,
     review,
     secretGuardCheck: secretGuard.check,
@@ -1196,6 +1228,7 @@ export default function App() {
     queueAgentEndedRef,
     queuePromptStartedRef,
     queueRewoundRef,
+    agentSwitch,
   });
 
   const {
@@ -1223,7 +1256,7 @@ export default function App() {
     signInStateOf: signInStatus.stateOf,
     isInCompareRun: compareRun.isInRun,
     isSessionBusy,
-    delegationMention,
+    delegationMention: shownMention,
     delegation,
     compareModelProbe,
     composerRef,
@@ -1317,28 +1350,51 @@ export default function App() {
     [activeSession, activeTranscript, isActiveSessionBusy, sessionShellTasks, sessionArtifacts, createdFiles, pullRequests, agentTasks],
   );
   const sessionPlan = currentPlan(currentMessages);
-  const composer = composerStateFor({
-    session: activeSession,
-    draftAgent,
-    acpChoices: startChoices,
-    setAcpChoices,
-    agentOptions,
-    acp,
-    onPick: rememberPick,
-    onPickModel: rememberModelPick,
-    isPrivate: privateDraft.isOn,
-  });
+  const composer = composerStateFor(
+    composerInputsWithSwitch(
+      {
+        session: activeSession,
+        draftAgent,
+        acpChoices: startChoices,
+        setAcpChoices,
+        agentOptions,
+        acp,
+        onPick: rememberPick,
+        onPickModel: rememberModelPick,
+        isPrivate: privateDraft.isOn,
+      },
+      // The picked agent's chips: a pick edits the pending switch, never the running session.
+      pendingSwitch && switchAgent && activeSession
+        ? {
+            agent: switchAgent,
+            choices: pendingSwitch.choices,
+            setChoices: (choices) => agentSwitch.setChoices(activeSession.id, choices),
+            // The new session is ordinary even from a private one, so its picks are remembered for that agent.
+            onPick: keepPick,
+            onPickModel: keepModelPick,
+          }
+        : undefined,
+    ),
+  );
+  // Another agent is picked and this session's agent is still in its turn, or waits on the user: Send waits.
+  const isSourceWaiting = activeSession ? isSessionWaiting(activeSession.id) : false;
+  const switchWaits =
+    switchAgent && activeSession && (isSessionBusy(activeSession.id) || isSourceWaiting)
+      ? { agent: activeAgent?.name ?? "The agent", isWaiting: isSourceWaiting }
+      : undefined;
   // Several agents are not asked and nothing is picked for them yet: Send only waits for the single agent's install or sign-in.
   // The note promises one worktree each, so while the folder is not known to be a repository (still loading, or unreadable) Send waits too.
   const isSendWaiting = compare.isCompare
     ? !canUseWorktree
-    : draftNeedsInstall || draftNeedsSignIn || privateDraft.blocksSend || creditsOutReason !== undefined;
+    : // A switch to another agent leaves the TEE for an ordinary session: this session's credits do not hold it back.
+      draftNeedsInstall || draftNeedsSignIn || privateDraft.blocksSend || (creditsOutReason !== undefined && !switchAgent);
   // A draft's message is still being checked for secrets: a second Send would start a second session.
   // Only Send waits; disabling the box would take the focus away from what the user types next.
   const isCheckingDraftSecrets = isNewSessionDraft && secretGuard.isCheckingDraft;
   // The composer's own rule for a blocked Send; a queued row's Send now follows it, with the note the composer shows.
   const isComposerSendBlocked = isSendWaiting || isCheckingDraftSecrets || review.blocksSend || delegationBlock !== undefined;
-  const isSendBlocked = isComposerSendBlocked || isQueueFull;
+  // The switch waits only for the composer's own Send: queued messages and the next-step box still go to this session.
+  const isSendBlocked = isComposerSendBlocked || isQueueFull || switchWaits !== undefined;
   const privateModelId = activeSession?.privateMode?.modelId ?? privateDraft.privateMode?.modelId;
   const privateModel = privateCredits.models?.find((model) => model.id === privateModelId);
   const privateSessionCap = activeSession?.privateMode?.sessionCap;
@@ -1357,9 +1413,10 @@ export default function App() {
     compareCount: compare.agentIds.length,
     agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
     agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
-    privateNote: isPrivateLaunch ? privateDraft.note ?? creditsOutNote : undefined,
+    privateNote: isPrivateLaunch && !switchAgent ? privateDraft.note ?? creditsOutNote : undefined,
     delegationBlock,
     queueFull: isQueueFull,
+    switchWaits,
     commentsWaitFor: canQueueActive && review.slot?.sessionId === activeSessionId ? activeAgent?.name ?? "The agent" : undefined,
     continuesSession: isResumable || Boolean(activeSession),
   });
@@ -1596,7 +1653,13 @@ export default function App() {
                       onJumped={() => setChatJump(null)}
                       agentName={activeAgent?.name}
                       agentProfileId={activeSession?.profileId}
-                      onForkBranch={(messageId) => void forkSession(messageId)}
+                      onForkBranch={forkFromMessage}
+                      forkAgents={switchAgents}
+                      continuedFromOf={(mark) => {
+                        const view = continuedFromView(mark, sessions, agents, activeAgent?.name ?? "The agent");
+                        const { sourceId } = view;
+                        return { ...view, onOpenSource: sourceId ? () => handleSelectSession(sourceId) : undefined };
+                      }}
                       onReply={(quote) => composerRef.current?.insertText(quote)}
                       onOpenUrl={openLink}
                       privateModelId={activeSession?.privateMode?.modelId}
@@ -1829,7 +1892,7 @@ export default function App() {
                       queueing={isQueueingActive}
                       disabled={isComposerDisabled}
                       sendDisabled={isSendBlocked}
-                      placeholder={composerPlaceholder({
+                      placeholder={switchAgent ? `Message ${switchAgent.name}` : composerPlaceholder({
                         isRunning: isActiveRunning,
                         isCreatingWorktree,
                         isResumable,
@@ -1849,7 +1912,8 @@ export default function App() {
                       onNotice={reportError}
                       pasteScope={activeSessionId || "draft"}
                       isHidden={isComposerHidden || settingsPage.section !== null}
-                      commands={compare.isCompare ? [] : composerCommands}
+                      // The source agent's commands mean nothing to the agent picked to continue with.
+                      commands={compare.isCompare || switchAgent ? [] : composerCommands}
                       sendLabel={
                         delegationSendLabel ??
                         (privateDraft.isOn
@@ -1860,6 +1924,28 @@ export default function App() {
                       }
                       agentName={activeSession ? activeAgent?.name : newSessionAgent?.name}
                       sessionAgent={activeSession && activeAgent ? { profileId: activeAgent.id, name: activeAgent.name } : undefined}
+                      agentPicker={
+                        activeSession && switchAgents.length > 1
+                          ? {
+                              targets: switchAgents,
+                              pickedId: pendingSwitch?.agentId ?? activeSession.profileId,
+                              isPrivate: Boolean(activeSession.privateMode),
+                              // Comments written for this session's agent never go to another one.
+                              disabledReason: review.slot?.sessionId === activeSession.id ? SWITCH_TEXT.reviewLock : undefined,
+                              onPick: pickSwitchAgent,
+                            }
+                          : undefined
+                      }
+                      switchNote={
+                        activeSession && switchAgent
+                          ? {
+                              text: switchNote(switchAgent.name, activeAgent?.name ?? "This agent"),
+                              keepLabel: `Keep ${activeAgent?.name ?? "this agent"}`,
+                              onKeep: () => agentSwitch.keep(activeSession.id),
+                            }
+                          : undefined
+                      }
+                      sendName={switchAgent ? `Send to ${switchAgent.name} in a new session` : undefined}
                       privateDraft={isNewSessionDraft ? privateDraft : undefined}
                       privateSessionLine={privateSessionLine}
                       compareModels={
@@ -1899,7 +1985,8 @@ export default function App() {
                       contextUsage={isActiveRunning ? acp.info[activeSessionId]?.usage : undefined}
                       onOpenContext={() => inspector.show("context")}
                       mentions={filesFolder ? { root: filesFolder.path, loadFiles: () => shell.loadWorkspaceFiles(filesFolder.path) } : undefined}
-                      delegationAgents={delegationAgents}
+                      // While another agent is picked an @Agent is plain text, so no agent is offered to delegate to.
+                      delegationAgents={switchAgent ? [] : delegationAgents}
                       onDelegationMentionChange={setDelegationMention}
                       delegationSummary={delegationSummary}
                       folder={
@@ -2113,6 +2200,7 @@ export default function App() {
           onEdit={secretGuard.edit}
         />
       )}
+      {teeConfirm.dialog}
       {delegateDialog.dialog !== null && (
         <DelegateDialog
           agents={delegateAgents}

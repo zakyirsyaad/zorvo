@@ -19,6 +19,8 @@ import { useChatSelection } from "../hooks/useChatSelection";
 import { replyQuote } from "../lib/reply-quote";
 import { isAwaitingUser } from "../lib/acp-elicitation";
 import type { ArtifactCard, ChatMessage, ElicitationAnswer } from "../types";
+import type { ContinuedFromView } from "./chat/ContinuedFromLine";
+import type { SwitchTarget } from "../lib/agent-switch";
 
 export type { ChatMessage, ToolExecution } from "../types";
 
@@ -56,7 +58,12 @@ export interface ChatCanvasProps {
   visualSessionId?: string;
   /** The agent's id, for its logo over each reply. */
   agentProfileId?: string;
-  onForkBranch?: (messageId: string) => void;
+  /** No agent id: fork with the session's own agent. */
+  onForkBranch?: (messageId: string, agentId?: string) => void;
+  /** The agents the Fork menu offers, the session's own first. */
+  forkAgents?: readonly SwitchTarget[];
+  /** Names the agent and source of a message that continued another agent's conversation. */
+  continuedFromOf?: (mark: NonNullable<ChatMessage["continuedFrom"]>) => ContinuedFromView;
   /** Answers an ACP permission card with one of the agent's options; `answers` are a question card's typed answers. */
   onChooseOption?: (cardId: string, optionId: string, answers?: Record<string, string>) => void;
   /** Answers an agent's request for input or to open a page. */
@@ -129,6 +136,8 @@ export function ChatCanvas({
   visualSessionId,
   agentProfileId,
   onForkBranch,
+  forkAgents,
+  continuedFromOf,
   onChooseOption,
   onAnswerElicitation,
   onReopenElicitationUrl,
@@ -212,6 +221,7 @@ export function ChatCanvas({
   }, [messages, isWorking, conversationId, stickToBottom.scrollToBottom, stickToBottom.followNewContent]);
 
   const onForkRef = useLatest(onForkBranch);
+  const continuedFromRef = useLatest(continuedFromOf);
   const onRewindRef = useLatest(onRewind);
   const onChooseOptionRef = useLatest(onChooseOption);
   const onAnswerElicitationRef = useLatest(onAnswerElicitation);
@@ -228,7 +238,15 @@ export function ChatCanvas({
   }, []);
   // These take the message id, so every row gets the same function and an
   // unchanged row is not re-rendered when the host makes a new closure.
-  const handleFork = useCallback((id: string) => onForkRef.current?.(id), [onForkRef]);
+  const handleFork = useCallback(
+    (id: string, agentId?: string) => (agentId === undefined ? onForkRef.current?.(id) : onForkRef.current?.(id, agentId)),
+    [onForkRef],
+  );
+  const handleContinuedFrom = useCallback(
+    (mark: NonNullable<ChatMessage["continuedFrom"]>) =>
+      continuedFromRef.current?.(mark) ?? { agentName, sourceName: null },
+    [continuedFromRef, agentName],
+  );
   const handleRewind = useCallback(
     (id: string, options?: RewindOptions) => (options ? onRewindRef.current?.(id, options) : onRewindRef.current?.(id)),
     [onRewindRef],
@@ -312,6 +330,8 @@ export function ChatCanvas({
               readAloudSupported={readAloud.supported}
               onCopy={handleCopyMessage}
               onFork={onForkBranch ? handleFork : undefined}
+              forkAgents={forkAgents}
+              continuedFromOf={continuedFromOf ? handleContinuedFrom : undefined}
               onRewind={onRewind ? handleRewind : undefined}
               onToggleReadAloud={handleToggleReadAloud}
               onChooseOption={onChooseOption ? handleChooseOption : undefined}

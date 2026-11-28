@@ -1,15 +1,12 @@
-import { useId, useRef, useState } from "react";
+import { useState } from "react";
 import { ExternalLink } from "lucide-react";
 import { creditsOutText, ownKeyOutText, ownKeyOutTitle, type CreditsOutReason } from "../../lib/private-session";
 import type { PaymentSource } from "../../lib/private-credits";
 import { BlockerCard } from "../ui/BlockerCard";
 import { Button } from "../ui/Button";
-import { PrivateDialog } from "./PrivateDialog";
+import { ContinueOutsideTeeDialog, type ContinueChoice } from "./ContinueOutsideTeeDialog";
 
-export interface ContinueChoice {
-  id: string;
-  name: string;
-}
+export type { ContinueChoice };
 
 export interface PrivateCreditsOutProps {
   reason: CreditsOutReason;
@@ -195,7 +192,7 @@ export function PrivateCreditsOut({
         )}
       </BlockerCard>
       {isConfirming && (
-        <ContinueDialog
+        <ContinueOutsideTeeDialog
           agents={agents}
           onCancel={() => setIsConfirming(false)}
           onConfirm={(agentId) => {
@@ -205,59 +202,6 @@ export function PrivateCreditsOut({
         />
       )}
     </>
-  );
-}
-
-interface ContinueDialogProps {
-  agents: readonly ContinueChoice[];
-  onCancel: () => void;
-  onConfirm: (agentId: string) => void;
-}
-
-function ContinueDialog({ agents, onCancel, onConfirm }: ContinueDialogProps) {
-  const [picked, setPicked] = useState(agents[0]?.id ?? "");
-  const firstRef = useRef<HTMLInputElement>(null);
-  const warningId = useId();
-  return (
-    <PrivateDialog
-      title="Continue with another agent?"
-      initialFocusRef={firstRef}
-      describedBy={warningId}
-      onEscape={onCancel}
-      footer={
-        <>
-          <Button variant="ghost" tone="secondary" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button variant="primary" disabled={picked === ""} onClick={() => onConfirm(picked)}>
-            Continue
-          </Button>
-        </>
-      }
-    >
-      <p id={warningId} className="text-ui text-fg-muted">
-        The conversation so far goes to the agent you pick, outside the TEE.
-      </p>
-      <fieldset className="flex flex-col gap-1.5">
-        <legend className="pb-1.5 text-ui-sm font-medium text-fg-secondary">Agent</legend>
-        {agents.map((agent, index) => (
-          <label
-            key={agent.id}
-            className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-border bg-surface-2 px-3 py-2 text-ui text-fg-secondary has-[:checked]:border-border-strong has-[:checked]:bg-surface-hover"
-          >
-            <input
-              ref={index === 0 ? firstRef : undefined}
-              type="radio"
-              name="continue-agent"
-              className="focus-ring size-3.5 shrink-0"
-              checked={picked === agent.id}
-              onChange={() => setPicked(agent.id)}
-            />
-            {agent.name}
-          </label>
-        ))}
-      </fieldset>
-    </PrivateDialog>
   );
 }
 

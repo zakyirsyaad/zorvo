@@ -94,6 +94,7 @@ function makeDeps(overrides: Partial<MessageDeliveryWiringDeps> = {}): MessageDe
     queueAgentEndedRef: { current: () => {} },
     queuePromptStartedRef: { current: () => {} },
     queueRewoundRef: { current: () => {} },
+    agentSwitch: { pendingOf: () => undefined, send: vi.fn().mockResolvedValue(true) },
     ...overrides,
   };
 }
@@ -223,5 +224,82 @@ describe('useMessageDeliveryWiring', () => {
       compareHook.result.current.handleSendMessage('compare prompt');
     });
     expect(compareDeps.handleNewRun).toHaveBeenCalledWith({ text: 'compare prompt', attachments: undefined });
+  });
+});
+
+describe('sending while another agent is picked', () => {
+  const pendingSwitch = (send = vi.fn().mockResolvedValue(true)) => ({
+    pendingOf: (sessionId: string) => (sessionId === 's-1' ? { agentId: 'codex-acp', choices: NO_CHOICES } : undefined),
+    send,
+  });
+
+  it('a pending switch sends through the switch, not to the source', async () => {
+    const agentSwitch = pendingSwitch();
+    const deps = makeDeps({ agentSwitch });
+    const { result } = renderHook(() => useMessageDeliveryWiring(deps));
+
+    await act(async () => {
+      result.current.handleSendMessage('Take over', ['/w/a.png']);
+    });
+
+    expect(agentSwitch.send).toHaveBeenCalledWith('s-1', { text: 'Take over', attachments: ['/w/a.png'] });
+    expect(deps.sendAcp).not.toHaveBeenCalled();
+  });
+
+  it('a switch that fails gives the message back', async () => {
+    const deps = makeDeps({ agentSwitch: pendingSwitch(vi.fn().mockResolvedValue(false)) });
+    const { result } = renderHook(() => useMessageDeliveryWiring(deps));
+
+    await act(async () => {
+      result.current.handleSendMessage('Take over', ['/w/a.png']);
+    });
+
+    expect(deps.giveBackMessage).toHaveBeenCalledWith('s-1', 'Take over', ['/w/a.png']);
+  });
+
+  it('a pending switch sends nothing while the source works or waits', async () => {
+    for (const busy of [{ isTurnUnderWay: () => true }, { isSessionWaiting: () => true }]) {
+      const agentSwitch = pendingSwitch();
+      const deps = makeDeps({ agentSwitch, ...busy });
+      const { result } = renderHook(() => useMessageDeliveryWiring(deps));
+
+      await act(async () => {
+        result.current.handleSendMessage('Take over');
+      });
+
+      expect(agentSwitch.send).not.toHaveBeenCalled();
+      expect(deps.sendAcp).not.toHaveBeenCalled();
+      expect(deps.giveBackMessage).toHaveBeenCalledWith('s-1', 'Take over', undefined);
+    }
+  });
+
+  it('an @Agent prefix is not delegated while a switch is pending', async () => {
+    const agentSwitch = pendingSwitch();
+    const deps = makeDeps({ agentSwitch, delegationMention: { agentId: 'codex-acp', task: 'do it' } });
+    const { result } = renderHook(() => useMessageDeliveryWiring(deps));
+
+    await act(async () => {
+      result.current.handleSendMessage('@Codex do it');
+    });
+
+    expect(deps.delegation.start).not.toHaveBeenCalled();
+    expect(agentSwitch.send).toHaveBeenCalled();
+  });
+
+  it('comments held for this session never go to the picked agent', async () => {
+    const agentSwitch = pendingSwitch();
+    const deps = makeDeps({
+      agentSwitch,
+      review: { slot: { sessionId: 's-1', commentIds: ['c-1'], lastTarget: null } as never, rearm: vi.fn(), sendFrom: vi.fn() },
+    });
+    const { result } = renderHook(() => useMessageDeliveryWiring(deps));
+
+    await act(async () => {
+      result.current.handleSendMessage('Review these');
+    });
+
+    expect(agentSwitch.send).not.toHaveBeenCalled();
+    expect(deps.giveBackMessage).toHaveBeenCalledWith('s-1', 'Review these', undefined);
+    expect(deps.onNotice).toHaveBeenCalledWith('Send or clear the review comments first.');
   });
 });

@@ -107,7 +107,7 @@ export interface PrivateContinueDeps {
   transcripts: Readonly<Record<string, ChatMessage[]>>;
   agentOptions: Record<string, AgentOptions> | undefined;
   openNewSession: (path?: string, agentId?: string, options?: OpenNewSessionOptions) => void;
-  forkSession: (messageId: string, options?: ForkOptions) => Promise<void>;
+  forkSession: (messageId: string, options?: ForkOptions) => Promise<boolean>;
   patchSession: (sessionId: string, patch: Partial<Session>) => void;
   startSession: (spec: SessionSpec, first?: FirstMessage, options?: StartSessionOptions) => void;
   updateSettings: (patch: Partial<Settings>) => void;

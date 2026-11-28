@@ -43,7 +43,7 @@ export interface FirstMessage {
   /** Sent to the agent ahead of the text but not shown: what a rewound session's fresh agent is handed. */
   context?: string;
   /** Marks the user message that is added, as a task sent to a running worker is marked. */
-  marks?: Pick<ChatMessage, 'delegationTask'>;
+  marks?: Pick<ChatMessage, 'delegationTask' | 'continuedFrom'>;
 }
 
 export type AttentionReason = 'needs-answer' | 'finished' | 'failed';

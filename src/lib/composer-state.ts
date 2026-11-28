@@ -1,3 +1,4 @@
+import { switchWaitsNote } from './agent-switch';
 import { acpControls, type ComposerControls } from './composer-controls';
 import { draftInfo, type AcpChoices, type AgentOptions } from './acp-draft';
 import type { AcpConfigOption } from '../hooks/useAcpSessions';
@@ -41,6 +42,34 @@ function withoutModel(controls: ComposerControls): ComposerControls {
  * (changed on the fly) or, before the agent runs, the choices for it: the
  * options it reported last time, applied once it is up.
  */
+/** Another agent picked to continue a session with: its agent, what it starts with, and how a chip changes that. */
+export interface SwitchInputs {
+  agent: AgentProfile;
+  choices: AcpChoices;
+  setChoices: (choices: AcpChoices) => void;
+  /** Remember picks for that agent; without them the base inputs' are kept. */
+  onPick?: ComposerInputs['onPick'];
+  onPickModel?: ComposerInputs['onPickModel'];
+}
+
+/**
+ * The composer's inputs while another agent is picked: that agent's chips, built as a draft's, so a pick edits
+ * the pending choices and nothing is sent to the running session.
+ */
+export function composerInputsWithSwitch(inputs: ComposerInputs, picked: SwitchInputs | undefined): ComposerInputs {
+  if (!picked) return inputs;
+  return {
+    ...inputs,
+    session: undefined,
+    draftAgent: picked.agent,
+    acpChoices: picked.choices,
+    setAcpChoices: picked.setChoices,
+    ...(picked.onPick ? { onPick: picked.onPick } : {}),
+    ...(picked.onPickModel ? { onPickModel: picked.onPickModel } : {}),
+    isPrivate: false,
+  };
+}
+
 export function composerStateFor(inputs: ComposerInputs): ComposerState {
   const { controls } = composerControlsFor(inputs);
   return { controls: inputs.isPrivate || inputs.session?.privateMode ? withoutModel(controls) : controls };
@@ -157,6 +186,8 @@ export function composerNote(state: {
   commentsWaitFor?: string;
   /** The session's queue of messages sent while the agent works is full. */
   queueFull?: boolean;
+  /** Another agent is picked for this session and its own agent is still in its turn, or waits on the user. */
+  switchWaits?: { agent: string; isWaiting: boolean };
   /** Agents ticked for a compare run; two or more replace every note but the review one. */
   compareCount?: number;
   /** The draft agent's name while it must be installed before a message can be sent. */
@@ -173,6 +204,7 @@ export function composerNote(state: {
   if (state.reviewOwner) return reviewOwnerNote(state.reviewOwner);
   if (state.commentsWaitFor) return `Comments are sent when ${state.commentsWaitFor} finishes.`;
   if (state.compareCount !== undefined && state.compareCount >= 2) return COMPARE_NOTE;
+  if (state.switchWaits) return switchWaitsNote(state.switchWaits.agent, state.switchWaits.isWaiting);
   if (state.queueFull) return QUEUE_FULL_NOTE;
   if (state.agentToInstall) return installPlaceholder(state.agentToInstall, state.continuesSession);
   if (state.agentToSignIn) return signInPlaceholder(state.agentToSignIn, state.continuesSession);

@@ -4,10 +4,14 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-11-28
+
 ### Added
 
 - Right-click context menu (and hover `⋯` menu) on project folders in the sidebar to start a new session, reveal in Finder, copy the folder path, collapse or expand, archive idle sessions, or permanently remove the project and its sessions from Zorvo (without deleting files on disk).
 - Continue a conversation with another agent: pick it from the agent menu in the composer, and your message starts its session with the conversation so far, or pick it from Fork from here under any reply. The new session marks where it continued.
+- Introduced Zorvo's computer use inspection tools (`list_apps`, `request_access`, `list_windows`, `get_window_state`, `zoom`, `verify_state`) in the session tools context so on-demand and command-path agents know when and how to use them automatically.
+- Styled pull request check counts in the session Overview with compact inline status indicators (`failed`, `running`, `passed`) and semantic colours so failing or running checks stand out at a glance.
 
 ### Changed
 
@@ -20,15 +24,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - **Browser tabs survive an agent exit and close on archive.** Ending or crashing an agent revokes its browser access without closing the user's pages; archiving or deleting a session closes its browser views, and hitting the 8-session browser limit names the sessions still holding tabs.
 - **The session overview toggle lives in the top bar.** Folding the overview no longer leaves a floating pill inside the chat sheet; the top bar button beside the inspector opens and closes it on both wide and narrow sheets, with a dot when tasks are running while it is closed.
 - **One Send / Stop button in the composer.** While a turn runs, the composer shows Stop when the box is empty and switches to Queue message once you type or attach files, instead of showing both buttons side by side; tighter chip spacing keeps the composer bar on one row.
-
 - **Next step buttons match the active branch and stay flexible.** Switching branches no longer carries over an earlier branch's pull request; `wrap_up` now supports `push` and up to three custom replies of 40 characters each, `Create PR` adapts its message when commits are already made, and earlier turn boxes no longer show disabled buttons.
-
 - **Pull requests in the overview update promptly.** Opening a new PR or branch in a session refreshes the folder's PR list immediately, and turn-end (5 s), focus (15 s) and active-session (30 s) refresh intervals are shorter so newly created PRs and CI check changes show up without waiting a full minute.
 - Narrowed the chat and composer column from 720px to 640px and shortened the context meter label to a compact percentage so the composer toolbar stays on one row.
-
 - Clicking a system notification now focuses Zorvo and opens the session that sent it.
-- Introduced Zorvo's computer use inspection tools (`list_apps`, `request_access`, `list_windows`, `get_window_state`, `zoom`, `verify_state`) in the session tools context so on-demand and command-path agents know when and how to use them automatically.
-- Styled pull request check counts in the session Overview with compact inline status indicators (`failed`, `running`, `passed`) and semantic colours so failing or running checks stand out at a glance.
 
 ## [0.22.1] - 2026-11-27
 
@@ -626,7 +625,8 @@ Tagged but never published; its fix shipped in 0.11.2.
 
 - Approval safety, terminal handling, the stream parser and working folders. ([#1])
 
-[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.22.1...HEAD
+[Unreleased]: https://github.com/zakyirsyaad/zorvo/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.22.1...v0.23.0
 [0.22.1]: https://github.com/zakyirsyaad/zorvo/compare/v0.22.0...v0.22.1
 [0.22.0]: https://github.com/zakyirsyaad/zorvo/compare/v0.21.2...v0.22.0
 [0.21.2]: https://github.com/zakyirsyaad/zorvo/compare/v0.21.1...v0.21.2

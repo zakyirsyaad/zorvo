@@ -4,11 +4,11 @@ import type { FolderPullRequests } from '../lib/pull-request-look';
 import { MAX_FAILED_READS, type PullRequestStatus } from './usePullRequest';
 
 /** A focus reads a folder again once its last read is this old. */
-export const FOCUS_REFRESH_MS = 2 * 60_000;
+export const FOCUS_REFRESH_MS = 15_000;
 /** A turn end reads a folder again once its last read is this old: an agent may have pushed or opened one. */
-export const TURN_REFRESH_MS = 60_000;
-/** The folder of the session on screen is read this often, as the top bar's own read was: its checks may be running. */
-export const LIVE_REFRESH_MS = 60_000;
+export const TURN_REFRESH_MS = 5_000;
+/** The folder of the session on screen is read this often while the window is in front: its checks may be running. */
+export const LIVE_REFRESH_MS = 30_000;
 
 interface Answer {
   branch: string | null;
@@ -38,7 +38,7 @@ export function useWorkspacePullRequests(
   paths: readonly string[],
   isEnabled: boolean,
   busyFolders: readonly string[],
-  { liveFolder }: { liveFolder?: string } = {},
+  { liveFolder, liveRefreshKey }: { liveFolder?: string; liveRefreshKey?: string } = {},
 ): ReadonlyMap<string, FolderPullRequests> {
   const [folders, setFolders] = useState<ReadonlyMap<string, FolderPullRequests>>(NONE);
   const readAt = useRef(new Map<string, number>());
@@ -134,6 +134,16 @@ export function useWorkspacePullRequests(
     seenBusy.current = now;
     if (isEnabled && ended.length > 0) readIfOlder(ended, TURN_REFRESH_MS);
   }, [busyKey, isEnabled, readIfOlder]);
+
+  // A new PR URL or branch recorded by the active agent triggers an immediate read, bypassing cooldowns.
+  const seenLiveKey = useRef(liveRefreshKey);
+  useEffect(() => {
+    const prev = seenLiveKey.current;
+    seenLiveKey.current = liveRefreshKey;
+    if (isEnabled && liveFolder && liveRefreshKey && prev !== undefined && liveRefreshKey !== prev) {
+      read(liveFolder);
+    }
+  }, [isEnabled, liveFolder, liveRefreshKey, read]);
 
   return isEnabled ? folders : NONE;
 }

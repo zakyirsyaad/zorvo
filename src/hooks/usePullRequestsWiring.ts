@@ -51,8 +51,13 @@ export function usePullRequestsWiring({
     [sessions],
   );
   const busyFolders = sessions.filter((session) => isSessionBusy(session.id)).map(workspacePathOf);
+  const activeWork = activeSession?.agentWork;
+  const liveRefreshKey = activeWork
+    ? `${activeWork.pullRequestUrls.join(',')}|${activeWork.branches.join(',')}`
+    : '';
   const folderPullRequests = useWorkspacePullRequests(listedFolders, isGithubSignedIn, busyFolders, {
     liveFolder: activeSession ? workspacePathOf(activeSession) : undefined,
+    liveRefreshKey,
   });
   const newestInFolder = useMemo(() => newestSessionInFolder(sessions), [sessions]);
   const pullRequestOf = useCallback(

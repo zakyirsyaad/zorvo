@@ -8,6 +8,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - Continue a conversation with another agent: pick it from the agent menu in the composer, and your message starts its session with the conversation so far, or pick it from Fork from here under any reply. The new session marks where it continued.
 
+### Fixed
+
+- **Pull requests in the overview update promptly.** Opening a new PR or branch in a session refreshes the folder's PR list immediately, and turn-end (5 s), focus (15 s) and active-session (30 s) refresh intervals are shorter so newly created PRs and CI check changes show up without waiting a full minute.
+
 ## [0.22.1] - 2026-11-27
 
 ### Added

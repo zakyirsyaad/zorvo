@@ -153,4 +153,29 @@ describe("useWorkspacePullRequests", () => {
       expect(result.current.has("/w/a"), `after failure ${failure}`).toBe(failure < 3);
     }
   });
+
+  it("reads the live folder immediately when liveRefreshKey changes, even within the turn cooldown", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(1_000_000);
+    const asked = fakeBackend(async () => answer(364));
+    const { rerender } = renderHook(
+      ({ key }) => useWorkspacePullRequests(["/w/a", "/w/b"], true, [], { liveFolder: "/w/a", liveRefreshKey: key }),
+      { initialProps: { key: "s1:https://github.com/o/r/pull/363:" } },
+    );
+    await settle();
+    expect(asked.filter((path) => path === "/w/a")).toHaveLength(1);
+
+    // 1 second later the agent creates PR #364: refresh immediately without waiting for TURN_REFRESH_MS.
+    vi.setSystemTime(1_001_000);
+    rerender({ key: "s1:https://github.com/o/r/pull/363,https://github.com/o/r/pull/364:" });
+    await settle();
+    expect(asked.filter((path) => path === "/w/a")).toHaveLength(2);
+    expect(asked.filter((path) => path === "/w/b")).toHaveLength(1);
+  });
+
+  it("uses responsive refresh intervals for turn end, focus and live polling", () => {
+    expect(TURN_REFRESH_MS).toBeLessThanOrEqual(10_000);
+    expect(FOCUS_REFRESH_MS).toBeLessThanOrEqual(15_000);
+    expect(LIVE_REFRESH_MS).toBeLessThanOrEqual(30_000);
+  });
 });

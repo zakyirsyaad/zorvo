@@ -120,6 +120,7 @@ import { useDraftSessionList } from "./hooks/useDraftSessionList";
 import { useSessionFork } from "./hooks/useSessionFork";
 import { useOutsideTeeConfirm } from "./hooks/useOutsideTeeConfirm";
 import { useAgentSwitch } from "./hooks/useAgentSwitch";
+import { useContinueActions } from "./hooks/useContinueActions";
 import { SWITCH_TEXT, continuedFromView, switchNote } from "./lib/agent-switch";
 import { useSwitchTargets } from "./hooks/useSwitchTargets";
 import { useSessionRewind } from "./hooks/useSessionRewind";
@@ -468,7 +469,10 @@ export default function App() {
   /** Keeps a model or effort pick (as the agent settled it), so the agent's next session starts with it too. */
   const rememberPick = (profileId: string, configId: string, value: string, reported?: AcpConfigOption[]) => {
     // A private session's or draft's options are its TEE model's: they never become the agent's for ordinary drafts.
-    if (isPrivateLaunch) return;
+    if (!isPrivateLaunch) keepPick(profileId, configId, value, reported);
+  };
+  /** `rememberPick` without the private guard: for an agent picked to continue a private session in an ordinary one. */
+  const keepPick = (profileId: string, configId: string, value: string, reported?: AcpConfigOption[]) => {
     const preferredConfig = rememberedChoice(state.agentOptions?.[profileId], configId, value, reported);
     if (!preferredConfig) return;
     // The lists on offer follow too (an effort list depends on its model), so the next draft offers the same.
@@ -479,6 +483,7 @@ export default function App() {
   const rememberModelPick = (profileId: string, preferredModelId: string) => {
     if (!isPrivateLaunch) rememberAgentOptions(profileId, { preferredModelId });
   };
+  const keepModelPick = (profileId: string, preferredModelId: string) => rememberAgentOptions(profileId, { preferredModelId });
 
   const isComposerHiddenRef = useLatest(isComposerHidden);
   /** Whatever its status: a composer on its way to hiding would carry a message into the next session on screen. */
@@ -938,33 +943,21 @@ export default function App() {
     agentsInUse,
     signInOf: signInStatus.stateOf,
   });
-  // Fork from here: the session's own agent, or another one with its remembered picks, asking first for a private session.
-  const forkFromMessage = (messageId: string, agentId?: string) => {
-    const agent = agentId === undefined ? undefined : agents.find((candidate) => candidate.id === agentId);
-    if (!agent) {
-      void forkSession(messageId);
-      return;
-    }
-    const run = () => void forkSession(messageId, { agent, choices: withPreferred(NO_CHOICES, state.agentOptions?.[agent.id]) });
-    if (activeSession?.privateMode) teeConfirm.ask({ id: agent.id, name: agent.name }, run);
-    else run();
-  };
   // Another agent picked in the composer: the next message starts its session with this conversation.
   const agentSwitch = useAgentSwitch({ sessions, agentsInUse, transcripts, agentOptions: state.agentOptions, forkSession });
   const pendingSwitch = activeSession ? agentSwitch.pendingOf(activeSession.id) : undefined;
   const switchAgent = pendingSwitch ? agents.find((candidate) => candidate.id === pendingSwitch.agentId) : undefined;
   // While another agent is picked, an @Agent at the start is part of the message, never a delegation.
   const shownMention = switchAgent ? null : delegationMention;
-  const pickSwitchAgent = (agentId: string) => {
-    if (!activeSession) return;
-    const sessionId = activeSession.id;
-    const target = agents.find((candidate) => candidate.id === agentId);
-    if (activeSession.privateMode && target && agentId !== activeSession.profileId) {
-      teeConfirm.ask({ id: target.id, name: target.name }, () => agentSwitch.pick(sessionId, agentId));
-      return;
-    }
-    agentSwitch.pick(sessionId, agentId);
-  };
+  const { forkFromMessage, pickSwitchAgent } = useContinueActions({
+    activeSession,
+    agents,
+    agentOptions: state.agentOptions,
+    forkSession,
+    pick: agentSwitch.pick,
+    confirmOutsideTee: teeConfirm.ask,
+    onNotice: setNotice,
+  });
 
   const {
     creditsOutReason,
@@ -1372,27 +1365,36 @@ export default function App() {
       },
       // The picked agent's chips: a pick edits the pending switch, never the running session.
       pendingSwitch && switchAgent && activeSession
-        ? { agent: switchAgent, choices: pendingSwitch.choices, setChoices: (choices) => agentSwitch.setChoices(activeSession.id, choices) }
+        ? {
+            agent: switchAgent,
+            choices: pendingSwitch.choices,
+            setChoices: (choices) => agentSwitch.setChoices(activeSession.id, choices),
+            // The new session is ordinary even from a private one, so its picks are remembered for that agent.
+            onPick: keepPick,
+            onPickModel: keepModelPick,
+          }
         : undefined,
     ),
   );
   // Another agent is picked and this session's agent is still in its turn, or waits on the user: Send waits.
+  const isSourceWaiting = activeSession ? isSessionWaiting(activeSession.id) : false;
   const switchWaits =
-    switchAgent && activeSession && (isSessionBusy(activeSession.id) || isSessionWaiting(activeSession.id))
-      ? activeAgent?.name ?? "The agent"
+    switchAgent && activeSession && (isSessionBusy(activeSession.id) || isSourceWaiting)
+      ? { agent: activeAgent?.name ?? "The agent", isWaiting: isSourceWaiting }
       : undefined;
   // Several agents are not asked and nothing is picked for them yet: Send only waits for the single agent's install or sign-in.
   // The note promises one worktree each, so while the folder is not known to be a repository (still loading, or unreadable) Send waits too.
   const isSendWaiting = compare.isCompare
     ? !canUseWorktree
-    : draftNeedsInstall || draftNeedsSignIn || privateDraft.blocksSend || creditsOutReason !== undefined;
+    : // A switch to another agent leaves the TEE for an ordinary session: this session's credits do not hold it back.
+      draftNeedsInstall || draftNeedsSignIn || privateDraft.blocksSend || (creditsOutReason !== undefined && !switchAgent);
   // A draft's message is still being checked for secrets: a second Send would start a second session.
   // Only Send waits; disabling the box would take the focus away from what the user types next.
   const isCheckingDraftSecrets = isNewSessionDraft && secretGuard.isCheckingDraft;
   // The composer's own rule for a blocked Send; a queued row's Send now follows it, with the note the composer shows.
-  const isComposerSendBlocked =
-    isSendWaiting || isCheckingDraftSecrets || review.blocksSend || delegationBlock !== undefined || switchWaits !== undefined;
-  const isSendBlocked = isComposerSendBlocked || isQueueFull;
+  const isComposerSendBlocked = isSendWaiting || isCheckingDraftSecrets || review.blocksSend || delegationBlock !== undefined;
+  // The switch waits only for the composer's own Send: queued messages and the next-step box still go to this session.
+  const isSendBlocked = isComposerSendBlocked || isQueueFull || switchWaits !== undefined;
   const privateModelId = activeSession?.privateMode?.modelId ?? privateDraft.privateMode?.modelId;
   const privateModel = privateCredits.models?.find((model) => model.id === privateModelId);
   const privateSessionCap = activeSession?.privateMode?.sessionCap;
@@ -1411,7 +1413,7 @@ export default function App() {
     compareCount: compare.agentIds.length,
     agentToInstall: draftNeedsInstall ? draftAgent?.name : undefined,
     agentToSignIn: draftNeedsSignIn ? draftAgent?.name : undefined,
-    privateNote: isPrivateLaunch ? privateDraft.note ?? creditsOutNote : undefined,
+    privateNote: isPrivateLaunch && !switchAgent ? privateDraft.note ?? creditsOutNote : undefined,
     delegationBlock,
     queueFull: isQueueFull,
     switchWaits,
@@ -1983,7 +1985,8 @@ export default function App() {
                       contextUsage={isActiveRunning ? acp.info[activeSessionId]?.usage : undefined}
                       onOpenContext={() => inspector.show("context")}
                       mentions={filesFolder ? { root: filesFolder.path, loadFiles: () => shell.loadWorkspaceFiles(filesFolder.path) } : undefined}
-                      delegationAgents={delegationAgents}
+                      // While another agent is picked an @Agent is plain text, so no agent is offered to delegate to.
+                      delegationAgents={switchAgent ? [] : delegationAgents}
                       onDelegationMentionChange={setDelegationMention}
                       delegationSummary={delegationSummary}
                       folder={

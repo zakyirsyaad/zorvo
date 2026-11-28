@@ -111,6 +111,10 @@ describe('switch copy', () => {
     expect(switchWaitsNote('Qwen Code')).toBe('Qwen Code is still working. Wait for it to finish, or press Stop.');
   });
 
+  it('words the note for a source that waits on an answer', () => {
+    expect(switchWaitsNote('Qwen Code', true)).toBe('Qwen Code is waiting for your answer. Answer it in the chat first.');
+  });
+
   it('words the continued line', () => {
     expect(continuedLine('Claude Code', 'Fix login bug')).toBe('Continued with Claude Code from Fix login bug');
   });

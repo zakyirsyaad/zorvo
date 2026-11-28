@@ -361,16 +361,22 @@ describe("composerNote while queueing", () => {
 
 describe("composerNote while another agent is picked", () => {
   it("says the source agent is still working", () => {
-    expect(composerNote({ continuesSession: true, switchWaits: "Qwen Code" })).toBe(
+    expect(composerNote({ continuesSession: true, switchWaits: { agent: "Qwen Code", isWaiting: false } })).toBe(
       "Qwen Code is still working. Wait for it to finish, or press Stop.",
     );
   });
 
+  it("says the source agent waits for an answer", () => {
+    expect(composerNote({ continuesSession: true, switchWaits: { agent: "Qwen Code", isWaiting: true } })).toBe(
+      "Qwen Code is waiting for your answer. Answer it in the chat first.",
+    );
+  });
+
   it("ranks after the review owner and before a full queue", () => {
-    expect(composerNote({ continuesSession: true, switchWaits: "Qwen Code", reviewOwner: { title: "Alpha", isArchived: false } })).not.toContain(
+    expect(composerNote({ continuesSession: true, switchWaits: { agent: "Qwen Code", isWaiting: false }, reviewOwner: { title: "Alpha", isArchived: false } })).not.toContain(
       "still working",
     );
-    expect(composerNote({ continuesSession: true, switchWaits: "Qwen Code", queueFull: true })).toBe(
+    expect(composerNote({ continuesSession: true, switchWaits: { agent: "Qwen Code", isWaiting: false }, queueFull: true })).toBe(
       "Qwen Code is still working. Wait for it to finish, or press Stop.",
     );
   });
@@ -398,6 +404,13 @@ describe("composerInputsWithSwitch", () => {
 
     expect(setChoices).toHaveBeenCalledWith(expect.objectContaining({ modeId: "edit" }));
     expect(setMode).not.toHaveBeenCalled();
+  });
+
+  it("a switch's own remember callbacks replace the base inputs'", () => {
+    const onPick = vi.fn();
+    const inputs = composerInputsWithSwitch({ ...base, onPick: vi.fn() }, { agent: claude, choices: NO_CHOICES, setChoices: vi.fn(), onPick });
+
+    expect(inputs.onPick).toBe(onPick);
   });
 
   it("without a switch the inputs are unchanged", () => {

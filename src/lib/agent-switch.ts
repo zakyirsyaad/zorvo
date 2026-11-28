@@ -79,9 +79,11 @@ export function switchNote(agent: string, source: string): string {
   return `Your message starts a new ${agent} session that continues this one. ${source}'s session stays as it is.`;
 }
 
-/** Why Send waits while a switch is picked: the source agent is still in its turn. */
-export function switchWaitsNote(source: string): string {
-  return `${source} is still working. Wait for it to finish, or press Stop.`;
+/** Why Send waits while a switch is picked: the source agent is still in its turn, or waits on the user's answer. */
+export function switchWaitsNote(source: string, isWaiting = false): string {
+  return isWaiting
+    ? `${source} is waiting for your answer. Answer it in the chat first.`
+    : `${source} is still working. Wait for it to finish, or press Stop.`;
 }
 
 /** The line above a session's first message when it continued another agent's conversation. */

@@ -393,6 +393,36 @@ describe("ACP sessions in the app", () => {
     expect(screen.queryByText(/failed \d+ times in a row/)).toBeNull();
   });
 
+  it("continues with another agent picked in the composer, the typed message first", async () => {
+    const spy = await renderWithQwen();
+    const sessionId = await startQwenSession(spy);
+    await acpEvent({
+      sessionId,
+      kind: "update",
+      update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "I am stuck" } },
+    });
+    await acpEvent({ sessionId, kind: "turn-end", stopReason: "end_turn" });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^Agent: / }));
+    });
+    const other = screen.getAllByRole("menuitemradio").find((row) => row.getAttribute("aria-checked") === "false" && !row.hasAttribute("disabled"));
+    expect(other).toBeDefined();
+    await act(async () => {
+      fireEvent.click(other as HTMLElement);
+    });
+    // Once on screen and once in the always-mounted live region.
+    expect(screen.getAllByText(/Your message starts a new .+ session that continues this one\./)).toHaveLength(2);
+
+    await send("Take over and fix it");
+
+    await waitFor(() => expect(callsTo(spy, "acp_start_session")).toHaveLength(2));
+    const [, startArgs] = callsTo(spy, "acp_start_session")[1];
+    expect(startArgs?.profileId).not.toBe(callsTo(spy, "acp_start_session")[0][1]?.profileId);
+    await waitFor(() => expect(callsTo(spy, "acp_prompt").some(([, args]) => JSON.stringify(args).includes("Take over and fix it"))).toBe(true));
+    expect(callsTo(spy, "write_fork_handoff")).toHaveLength(1);
+  });
+
   it("forks a live ACP session natively from its latest reply", async () => {
     const spy = await renderWithQwen();
     const sessionId = await startQwenSession(spy);

@@ -47,6 +47,9 @@ export interface SwitchInputs {
   agent: AgentProfile;
   choices: AcpChoices;
   setChoices: (choices: AcpChoices) => void;
+  /** Remember picks for that agent; without them the base inputs' are kept. */
+  onPick?: ComposerInputs['onPick'];
+  onPickModel?: ComposerInputs['onPickModel'];
 }
 
 /**
@@ -61,6 +64,8 @@ export function composerInputsWithSwitch(inputs: ComposerInputs, picked: SwitchI
     draftAgent: picked.agent,
     acpChoices: picked.choices,
     setAcpChoices: picked.setChoices,
+    ...(picked.onPick ? { onPick: picked.onPick } : {}),
+    ...(picked.onPickModel ? { onPickModel: picked.onPickModel } : {}),
     isPrivate: false,
   };
 }
@@ -181,8 +186,8 @@ export function composerNote(state: {
   commentsWaitFor?: string;
   /** The session's queue of messages sent while the agent works is full. */
   queueFull?: boolean;
-  /** Another agent is picked for this session and its own agent, named here, is still in its turn. */
-  switchWaits?: string;
+  /** Another agent is picked for this session and its own agent is still in its turn, or waits on the user. */
+  switchWaits?: { agent: string; isWaiting: boolean };
   /** Agents ticked for a compare run; two or more replace every note but the review one. */
   compareCount?: number;
   /** The draft agent's name while it must be installed before a message can be sent. */
@@ -199,7 +204,7 @@ export function composerNote(state: {
   if (state.reviewOwner) return reviewOwnerNote(state.reviewOwner);
   if (state.commentsWaitFor) return `Comments are sent when ${state.commentsWaitFor} finishes.`;
   if (state.compareCount !== undefined && state.compareCount >= 2) return COMPARE_NOTE;
-  if (state.switchWaits) return switchWaitsNote(state.switchWaits);
+  if (state.switchWaits) return switchWaitsNote(state.switchWaits.agent, state.switchWaits.isWaiting);
   if (state.queueFull) return QUEUE_FULL_NOTE;
   if (state.agentToInstall) return installPlaceholder(state.agentToInstall, state.continuesSession);
   if (state.agentToSignIn) return signInPlaceholder(state.agentToSignIn, state.continuesSession);

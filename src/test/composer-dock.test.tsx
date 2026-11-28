@@ -737,8 +737,7 @@ describe("the composer while another agent is picked", () => {
       />,
     );
 
-    const note = screen.getByText("Your message starts a new Claude Code session that continues this one.");
-    expect(note.closest('[role="status"]')).not.toBeNull();
+    expect(screen.getAllByText("Your message starts a new Claude Code session that continues this one.")).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "Keep Qwen Code" }));
     expect(onKeep).toHaveBeenCalled();
   });
@@ -760,5 +759,17 @@ describe("the composer while another agent is picked", () => {
     render(<ComposerDock onSendMessage={() => {}} sendName="Send to Claude Code in a new session" />);
 
     expect(screen.getByRole("button", { name: "Send to Claude Code in a new session" })).toBeInTheDocument();
+  });
+
+  it("keeps the switch note's live region mounted before there is a note", () => {
+    const { rerender } = render(<ComposerDock onSendMessage={() => {}} />);
+    const region = document.querySelector("[data-switch-status]");
+    expect(region).not.toBeNull();
+    expect(region?.textContent).toBe("");
+
+    rerender(<ComposerDock onSendMessage={() => {}} switchNote={{ text: "Starts a new session.", keepLabel: "Keep Qwen Code", onKeep: vi.fn() }} />);
+
+    expect(document.querySelector("[data-switch-status]")).toBe(region);
+    expect(region?.textContent).toBe("Starts a new session.");
   });
 });

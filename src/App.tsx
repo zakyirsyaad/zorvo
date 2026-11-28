@@ -199,6 +199,12 @@ export default function App() {
   const composerRef = useRef<ComposerHandle>(null);
   // The top bar's Inspector button: focus goes back to it when the inspector closes from its own button.
   const inspectorButtonRef = useRef<HTMLButtonElement>(null);
+  // The top bar's Overview button: focus goes back to it when the overview card folds from its own button.
+  const overviewButtonRef = useRef<HTMLButtonElement>(null);
+  // The chat + overview sheet body: measured so narrow sheets (< 900px) float the overview when toggled.
+  const sheetBodyRef = useRef<HTMLDivElement>(null);
+  const [isNarrowSheet, setNarrowSheet] = useState(false);
+  const [isOverviewFloating, setOverviewFloating] = useState(false);
   // The top bar's ⋯ button: focus goes back to it when the delegate dialog the menu opened closes.
   const moreOptionsButtonRef = useRef<HTMLButtonElement>(null);
   /** The delegation the composer's text asks for, as the mention menu reported it: never on mount. */
@@ -1349,6 +1355,30 @@ export default function App() {
         : null,
     [activeSession, activeTranscript, isActiveSessionBusy, sessionShellTasks, sessionArtifacts, createdFiles, pullRequests, agentTasks],
   );
+  const canShowOverview = Boolean(activeSession && sessionOverview && !activeRun && !isArtifactExpanded && !isDiffOpen);
+  const isOverviewOpen = Boolean(
+    canShowOverview &&
+      activeSession &&
+      (isNarrowSheet ? isOverviewFloating : !overviewCollapse.isCollapsed(activeSession.id)),
+  );
+  useEffect(() => {
+    const node = sheetBodyRef.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const sync = (width: number) => {
+      const narrow = width > 0 && width < 900;
+      setNarrowSheet(narrow);
+      if (!narrow) setOverviewFloating(false);
+    };
+    sync(node.clientWidth);
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) sync(entry.contentRect.width);
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    setOverviewFloating(false);
+  }, [activeSession?.id]);
   const sessionPlan = currentPlan(currentMessages);
   const composer = composerStateFor(
     composerInputsWithSwitch(
@@ -1613,6 +1643,17 @@ export default function App() {
               canGoForward={navigation.canGoForward}
               onBack={() => navigateTo(!activeSession ? lastViewedSessionId : navigation.back())}
               onForward={() => navigateTo(navigation.forward())}
+              onToggleOverview={
+                canShowOverview && activeSession
+                  ? () => {
+                      if (isNarrowSheet) setOverviewFloating((open) => !open);
+                      else overviewCollapse.toggle(activeSession.id);
+                    }
+                  : undefined
+              }
+              isOverviewOpen={isOverviewOpen}
+              overviewRunningCount={sessionOverview?.runningCount ?? 0}
+              overviewButtonRef={overviewButtonRef}
               onToggleInspector={inspectorTabs.length > 0 ? () => inspector.toggle(inspectorTabs) : undefined}
               isInspectorOpen={inspectorTab !== null}
               inspectorButtonRef={inspectorButtonRef}
@@ -1624,8 +1665,8 @@ export default function App() {
               plan={sessionPlan}
               planSource={activeAgent?.name}
             />
-            {/* A container, so the overview card gives way to its pill on a narrow sheet (an inspector open beside it). */}
-            <div className="@container relative flex min-h-0 flex-1">
+            {/* Measured so narrow sheets (< 900px) float the overview over the chat when toggled from the top bar. */}
+            <div ref={sheetBodyRef} className="@container relative flex min-h-0 flex-1">
               {/* A still frame: the drop overlay is placed against it and the update banner sits on it, so both stay on
                   screen whatever the column under them is scrolled to. */}
               <article className={`${(isDiffOpen && inspector.isDiffExpanded) || isArtifactExpanded ? "hidden" : "flex"} flex-1 flex-col relative overflow-hidden`}>
@@ -2048,9 +2089,9 @@ export default function App() {
                   {isNewSessionDraft && <NewSessionBelow sessionList={draftSessionList.sessionList} />}
                 </div>
               </article>
-              {activeSession && sessionOverview && !activeRun && !isArtifactExpanded && !isDiffOpen && (
+              {canShowOverview && activeSession && sessionOverview && (
                 <OverviewCard
-                  // Its own folds, floating and preview belong to one session.
+                  // Its own folds and preview belong to one session.
                   key={activeSession.id}
                   overview={sessionOverview}
                   agentName={activeAgent?.name ?? "The agent"}
@@ -2059,7 +2100,11 @@ export default function App() {
                   branch={workspaceDetails?.branch ?? undefined}
                   filesRoot={filesFolder?.path}
                   isCollapsed={overviewCollapse.isCollapsed(activeSession.id)}
+                  isNarrow={isNarrowSheet}
+                  isFloating={isOverviewFloating}
                   onToggleCollapsed={() => overviewCollapse.toggle(activeSession.id)}
+                  onCloseFloating={() => setOverviewFloating(false)}
+                  returnFocusTo={overviewButtonRef}
                   onShowTab={(tab) => inspector.show(tab)}
                   onOpenTask={(tab) => openTask(activeSession.id, tab)}
                   onOpenPage={(artifactId) => {

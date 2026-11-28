@@ -1,4 +1,4 @@
-import { Archive, ChevronLeft, ChevronRight, CircleStop, Columns3, ExternalLink, Folder, GitBranch, MoreHorizontal, PanelLeft, PanelRight, Pencil, ShieldCheck, ShieldOff, Split, Unlink } from "lucide-react";
+import { Archive, ChevronLeft, ChevronRight, CircleStop, Columns3, ExternalLink, Folder, GitBranch, LayoutList, MoreHorizontal, PanelLeft, PanelRight, Pencil, ShieldCheck, ShieldOff, Split, Unlink } from "lucide-react";
 import { Fragment, useId, useState, type Ref } from "react";
 import { Chip } from "./ui/Chip";
 import { IconButton } from "./ui/IconButton";
@@ -6,6 +6,7 @@ import { Popover, PopoverOption } from "./ui/Popover";
 import { RenameField } from "./ui/RenameField";
 import { DiffStatChip } from "./changes/DiffStatChip";
 import { PlanMenu } from "./topbar/PlanMenu";
+import { pillRunning } from "../lib/session-overview";
 import type { PlanEntry } from "../types";
 
 /**
@@ -224,6 +225,13 @@ export interface TopBarProps {
   onStopComputerUse?: () => void;
   /** The ⋯ button, which takes focus back when a dialog its item opened closes. */
   moreButtonRef?: Ref<HTMLButtonElement>;
+  /** Opens or closes the session overview panel; hidden when absent. */
+  onToggleOverview?: () => void;
+  isOverviewOpen?: boolean;
+  /** Tasks running in this session; shown as a subtle dot and in the toggle label while overview is closed. */
+  overviewRunningCount?: number;
+  /** The Overview button, which takes focus back when the overview card folds from its own button. */
+  overviewButtonRef?: Ref<HTMLButtonElement>;
   /** Opens or closes the inspector (changes, activity, files, terminal); the button is hidden when absent. */
   onToggleInspector?: () => void;
   isInspectorOpen?: boolean;
@@ -270,6 +278,10 @@ export function TopBar({
   onStopAllowingBrowser,
   onStopComputerUse,
   moreButtonRef,
+  onToggleOverview,
+  isOverviewOpen = false,
+  overviewRunningCount = 0,
+  overviewButtonRef,
   onToggleInspector,
   isInspectorOpen = false,
   inspectorButtonRef,
@@ -387,6 +399,30 @@ export function TopBar({
             onOpen={onOpenDiff}
           />
         )}
+
+        {onToggleOverview && (() => {
+          const running = pillRunning(overviewRunningCount);
+          const label = isOverviewOpen
+            ? "Hide session overview"
+            : running
+              ? `Show session overview: ${running}`
+              : "Show session overview";
+          return (
+            <IconButton
+              ref={overviewButtonRef}
+              label={label}
+              tone="secondary"
+              onClick={onToggleOverview}
+              aria-pressed={isOverviewOpen}
+              className="relative"
+            >
+              <LayoutList size={14} />
+              {!isOverviewOpen && overviewRunningCount > 0 && (
+                <span aria-hidden="true" className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-status-running" />
+              )}
+            </IconButton>
+          );
+        })()}
 
         {onToggleInspector && (
           <IconButton

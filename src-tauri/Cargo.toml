@@ -52,7 +52,7 @@ rustls-platform-verifier = "=0.7.1"
 futures-util = { version = "=0.3.34", default-features = false, features = ["std"] }
 # Verifying NEAR AI's per-answer ECDSA signature (secp256k1, EIP-191).
 k256 = { version = "0.14", default-features = false, features = ["ecdsa"] }
-sha3 = "0.10"
+sha3 = "0.12"
 flate2 = "1"
 tar = { version = "0.4", default-features = false }
 bzip2 = { version = "0.5", default-features = false, features = ["libbz2-rs-sys"] }

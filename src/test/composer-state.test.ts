@@ -358,3 +358,20 @@ describe("composerNote while queueing", () => {
     expect(composerNote({ continuesSession: true, reviewOwner: { title: null, isArchived: false }, commentsWaitFor: "Qwen Code" })).toContain("another session");
   });
 });
+
+describe("composerNote while another agent is picked", () => {
+  it("says the source agent is still working", () => {
+    expect(composerNote({ continuesSession: true, switchWaits: "Qwen Code" })).toBe(
+      "Qwen Code is still working. Wait for it to finish, or press Stop.",
+    );
+  });
+
+  it("ranks after the review owner and before a full queue", () => {
+    expect(composerNote({ continuesSession: true, switchWaits: "Qwen Code", reviewOwner: { title: "Alpha", isArchived: false } })).not.toContain(
+      "still working",
+    );
+    expect(composerNote({ continuesSession: true, switchWaits: "Qwen Code", queueFull: true })).toBe(
+      "Qwen Code is still working. Wait for it to finish, or press Stop.",
+    );
+  });
+});

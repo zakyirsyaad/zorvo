@@ -1,3 +1,4 @@
+import { switchWaitsNote } from './agent-switch';
 import { acpControls, type ComposerControls } from './composer-controls';
 import { draftInfo, type AcpChoices, type AgentOptions } from './acp-draft';
 import type { AcpConfigOption } from '../hooks/useAcpSessions';
@@ -157,6 +158,8 @@ export function composerNote(state: {
   commentsWaitFor?: string;
   /** The session's queue of messages sent while the agent works is full. */
   queueFull?: boolean;
+  /** Another agent is picked for this session and its own agent, named here, is still in its turn. */
+  switchWaits?: string;
   /** Agents ticked for a compare run; two or more replace every note but the review one. */
   compareCount?: number;
   /** The draft agent's name while it must be installed before a message can be sent. */
@@ -173,6 +176,7 @@ export function composerNote(state: {
   if (state.reviewOwner) return reviewOwnerNote(state.reviewOwner);
   if (state.commentsWaitFor) return `Comments are sent when ${state.commentsWaitFor} finishes.`;
   if (state.compareCount !== undefined && state.compareCount >= 2) return COMPARE_NOTE;
+  if (state.switchWaits) return switchWaitsNote(state.switchWaits);
   if (state.queueFull) return QUEUE_FULL_NOTE;
   if (state.agentToInstall) return installPlaceholder(state.agentToInstall, state.continuesSession);
   if (state.agentToSignIn) return signInPlaceholder(state.agentToSignIn, state.continuesSession);

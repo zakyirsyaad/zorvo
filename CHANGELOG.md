@@ -23,6 +23,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - **Next step buttons match the active branch and stay flexible.** Switching branches no longer carries over an earlier branch's pull request; `wrap_up` now supports `push` and up to three custom replies of 40 characters each, `Create PR` adapts its message when commits are already made, and earlier turn boxes no longer show disabled buttons.
 
+- **Pull requests in the overview update promptly.** Opening a new PR or branch in a session refreshes the folder's PR list immediately, and turn-end (5 s), focus (15 s) and active-session (30 s) refresh intervals are shorter so newly created PRs and CI check changes show up without waiting a full minute.
+
 ## [0.22.1] - 2026-11-27
 
 ### Added

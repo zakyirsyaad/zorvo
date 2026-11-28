@@ -8,6 +8,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - Continue a conversation with another agent: pick it from the agent menu in the composer, and your message starts its session with the conversation so far, or pick it from Fork from here under any reply. The new session marks where it continued.
 
+### Fixed
+
+- Clicking a system notification now focuses Zorvo and opens the session that sent it.
+
 ## [0.22.1] - 2026-11-27
 
 ### Added

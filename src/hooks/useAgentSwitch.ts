@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { NO_CHOICES, withPreferred, type AcpChoices, type AgentOptions } from "../lib/acp-draft";
 import type { ForkOptions } from "./useSessionFork";
+import { switchHiddenFor } from "../lib/agent-switch";
 import type { AgentProfile, ChatMessage, Session } from "../types";
 
 /** Another agent picked in a session's composer, waiting for Send to start its session. */
@@ -34,11 +35,16 @@ export interface AgentSwitchDeps {
  */
 export function useAgentSwitch({ sessions, agentsInUse, transcripts, agentOptions, forkSession }: AgentSwitchDeps): AgentSwitch {
   const [pending, setPending] = useState<Readonly<Record<string, PendingSwitch>>>({});
+  // Sessions whose switch is starting: a second Send in that window would start a second session.
+  const starting = useRef(new Set<string>());
 
   const sessionOf = (sessionId: string) => sessions.find((session) => session.id === sessionId && !session.archivedAt);
   const pendingOf = (sessionId: string): PendingSwitch | undefined => {
     const picked = pending[sessionId];
-    if (!picked || !sessionOf(sessionId)) return undefined;
+    const session = sessionOf(sessionId);
+    if (!picked || !session) return undefined;
+    // A session that stopped offering other agents (rewound to nothing, joined a compare run) drops its pick.
+    if (switchHiddenFor(session, (transcripts[sessionId] ?? []).length, false)) return undefined;
     return agentsInUse.some((agent) => agent.id === picked.agentId) ? picked : undefined;
   };
 
@@ -60,11 +66,16 @@ export function useAgentSwitch({ sessions, agentsInUse, transcripts, agentOption
     const picked = pendingOf(sessionId);
     const agent = picked && agentsInUse.find((candidate) => candidate.id === picked.agentId);
     const last = (transcripts[sessionId] ?? []).at(-1);
-    if (!picked || !agent || !last) return false;
+    if (!picked || !agent || !last || starting.current.has(sessionId)) return false;
     const firstMessage = message.attachments?.length ? { text: message.text, attachments: message.attachments } : { text: message.text };
-    const isStarted = await forkSession(last.id, { agent, choices: picked.choices, firstMessage });
-    if (isStarted) without(sessionId);
-    return isStarted;
+    starting.current.add(sessionId);
+    try {
+      const isStarted = await forkSession(last.id, { agent, choices: picked.choices, firstMessage });
+      if (isStarted) without(sessionId);
+      return isStarted;
+    } finally {
+      starting.current.delete(sessionId);
+    }
   };
 
   return { pendingOf, pick, keep: without, setChoices, send };

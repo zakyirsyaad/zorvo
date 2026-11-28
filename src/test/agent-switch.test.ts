@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  continuedFromView,
   continuedLine,
   switchHiddenFor,
   switchNote,
@@ -112,5 +113,22 @@ describe('switch copy', () => {
 
   it('words the continued line', () => {
     expect(continuedLine('Claude Code', 'Fix login bug')).toBe('Continued with Claude Code from Fix login bug');
+  });
+});
+
+describe('continuedFromView', () => {
+  const sessions = [session({ id: 'a', name: 'Plan' })];
+  const agents = [qwen, claude, codex];
+
+  it('names the agent the mark says took over, not the session on screen', () => {
+    const view = continuedFromView({ sessionId: 'a', agentId: 'claude-acp', toAgentId: 'codex-acp' }, sessions, agents, 'Qwen Code');
+    expect(view.agentName).toBe('Codex');
+    expect(view.sourceName).toBe('Plan');
+  });
+
+  it('falls back to the session on screen for a mark without toAgentId, and reads a gone source as null', () => {
+    const view = continuedFromView({ sessionId: 'gone', agentId: 'claude-acp' }, sessions, agents, 'Qwen Code');
+    expect(view.agentName).toBe('Qwen Code');
+    expect(view.sourceName).toBeNull();
   });
 });

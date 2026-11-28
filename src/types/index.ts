@@ -498,7 +498,7 @@ export interface ChatMessage {
   /** On the user message that carries a task into a delegate: the agent of the session that gave it. */
   delegationTask?: { agentName: string; agentId?: string };
   /** On a session's first user message when it continued another agent's conversation: where it came from. */
-  continuedFrom?: { sessionId: string; agentId: string };
+  continuedFrom?: { sessionId: string; agentId: string; toAgentId?: string };
   /** A question the agent asked the user (ACP elicitation); never holds the answer. */
   elicitation?: ElicitationCard;
   /** The NEAR AI signature state of a private reply's model calls. */

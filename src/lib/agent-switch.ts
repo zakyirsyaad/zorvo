@@ -1,6 +1,6 @@
 import { isAgentRunnable } from './agent-readiness';
 import { SIGN_IN_STATUS_WORDS, type SignInState } from './agent-sign-in';
-import type { AgentProfile, Session } from '../types';
+import type { AgentProfile, ChatMessage, Session } from '../types';
 
 /** How an agent stands for continuing a conversation with it. */
 export type SwitchStatus = SignInState | 'not-installed';
@@ -87,4 +87,20 @@ export function switchWaitsNote(source: string): string {
 /** The line above a session's first message when it continued another agent's conversation. */
 export function continuedLine(agent: string, source: string): string {
   return `Continued with ${agent} from ${source}`;
+}
+
+/**
+ * What the "Continued with" line names: the agent the mark says took the conversation over (a mark copied into a
+ * later fork keeps its own), else the session on screen's agent for marks written before that field; and the
+ * source session, or null once it is gone.
+ */
+export function continuedFromView(
+  mark: NonNullable<ChatMessage['continuedFrom']>,
+  sessions: readonly Session[],
+  agents: readonly Pick<AgentProfile, 'id' | 'name'>[],
+  fallbackAgentName: string,
+): { agentName: string; sourceName: string | null; sourceId: string | null } {
+  const taker = mark.toAgentId ? agents.find((agent) => agent.id === mark.toAgentId) : undefined;
+  const origin = sessions.find((session) => session.id === mark.sessionId);
+  return { agentName: taker?.name ?? fallbackAgentName, sourceName: origin?.name ?? null, sourceId: origin?.id ?? null };
 }

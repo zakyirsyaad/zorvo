@@ -120,7 +120,8 @@ import { useDraftSessionList } from "./hooks/useDraftSessionList";
 import { useSessionFork } from "./hooks/useSessionFork";
 import { useOutsideTeeConfirm } from "./hooks/useOutsideTeeConfirm";
 import { useAgentSwitch } from "./hooks/useAgentSwitch";
-import { SWITCH_TEXT, switchHiddenFor, switchNote, switchTargets } from "./lib/agent-switch";
+import { SWITCH_TEXT, continuedFromView, switchNote } from "./lib/agent-switch";
+import { useSwitchTargets } from "./hooks/useSwitchTargets";
 import { useSessionRewind } from "./hooks/useSessionRewind";
 import { useSessionStartWiring } from "./hooks/useSessionStartWiring";
 import { useUnreadMarks } from "./hooks/useUnreadMarks";
@@ -931,14 +932,12 @@ export default function App() {
   });
   const teeConfirm = useOutsideTeeConfirm();
   // The agents a conversation can continue with, the session's own first; none where no other agent is offered.
-  const activeMessageCount = (transcripts[activeSessionId] ?? []).length;
-  const switchAgents = useMemo(
-    () =>
-      activeSession && !switchHiddenFor(activeSession, activeMessageCount, false)
-        ? switchTargets(agentsInUse, activeSession.profileId, signInStatus.stateOf, Boolean(activeSession.privateMode))
-        : [],
-    [activeSession, activeMessageCount, agentsInUse, signInStatus.stateOf],
-  );
+  const switchAgents = useSwitchTargets({
+    session: activeSession,
+    messageCount: (transcripts[activeSessionId] ?? []).length,
+    agentsInUse,
+    signInOf: signInStatus.stateOf,
+  });
   // Fork from here: the session's own agent, or another one with its remembered picks, asking first for a private session.
   const forkFromMessage = (messageId: string, agentId?: string) => {
     const agent = agentId === undefined ? undefined : agents.find((candidate) => candidate.id === agentId);
@@ -1655,12 +1654,9 @@ export default function App() {
                       onForkBranch={forkFromMessage}
                       forkAgents={switchAgents}
                       continuedFromOf={(mark) => {
-                        const origin = sessions.find((session) => session.id === mark.sessionId);
-                        return {
-                          agentName: activeAgent?.name ?? "The agent",
-                          sourceName: origin?.name ?? null,
-                          onOpenSource: origin ? () => handleSelectSession(origin.id) : undefined,
-                        };
+                        const view = continuedFromView(mark, sessions, agents, activeAgent?.name ?? "The agent");
+                        const { sourceId } = view;
+                        return { ...view, onOpenSource: sourceId ? () => handleSelectSession(sourceId) : undefined };
                       }}
                       onReply={(quote) => composerRef.current?.insertText(quote)}
                       onOpenUrl={openLink}

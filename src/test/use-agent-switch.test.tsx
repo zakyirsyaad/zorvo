@@ -149,4 +149,33 @@ describe("useAgentSwitch", () => {
     expect(isSent).toBe(false);
     expect(result.current.pendingOf("s-1")?.agentId).toBe("claude-acp");
   });
+
+  it("drops a switch once the session offers no other agent", () => {
+    const { result, rerender, initial } = renderSwitch();
+
+    act(() => result.current.pick("s-1", "claude-acp"));
+    rerender({ ...initial, transcripts: { "s-1": [] } });
+    expect(result.current.pendingOf("s-1")).toBeUndefined();
+
+    rerender({ ...initial, sessions: [session({ compareRunId: "run-1" })] });
+    expect(result.current.pendingOf("s-1")).toBeUndefined();
+  });
+
+  it("a second send while the first is starting starts nothing", async () => {
+    let finish: (value: boolean) => void = () => {};
+    const forkSession = vi.fn(() => new Promise<boolean>((resolve) => (finish = resolve)));
+    const { result } = renderSwitch({ forkSession });
+    act(() => result.current.pick("s-1", "claude-acp"));
+    let second: boolean | undefined;
+
+    await act(async () => {
+      const first = result.current.send("s-1", { text: "One" });
+      second = await result.current.send("s-1", { text: "Two" });
+      finish(true);
+      await first;
+    });
+
+    expect(forkSession).toHaveBeenCalledTimes(1);
+    expect(second).toBe(false);
+  });
 });

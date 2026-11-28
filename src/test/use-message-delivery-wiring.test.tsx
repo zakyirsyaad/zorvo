@@ -285,4 +285,21 @@ describe('sending while another agent is picked', () => {
     expect(deps.delegation.start).not.toHaveBeenCalled();
     expect(agentSwitch.send).toHaveBeenCalled();
   });
+
+  it('comments held for this session never go to the picked agent', async () => {
+    const agentSwitch = pendingSwitch();
+    const deps = makeDeps({
+      agentSwitch,
+      review: { slot: { sessionId: 's-1', commentIds: ['c-1'], lastTarget: null } as never, rearm: vi.fn(), sendFrom: vi.fn() },
+    });
+    const { result } = renderHook(() => useMessageDeliveryWiring(deps));
+
+    await act(async () => {
+      result.current.handleSendMessage('Review these');
+    });
+
+    expect(agentSwitch.send).not.toHaveBeenCalled();
+    expect(deps.giveBackMessage).toHaveBeenCalledWith('s-1', 'Review these', undefined);
+    expect(deps.onNotice).toHaveBeenCalledWith('Send or clear the review comments first.');
+  });
 });

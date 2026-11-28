@@ -491,11 +491,12 @@ function withValidContinuedFrom(message: ChatMessage): ChatMessage {
   if (!('continuedFrom' in message)) return message;
   const { continuedFrom, ...rest } = message;
   if (!isObject(continuedFrom)) return rest as ChatMessage;
-  const { sessionId, agentId } = continuedFrom as { sessionId?: unknown; agentId?: unknown };
+  const { sessionId, agentId, toAgentId } = continuedFrom as { sessionId?: unknown; agentId?: unknown; toAgentId?: unknown };
   if (typeof sessionId !== 'string' || sessionId === '' || typeof agentId !== 'string' || agentId === '') {
     return rest as ChatMessage;
   }
-  return { ...rest, continuedFrom: { sessionId, agentId } } as ChatMessage;
+  const taker = typeof toAgentId === 'string' && toAgentId !== '' ? { toAgentId } : {};
+  return { ...rest, continuedFrom: { sessionId, agentId, ...taker } } as ChatMessage;
 }
 
 function withValidDelegationReport(message: ChatMessage): ChatMessage {

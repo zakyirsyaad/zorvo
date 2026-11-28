@@ -900,3 +900,13 @@ describe("a saved continued-from mark", () => {
     }
   });
 });
+
+describe("a continued-from mark's taking agent", () => {
+  it("keeps toAgentId when it is a string and drops it otherwise", () => {
+    const first = { id: "u", role: "user", content: "Fix it", timestamp: 1_000 };
+    const [kept] = normalizeTranscript([{ ...first, continuedFrom: { sessionId: "s-1", agentId: "qwen-code", toAgentId: "claude-acp" } }]);
+    expect(kept.continuedFrom).toEqual({ sessionId: "s-1", agentId: "qwen-code", toAgentId: "claude-acp" });
+    const [dropped] = normalizeTranscript([{ ...first, continuedFrom: { sessionId: "s-1", agentId: "qwen-code", toAgentId: 3 } }]);
+    expect(dropped.continuedFrom).toEqual({ sessionId: "s-1", agentId: "qwen-code" });
+  });
+});

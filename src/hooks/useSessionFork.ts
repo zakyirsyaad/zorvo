@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { AcpEngine, FirstMessage } from './session-engine/useAcpEngine';
-import { buildForkHandoff, buildForkPrompt, FORK_FIRST_MESSAGE } from '../lib/fork-handoff';
+import { buildForkHandoff, buildForkPrompt, buildRewindContext, FORK_FIRST_MESSAGE } from '../lib/fork-handoff';
 import { createId } from '../lib/ids';
 import { copyForkVisuals } from '../lib/visual-fork';
 import type { SessionSpec, StartSessionOptions } from '../lib/session-start';
@@ -117,9 +117,10 @@ export function useSessionFork(deps: SessionForkDeps): (messageId: string, optio
       const first: FirstMessage = {
         text: options?.firstMessage?.text ?? FORK_FIRST_MESSAGE,
         ...(options?.firstMessage?.attachments?.length ? { attachments: options.firstMessage.attachments } : {}),
-        context: buildForkPrompt(handoffPath),
+        // A message the user typed is to be answered; the standard continue line only asks the agent to get ready.
+        context: options?.firstMessage ? buildRewindContext(handoffPath) : buildForkPrompt(handoffPath),
         // Marks where another agent took the conversation over, for the line above this message.
-        ...(continuesWithAnother ? { marks: { continuedFrom: { sessionId: source.id, agentId: source.profileId } } } : {}),
+        ...(continuesWithAnother ? { marks: { continuedFrom: { sessionId: source.id, agentId: source.profileId, toAgentId: agent.id } } } : {}),
       };
       if (options?.choices) startSession(spec, first, { choices: options.choices });
       else startSession(spec, first);

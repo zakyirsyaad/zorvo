@@ -1,6 +1,7 @@
 import { useEffect, type MutableRefObject, type RefObject } from 'react';
 import type { ComposerHandle } from '../components/ComposerDock';
 import { NO_CHOICES, type AcpChoices, type AgentOptions } from '../lib/acp-draft';
+import { SWITCH_TEXT } from '../lib/agent-switch';
 import { delegationChoicesFor as delegationChoicesForOptions } from '../lib/delegation-start';
 import type { QueuedMessage } from '../lib/queued-messages';
 import { isAutoName } from '../lib/session-helpers';
@@ -233,6 +234,12 @@ export function useMessageDeliveryWiring(deps: MessageDeliveryWiringDeps) {
       const sourceId = activeSession.id;
       if (isTurnUnderWay(sourceId) || isSessionWaiting(sourceId)) {
         giveBackMessage(sourceId, text, attachments);
+        return;
+      }
+      // Comments written for this session's agent were added after the pick: they never go to another agent.
+      if (review.slot?.sessionId === sourceId) {
+        giveBackMessage(sourceId, text, attachments);
+        onNotice(SWITCH_TEXT.reviewLock);
         return;
       }
       void agentSwitch.send(sourceId, attachments?.length ? { text, attachments } : { text }).then((isStarted) => {

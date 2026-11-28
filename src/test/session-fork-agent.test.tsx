@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook } from "@testing-library/react";
 import { fakeTauriInvoke } from "./setup";
 import { useSessionFork } from "../hooks/useSessionFork";
-import { FORK_FIRST_MESSAGE } from "../lib/fork-handoff";
+import { FORK_FIRST_MESSAGE, buildForkPrompt, buildRewindContext } from "../lib/fork-handoff";
 import { newSessionRecord, type SessionSpec } from "../lib/session-start";
 import { fakeProfiles } from "./fixtures/agents";
 import type { FirstMessage } from "../hooks/session-engine/useAcpEngine";
@@ -83,7 +83,7 @@ describe("forking to another agent", () => {
     await act(async () => {
       await other.result.current("m-2", { agent: other.claude });
     });
-    expect(firstOf(other.startSession).marks?.continuedFrom).toEqual({ sessionId: "s-1", agentId: "qwen-code" });
+    expect(firstOf(other.startSession).marks?.continuedFrom).toMatchObject({ sessionId: "s-1", agentId: "qwen-code" });
 
     const same = renderFork();
     await act(async () => {
@@ -130,5 +130,39 @@ describe("forking to another agent", () => {
 
     expect(isStarted).toBe(false);
     expect(startSession).not.toHaveBeenCalled();
+  });
+
+  it("a typed first message is answered, not met with a ready reply", async () => {
+    const { result, startSession, claude } = renderFork();
+
+    await act(async () => {
+      await result.current("m-2", { agent: claude, firstMessage: { text: "Fix it" } });
+    });
+
+    const first = firstOf(startSession);
+    const path = /"([^"]+)"/.exec(first.context ?? "")?.[1] ?? "";
+    expect(first.context).toBe(buildRewindContext(path));
+  });
+
+  it("the standard continue line keeps the ready-and-wait prompt", async () => {
+    const { result, startSession, claude } = renderFork();
+
+    await act(async () => {
+      await result.current("m-2", { agent: claude });
+    });
+
+    const first = firstOf(startSession);
+    const path = /"([^"]+)"/.exec(first.context ?? "")?.[1] ?? "";
+    expect(first.context).toBe(buildForkPrompt(path));
+  });
+
+  it("the mark names the agent that took the conversation over", async () => {
+    const { result, startSession, claude } = renderFork();
+
+    await act(async () => {
+      await result.current("m-2", { agent: claude });
+    });
+
+    expect(firstOf(startSession).marks?.continuedFrom).toEqual({ sessionId: "s-1", agentId: "qwen-code", toAgentId: "claude-acp" });
   });
 });

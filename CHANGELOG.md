@@ -8,6 +8,10 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 
 - Continue a conversation with another agent: pick it from the agent menu in the composer, and your message starts its session with the conversation so far, or pick it from Fork from here under any reply. The new session marks where it continued.
 
+### Changed
+
+- **The session overview toggle lives in the top bar.** Folding the overview no longer leaves a floating pill inside the chat sheet; the top bar button beside the inspector opens and closes it on both wide and narrow sheets, with a dot when tasks are running while it is closed.
+
 ## [0.22.1] - 2026-11-27
 
 ### Added

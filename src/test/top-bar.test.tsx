@@ -445,6 +445,40 @@ describe("TopBar", () => {
     });
   });
 
+  describe("session overview toggle", () => {
+    it("renders no overview button without onToggleOverview", () => {
+      renderTopBar({ sessionName: "A" });
+      expect(screen.queryByRole("button", { name: /session overview/i })).toBeNull();
+    });
+
+    it("toggles session overview and reflects open state via aria-pressed", () => {
+      const onToggleOverview = vi.fn();
+      const { rerender } = renderTopBar({
+        sessionName: "A",
+        onToggleOverview,
+        isOverviewOpen: true,
+      });
+
+      const hideButton = screen.getByRole("button", { name: "Hide session overview" });
+      expect(hideButton.getAttribute("aria-pressed")).toBe("true");
+      fireEvent.click(hideButton);
+      expect(onToggleOverview).toHaveBeenCalledTimes(1);
+
+      rerender(
+        <TopBar
+          sessionName="A"
+          onToggleOverview={onToggleOverview}
+          isOverviewOpen={false}
+          overviewRunningCount={3}
+        />,
+      );
+      const showButton = screen.getByRole("button", { name: "Show session overview: 3 running" });
+      expect(showButton.getAttribute("aria-pressed")).toBe("false");
+      fireEvent.click(showButton);
+      expect(onToggleOverview).toHaveBeenCalledTimes(2);
+    });
+  });
+
   describe("renaming from the title", () => {
     const typeAndPress = (value: string, key: string) => {
       const field = screen.getByRole("textbox", { name: "Rename Alpha" });

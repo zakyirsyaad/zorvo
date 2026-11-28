@@ -108,7 +108,7 @@ function factsOf(
     .filter((task) => task.kind === 'shell' && task.sessionId === session.id && (task.ports?.length ?? 0) > 0)
     .flatMap((task) => (task.ports ?? []).map((port) => ({ port, command: task.name })))
     .sort((a, b) => a.port - b.port);
-  const matchingPr = pullRequest && (!own?.branch || pullRequest.branch === own.branch) ? pullRequest : null;
+  const matchingPr = pullRequest && own?.branch && pullRequest.branch === own.branch ? pullRequest : null;
   return {
     ...(own?.changes ? { changes: own.changes } : {}),
     ...(own?.branch !== undefined ? { branch: own.branch } : {}),

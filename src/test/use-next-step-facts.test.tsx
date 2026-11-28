@@ -79,4 +79,11 @@ describe("useNextStepFacts", () => {
     await waitFor(() => expect(result.current.branch).toBe("feat/status-words"));
     expect(result.current.pr).toBeUndefined();
   });
+
+  it("withholds pullRequest until the session's own branch has been read", () => {
+    answer(() => new Promise(() => {}));
+    const { result } = renderHook(() => useNextStepFacts({ session: SESSION, isActive: true, pullRequest: PR, tasks: [] }));
+    expect(result.current.branch).toBeUndefined();
+    expect(result.current.pr).toBeUndefined();
+  });
 });

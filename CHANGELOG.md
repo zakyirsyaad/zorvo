@@ -26,6 +26,8 @@ All notable changes to Zorvo. Versions follow [Semantic Versioning](https://semv
 - **Pull requests in the overview update promptly.** Opening a new PR or branch in a session refreshes the folder's PR list immediately, and turn-end (5 s), focus (15 s) and active-session (30 s) refresh intervals are shorter so newly created PRs and CI check changes show up without waiting a full minute.
 - Narrowed the chat and composer column from 720px to 640px and shortened the context meter label to a compact percentage so the composer toolbar stays on one row.
 
+- Clicking a system notification now focuses Zorvo and opens the session that sent it.
+
 ## [0.22.1] - 2026-11-27
 
 ### Added

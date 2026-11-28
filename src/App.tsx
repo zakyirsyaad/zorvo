@@ -126,7 +126,7 @@ import { useSessionStartWiring } from "./hooks/useSessionStartWiring";
 import { useUnreadMarks } from "./hooks/useUnreadMarks";
 import { useAcpEngine, type AttentionReason, type FirstMessage } from "./hooks/session-engine/useAcpEngine";
 import type { AcpConfigOption } from "./hooks/useAcpSessions";
-import { attentionBody, notifyIfAway } from "./lib/notify";
+import * as notify from "./lib/notify";
 import { pickFiles } from "./lib/file-picker";
 import { useFileDrop } from "./hooks/useFileDrop";
 import { isAgentReady, isAgentRunnable, noAgentNotice, resolveDraftAgentId } from "./lib/agent-readiness";
@@ -642,7 +642,7 @@ export default function App() {
     const session = sessionById(sessionId);
     const agentName = agents.find((a) => a.id === session?.profileId)?.name ?? "The agent";
     // A notification that cannot be shown is not worth an error banner: the chat has it all.
-    notifyIfAway({ title: session?.name ?? agentName, body: attentionBody(agentName, reason) }).catch(() => {});
+    notify.notifyIfAway({ title: session?.name ?? agentName, body: notify.attentionBody(agentName, reason), sessionId }).catch(() => {});
   };
 
   const sessionById = (sessionId: string) => sessions.find((s) => s.id === sessionId);
@@ -927,6 +927,20 @@ export default function App() {
     composerRef,
     setNotice,
   });
+
+  // Clicking a system notification opens the session that sent it, if it still exists.
+  const openNotifiedSessionRef = useRef((sessionId: string) => {
+    if (sessions.some((s) => s.id === sessionId)) handleSelectSession(sessionId);
+  });
+  useEffect(() => {
+    openNotifiedSessionRef.current = (sessionId: string) => {
+      if (sessions.some((s) => s.id === sessionId)) handleSelectSession(sessionId);
+    };
+  });
+  useEffect(() => {
+    const register = "onNotificationSessionClick" in notify ? notify.onNotificationSessionClick : undefined;
+    return typeof register === "function" ? register((sessionId) => openNotifiedSessionRef.current(sessionId)) : undefined;
+  }, []);
 
   const forkSession = useSessionFork({
     source: activeSession,

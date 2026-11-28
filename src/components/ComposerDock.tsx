@@ -1,5 +1,5 @@
 import { useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from "react";
-import { ArrowUp, KeyRound, Paperclip, ShieldAlert, Square } from "lucide-react";
+import { ArrowUp, KeyRound, Paperclip, Repeat, ShieldAlert, Square } from "lucide-react";
 import { CompareModelStatus } from "./composer/CompareModelStatus";
 import type { CompareModelControl } from "../lib/compare-models";
 import { AgentTile } from "./ui/AgentTile";
@@ -10,6 +10,7 @@ import { MoreControls } from "./composer/MoreControls";
 import { splitControls } from "../lib/composer-overflow";
 import { useAfter } from "../hooks/useAfter";
 import { AgentChipRow, type AgentChipRowProps } from "./composer/AgentChipRow";
+import { SessionAgentPicker, type SessionAgentPickerProps } from "./composer/SessionAgentPicker";
 import { JOINED_MODEL_CHIP } from "./composer/chip-style";
 import type { FolderControl } from "./composer/FolderPicker";
 import { DraftChips } from "./composer/DraftChips";
@@ -187,6 +188,12 @@ export interface ComposerDockProps {
   helper?: string;
   /** A running session's agent, named first in the row; drafts show theirs as chips. */
   sessionAgent?: { profileId: string; name: string };
+  /** A running session's agent as a menu of the agents its conversation can continue with; replaces `sessionAgent`'s label. */
+  agentPicker?: Omit<SessionAgentPickerProps, "isOpen" | "onToggle" | "onClose">;
+  /** Above the card while another agent is picked: what Send will do, and the way back to the session's own agent. */
+  switchNote?: { text: string; keepLabel: string; onKeep: () => void };
+  /** The icon Send button's accessible name, when it does something other than send to this session's agent. */
+  sendName?: string;
   /**
    * Before a new session starts: the Private chip after the branch's and, while it is on, the private model menu
    * joined to Qwen Code's chip, the session limit chip, and the credits left under the card. The parent drops the
@@ -255,6 +262,9 @@ export function ComposerDock({
   folder,
   agents,
   sessionAgent,
+  agentPicker,
+  switchNote,
+  sendName,
   privateDraft,
   privateSessionLine,
   compareModels,
@@ -635,6 +645,15 @@ export function ComposerDock({
 
   return (
     <footer ref={containerRef} className={`w-full ${isDraft ? "max-w-draft" : "max-w-chat"} flex flex-col items-center select-none`}>
+      {switchNote && (
+        <div role="status" className="mb-3 flex w-full items-center gap-2 rounded-panel border border-border bg-surface-2 py-2 pl-3 pr-2 text-ui-sm text-fg-secondary">
+          <Repeat size={14} aria-hidden="true" className="shrink-0 text-fg-muted" />
+          <span className="min-w-0 flex-1">{switchNote.text}</span>
+          <Button variant="ghost" tone="secondary" size="sm" onClick={switchNote.onKeep}>
+            {switchNote.keepLabel}
+          </Button>
+        </div>
+      )}
       {aboveCardSlots && (
         // Hidden while neither place holds a panel; `empty:` no longer applies, since the two places are always there.
         <div data-above-card="" className="mb-3 flex w-full flex-col gap-3 [&:not(:has(>:not(:empty)))]:hidden">
@@ -750,7 +769,15 @@ export function ComposerDock({
               </DraftChips>
             )}
 
-            {sessionAgent && !agents && (
+            {agentPicker && !agents && (
+              <SessionAgentPicker
+                {...agentPicker}
+                isOpen={openDropdown === "agent"}
+                onToggle={() => toggle("agent")}
+                onClose={() => closeDropdown("agent")}
+              />
+            )}
+            {sessionAgent && !agents && !agentPicker && (
               // A running session's agent, named first: a label, since a session cannot change its agent.
               <span data-agent-chip="" className="inline-flex h-6.5 min-w-0 items-center gap-1.5 pl-0.5 pr-1.5 text-ui-sm text-fg-secondary">
                 <AgentTile profileId={sessionAgent.profileId} name="" size={16} />
@@ -841,7 +868,7 @@ export function ComposerDock({
             ) : (
               <IconButton
                 variant="primary"
-                label="Send message"
+                label={sendName ?? "Send message"}
                 aria-describedby={sendBlockedNoteId}
                 onClick={handleSend}
                 disabled={isSendEmpty || !canSend}

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { COMPOSER_PLACEHOLDERS, composerCommandsFor, composerNote, composerPlaceholder, composerStateFor, type ComposerInputs } from "../lib/composer-state";
+import { COMPOSER_PLACEHOLDERS, composerCommandsFor, composerInputsWithSwitch, composerNote, composerPlaceholder, composerStateFor, type ComposerInputs } from "../lib/composer-state";
 import { NO_CHOICES, withRewound, type AgentOptions } from "../lib/acp-draft";
 import { TRANSPORT_ACP, type AgentProfile, type Session, type SlashCommand } from "../types";
 import { creditsOutText } from "../lib/private-session";
@@ -373,5 +373,34 @@ describe("composerNote while another agent is picked", () => {
     expect(composerNote({ continuesSession: true, switchWaits: "Qwen Code", queueFull: true })).toBe(
       "Qwen Code is still working. Wait for it to finish, or press Stop.",
     );
+  });
+});
+
+describe("composerInputsWithSwitch", () => {
+  const setMode = vi.fn();
+  const acp = {
+    info: { "s-1": { modes: { currentModeId: "default", availableModes: [{ id: "default", name: "Default" }, { id: "plan", name: "Plan" }] }, configOptions: [] } },
+    setMode,
+    setConfigOption: vi.fn(),
+  } as unknown as ComposerInputs["acp"];
+  const source = { id: "s-1", status: "running", transport: TRANSPORT_ACP, profileId: "qwen" } as Session;
+  const claude = { id: "claude" } as AgentProfile;
+  const base: ComposerInputs = { session: source, draftAgent: undefined, acpChoices: NO_CHOICES, setAcpChoices: vi.fn(), agentOptions: {
+    claude: { modes: { currentModeId: "ask", availableModes: [{ id: "ask", name: "Ask" }, { id: "edit", name: "Edit" }] }, configOptions: [] },
+  }, acp };
+
+  it("a chip pick while a switch is pending changes its choices and never reaches the source", () => {
+    const setChoices = vi.fn();
+    const state = composerStateFor(composerInputsWithSwitch(base, { agent: claude, choices: NO_CHOICES, setChoices }));
+
+    expect(state.controls.permission?.options.map((o) => o.label)).toEqual(["Ask", "Edit"]);
+    state.controls.permission?.onChange("edit");
+
+    expect(setChoices).toHaveBeenCalledWith(expect.objectContaining({ modeId: "edit" }));
+    expect(setMode).not.toHaveBeenCalled();
+  });
+
+  it("without a switch the inputs are unchanged", () => {
+    expect(composerInputsWithSwitch(base, undefined)).toBe(base);
   });
 });

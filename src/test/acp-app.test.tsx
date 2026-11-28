@@ -408,6 +408,10 @@ describe("ACP sessions in the app", () => {
     await act(async () => {
       fireEvent.click(within(reply).getByRole("button", { name: "Fork from here" }));
     });
+    // With other agents in use Fork is a menu; its first row forks with the session's own agent.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: /^Fork with / }));
+    });
 
     const [, forkArgs] = callsTo(spy, "acp_fork_session")[0];
     expect(forkArgs).toMatchObject({ sourceSessionId: sessionId, cwd: "/Users/test/developer/ai-perpetual-trading" });
@@ -1138,6 +1142,10 @@ describe("ACP sessions in the app", () => {
     const reply = screen.getByText("Here is the plan").closest("[data-testid^='chat-message-']") as HTMLElement;
     await act(async () => {
       fireEvent.click(within(reply).getByRole("button", { name: "Fork from here" }));
+    });
+    // With other agents in use Fork is a menu; its first row forks with the session's own agent.
+    await act(async () => {
+      fireEvent.click(screen.getByRole("menuitem", { name: /^Fork with / }));
     });
 
     await waitFor(() => expect(callsTo(spy, "write_fork_handoff")).toHaveLength(1));

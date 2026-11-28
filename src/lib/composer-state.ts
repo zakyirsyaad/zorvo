@@ -42,6 +42,29 @@ function withoutModel(controls: ComposerControls): ComposerControls {
  * (changed on the fly) or, before the agent runs, the choices for it: the
  * options it reported last time, applied once it is up.
  */
+/** Another agent picked to continue a session with: its agent, what it starts with, and how a chip changes that. */
+export interface SwitchInputs {
+  agent: AgentProfile;
+  choices: AcpChoices;
+  setChoices: (choices: AcpChoices) => void;
+}
+
+/**
+ * The composer's inputs while another agent is picked: that agent's chips, built as a draft's, so a pick edits
+ * the pending choices and nothing is sent to the running session.
+ */
+export function composerInputsWithSwitch(inputs: ComposerInputs, picked: SwitchInputs | undefined): ComposerInputs {
+  if (!picked) return inputs;
+  return {
+    ...inputs,
+    session: undefined,
+    draftAgent: picked.agent,
+    acpChoices: picked.choices,
+    setAcpChoices: picked.setChoices,
+    isPrivate: false,
+  };
+}
+
 export function composerStateFor(inputs: ComposerInputs): ComposerState {
   const { controls } = composerControlsFor(inputs);
   return { controls: inputs.isPrivate || inputs.session?.privateMode ? withoutModel(controls) : controls };

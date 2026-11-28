@@ -721,3 +721,44 @@ describe("ComposerDock review comments", () => {
     expect(prompt()).toBeEnabled();
   });
 });
+
+describe("the composer while another agent is picked", () => {
+  const targets = [
+    { id: "qwen-code", name: "Qwen Code", isSource: true, status: "ready" as const, word: "This session", isDisabled: false },
+    { id: "claude-acp", name: "Claude Code", isSource: false, status: "ready" as const, word: "Ready", isDisabled: false },
+  ];
+
+  it("the switch note shows above the card with Keep", () => {
+    const onKeep = vi.fn();
+    render(
+      <ComposerDock
+        onSendMessage={() => {}}
+        switchNote={{ text: "Your message starts a new Claude Code session that continues this one.", keepLabel: "Keep Qwen Code", onKeep }}
+      />,
+    );
+
+    const note = screen.getByText("Your message starts a new Claude Code session that continues this one.");
+    expect(note.closest('[role="status"]')).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Keep Qwen Code" }));
+    expect(onKeep).toHaveBeenCalled();
+  });
+
+  it("the picker replaces the agent label in a running session", () => {
+    const { container } = render(
+      <ComposerDock
+        onSendMessage={() => {}}
+        sessionAgent={{ profileId: "qwen-code", name: "Qwen Code" }}
+        agentPicker={{ targets, pickedId: "claude-acp", isPrivate: false, onPick: vi.fn() }}
+      />,
+    );
+
+    expect(container.querySelector("[data-agent-chip]")).toBeNull();
+    expect(screen.getByRole("button", { name: "Agent: Claude Code" })).toBeInTheDocument();
+  });
+
+  it("Send is named for the new session", () => {
+    render(<ComposerDock onSendMessage={() => {}} sendName="Send to Claude Code in a new session" />);
+
+    expect(screen.getByRole("button", { name: "Send to Claude Code in a new session" })).toBeInTheDocument();
+  });
+});
